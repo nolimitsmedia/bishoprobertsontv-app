@@ -1,0 +1,28 @@
+import BlocksEditor from "@/components/BlocksEditor";
+
+export default function PageBuilder() {
+  return (
+    <div style={{ padding: 16 }}>
+      <BlocksEditor
+        // optional: persist changes
+        onChange={(nextDoc) => {
+          // save to API/localStorage, etc.
+          // console.log("doc updated", nextDoc);
+        }}
+        // optional: enable real image uploads
+        onUpload={async (file) => {
+          // TODO: upload to Wasabi/S3 and return public URL
+          // return await uploadFile(file);
+          // fallback demo: data URL
+          const data = await new Promise((res, rej) => {
+            const fr = new FileReader();
+            fr.onerror = rej;
+            fr.onload = () => res(String(fr.result || ""));
+            fr.readAsDataURL(file);
+          });
+          return String(data);
+        }}
+      />
+    </div>
+  );
+}

@@ -1,0 +1,222 @@
+/* Overlay */
+.uvm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 19, 32, 0.45);
+  display: grid;
+  place-items: center;
+  z-index: 1000;
+}
+
+/* Modal */
+.uvm-modal {
+  width: min(860px, 92vw);
+  max-height: 88vh;
+  overflow: auto;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  padding: 20px 20px 16px;
+}
+
+.uvm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.uvm-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.uvm-x {
+  border: none;
+  background: transparent;
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  color: #64748b;
+}
+.uvm-x:hover {
+  color: #0f172a;
+}
+
+/* Success banner */
+.uvm-alert {
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  margin: 10px 0 14px;
+  font-size: 14px;
+  align-items: center;
+}
+.uvm-alert.success {
+  background: #e7f7ec;
+  color: #14532d;
+  border: 1px solid #8dd9a4;
+}
+.uvm-alert-icon {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #22c55e;
+  color: white;
+  font-weight: 700;
+}
+
+/* File rows */
+.uvm-file-row {
+  display: grid;
+  grid-template-columns: 1fr 220px auto;
+  gap: 14px;
+  align-items: center;
+  border-top: 1px solid #edf2f7;
+  padding: 12px 2px;
+}
+.uvm-file-row:first-of-type {
+  border-top: 0;
+}
+
+.uvm-file-name {
+  font-weight: 600;
+  color: #0f172a;
+}
+.uvm-file-sub {
+  color: #64748b;
+  font-size: 12px;
+  margin-top: 2px;
+}
+.uvm-file-progress {
+  height: 8px;
+  background: #eef2f7;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.uvm-bar {
+  height: 100%;
+  background: #3b82f6;
+  transition: width 240ms ease;
+}
+.uvm-bar.processing {
+  background: #10b981;
+}
+.uvm-bar.done {
+  background: #10b981;
+}
+.uvm-bar.error {
+  background: #ef4444;
+}
+
+.uvm-file-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* Dropzone */
+.uvm-drop {
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  padding: 28px 20px;
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  color: #475569;
+  background: #fafbfc;
+}
+.uvm-drop.drag {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+.uvm-cloud {
+  color: #64748b;
+}
+.uvm-drop-text {
+  font-size: 15px;
+}
+
+/* Buttons */
+.uvm-btn {
+  appearance: none;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #0f172a;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.uvm-btn:hover {
+  background: #eef2f7;
+}
+.uvm-btn.primary {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+.uvm-btn.primary:hover {
+  background: #1e40af;
+  border-color: #1e40af;
+}
+.uvm-btn.ghost {
+  background: transparent;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+.uvm-btn.ghost:hover {
+  background: #f1f5f9;
+}
+
+/* Footer & actions row */
+.uvm-footer {
+  margin-top: 10px;
+  color: #64748b;
+  font-size: 13px;
+}
+.uvm-footer a {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+.uvm-bottom {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 14px;
+  margin-top: 6px;
+  border-top: 1px solid #edf2f7;
+}
+
+/* Error text */
+.uvm-error {
+  grid-column: 1 / -1;
+  color: #b91c1c;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .uvm-file-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .uvm-file-actions {
+    justify-content: flex-start;
+  }
+  .uvm-file-progress {
+    width: 100%;
+  }
+}
+
+.uvm-category-row {
+  margin-bottom: 5px;
+}

@@ -1,0 +1,208 @@
+import React, { useState } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import api from "../../api";
+import "./FreeAccountForm.css";
+
+export default function FreeAccountForm() {
+  const nav = useNavigate();
+  const [form, setForm] = useState({
+    name: "", // <-- full name
+    email: "",
+    phone: "", // contact number
+    password: "",
+    confirm: "",
+    org: "",
+    agree: false,
+  });
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+
+  function upd(e) {
+    const { name, value, type, checked } = e.target;
+    setForm((f) => ({ ...f, [name]: type === "checkbox" ? checked : value }));
+  }
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    setErr("");
+
+    if (!form.name || !form.email || !form.password) {
+      setErr("Please fill in name, email, and password.");
+      return;
+    }
+    if (!form.phone) {
+      setErr("Please include a contact number.");
+      return;
+    }
+    if (form.password.length < 6) {
+      setErr("Password must be at least 6 characters.");
+      return;
+    }
+    if (form.password !== form.confirm) {
+      setErr("Passwords do not match.");
+      return;
+    }
+    if (!form.agree) {
+      setErr("Please agree to the Terms to continue.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // 1) Create the user
+      const { data } = await api.post("/auth/register", {
+        name: form.name, // <-- send full name
+        email: form.email,
+        phone: form.phone,
+        password: form.password,
+        organization: form.org || null,
+      });
+
+      // 2) Store token if your API returns it
+      const token = data?.token;
+      if (token) {
+        localStorage.setItem("token", token);
+      }
+
+      // 3) Activate Free plan
+      try {
+        await api.post("/subscriptions/change-plan", { code: "free" });
+      } catch {
+        try {
+          await api.post("/subscriptions/start-free");
+        } catch {}
+      }
+
+      // 4) Go to Account
+      nav("/account", { replace: true });
+    } catch (e2) {
+      const msg =
+        e2?.response?.data?.message ||
+        e2?.response?.data?.error ||
+        e2?.message ||
+        "Sign-up failed. Please try again.";
+      setErr(msg);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="free-account container thin">
+      <h1 className="page-title">Start for Free</h1>
+      <p className="muted">
+        Create your free BishopTV account. You’ll get <strong>1 hr</strong> of
+        live streaming and <strong>5 hrs</strong> of storage each month. Upgrade
+        anytime.
+      </p>
+
+      <form className="card form-grid" onSubmit={onSubmit} noValidate>
+        {err && <div className="alert error">{err}</div>}
+
+        <div className="field">
+          <label>Full name</label>
+          <input
+            name="name"
+            value={form.name}
+            onChange={upd}
+            placeholder="e.g., Jordan Smith"
+            autoComplete="name"
+            required
+          />
+        </div>
+
+        <div className="field">
+          <label>Email</label>
+          <input
+            name="email"
+            type="email"
+            value={form.email}
+            onChange={upd}
+            autoComplete="email"
+            required
+          />
+        </div>
+
+        <div className="field">
+          <label>Contact number</label>
+          <input
+            name="phone"
+            type="tel"
+            value={form.phone}
+            onChange={upd}
+            autoComplete="tel"
+            placeholder="e.g., +1 555 123 4567"
+            required
+          />
+        </div>
+
+        <div className="field">
+          <label>Password</label>
+          <input
+            name="password"
+            type="password"
+            value={form.password}
+            onChange={upd}
+            autoComplete="new-password"
+            required
+            minLength={6}
+          />
+        </div>
+
+        <div className="field">
+          <label>Confirm password</label>
+          <input
+            name="confirm"
+            type="password"
+            value={form.confirm}
+            onChange={upd}
+            autoComplete="new-password"
+            required
+            minLength={6}
+          />
+        </div>
+
+        <div className="field">
+          <label>Organization (optional)</label>
+          <input
+            name="org"
+            value={form.org}
+            onChange={upd}
+            placeholder="Church, business, or team"
+            autoComplete="organization"
+          />
+        </div>
+
+        <div className="field checkbox">
+          <label>
+            <input
+              type="checkbox"
+              name="agree"
+              checked={form.agree}
+              onChange={upd}
+            />
+            <span>
+              I agree to the{" "}
+              <Link to="/legal/terms" target="_blank" rel="noreferrer">
+                Terms of Service
+              </Link>{" "}
+              and{" "}
+              <Link to="/legal/privacy" target="_blank" rel="noreferrer">
+                Privacy Policy
+              </Link>
+              .
+            </span>
+          </label>
+        </div>
+
+        <button className="pl-btn primary" disabled={loading}>
+          {loading ? "Creating your account..." : "Create Free Account"}
+        </button>
+
+        <p className="muted small">
+          Already have an account? <Link to="/login">Log in</Link>
+        </p>
+      </form>
+    </div>
+  );
+}

@@ -1,0 +1,140 @@
+/* src/layout/MemberLayout.css */
+.ml-shell {
+  --aside-w: 260px;
+  --bg: #0b1220;
+  --line: #e2e8f0;
+  --muted: #64748b;
+
+  display: grid;
+  grid-template-columns: var(--aside-w) 1fr;
+  min-height: 100dvh;
+  background: #fff;
+}
+
+.ml-aside {
+  border-right: 1px solid var(--line);
+  padding: 16px;
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  overflow: auto;
+}
+
+.ml-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.ml-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--bg);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+}
+.ml-user-name {
+  font-weight: 700;
+}
+.ml-user-email {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ml-section {
+  margin-top: 12px;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.ml-link {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: #111827;
+  text-decoration: none;
+  font-weight: 500;
+  margin: 2px 0;
+}
+.ml-link:hover {
+  background: #f3f4f6;
+}
+.ml-link.active {
+  background: #eef2ff;
+  color: #1d4ed8;
+}
+
+.ml-footer {
+  margin-top: 16px;
+}
+.ml-logout {
+  width: 100%;
+  background: #f1f5f9;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ml-main {
+  min-width: 0;
+}
+.ml-topbar {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+.ml-burger {
+  display: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.ml-top-title {
+  font-weight: 700;
+}
+
+.ml-content {
+  padding: 16px;
+}
+
+/* Mobile */
+@media (max-width: 900px) {
+  .ml-shell {
+    grid-template-columns: 1fr;
+  }
+  .ml-aside {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: min(86vw, var(--aside-w));
+    background: #fff;
+    z-index: 40;
+    transform: translateX(-100%);
+    transition: transform 160ms ease;
+  }
+  .ml-shell.is-open .ml-aside {
+    transform: translateX(0);
+  }
+  .ml-burger {
+    display: inline-grid;
+    place-items: center;
+  }
+  .ml-dim {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 30;
+  }
+}

@@ -1,0 +1,117 @@
+.free-account {
+  padding-top: 8px;
+  width: 750px;
+  margin: auto;
+}
+
+/* Title */
+.free-account .page-title {
+  font-size: clamp(1.75rem, 1.2rem + 1.2vw, 2.25rem);
+  line-height: 1.15;
+  margin: 8px 0 12px;
+  letter-spacing: -0.02em;
+}
+
+/* Blue callout under the title */
+.free-account .muted {
+  background: #eef6ff;
+  border: 1px solid #d9e9ff;
+  border-left: 4px solid #2563eb;
+  border-radius: 12px;
+  color: #0f172a;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+
+/* Card/form shell */
+.free-account .card.form-grid {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 18px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(16, 24, 40, 0.06);
+}
+
+/* Field + labels */
+.free-account .field {
+  margin-bottom: 14px;
+}
+.free-account .field label {
+  display: block;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 6px;
+}
+
+/* Inputs */
+.free-account .field input[type="text"],
+.free-account .field input[type="email"],
+.free-account .field input[type="password"],
+.free-account .field input[type="tel"] {
+  width: 100%;
+  height: 48px;
+  border-radius: 12px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  padding: 0 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s;
+}
+
+.free-account .field input::placeholder {
+  color: #9ca3af;
+}
+
+.free-account .field input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+  background: #fff;
+}
+
+/* Checkbox row */
+.free-account .field.checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 4px;
+}
+.free-account .field.checkbox input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: #2563eb;
+}
+.free-account .field.checkbox span {
+  color: #475569;
+}
+
+/* Primary CTA */
+.free-account .pl-btn.primary {
+  width: 100%;
+  height: 48px;
+  border-radius: 12px;
+  font-weight: 600;
+  margin-top: 8px;
+  justify-content: center;
+}
+
+/* Footer note */
+.free-account .muted.small {
+  background: #f8fbff;
+  border: 1px dashed #cfe3ff;
+  color: #334155;
+  padding: 12px 14px;
+  border-radius: 10px;
+  text-align: left;
+  margin-top: 12px;
+}
+
+/* Error alert (if not already styled globally) */
+.free-account .alert.error {
+  background: #ffe9ea;
+  border: 1px solid #ffb3b8;
+  color: #8a1b1f;
+  padding: 10px 12px;
+  border-radius: 10px;
+  margin-bottom: 12px;
+}

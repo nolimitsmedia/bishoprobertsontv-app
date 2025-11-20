@@ -1,0 +1,778 @@
+// src/components/BlocksEditor.jsx
+import React, { useMemo, useState } from "react";
+
+/* ---------- version banner (helps verify correct file is loaded) ---------- */
+if (typeof window !== "undefined") {
+  // You should see this in DevTools console once per page load
+  // If you don't, the app is importing a different BlocksEditor.
+  // Search the repo for "BlocksEditor.jsx" and update the right one.
+  console.info(
+    "%cBlocksEditor v2 loaded: hero, richText, liveEmbed, section, columns, image, button",
+    "color:#2563eb;font-weight:700"
+  );
+}
+
+/* ---------- tiny UI helpers ---------- */
+const ui = {
+  panel: {
+    border: "1px solid #e5e7eb",
+    borderRadius: 16,
+    padding: 12,
+    background: "#fff",
+  },
+  btn: {
+    height: 36,
+    borderRadius: 10,
+    padding: "0 12px",
+    border: "1px solid #e5e7eb",
+    background: "#fff",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+  field: {
+    width: "100%",
+    border: "1px solid #e5e7eb",
+    borderRadius: 10,
+    padding: "8px 10px",
+  },
+  label: { fontSize: 12, color: "#6b7280", display: "block", marginBottom: 6 },
+};
+const Row = ({ children, gap = 10, wrap }) => (
+  <div
+    style={{
+      display: "flex",
+      gap,
+      alignItems: "center",
+      flexWrap: wrap ? "wrap" : "nowrap",
+    }}
+  >
+    {children}
+  </div>
+);
+const Labeled = ({ label, children }) => (
+  <div style={{ marginBottom: 10 }}>
+    <label style={ui.label}>{label}</label>
+    {children}
+  </div>
+);
+
+/* ---------- block defaults ---------- */
+const def = (type) => {
+  switch (type) {
+    case "hero":
+      return {
+        type,
+        heading: "Welcome to my test live stream",
+        subheading:
+          "Add a short description here so visitors quickly understand your channel.",
+        ctaText: "Get started",
+        ctaUrl: "/",
+      };
+    case "richText":
+      return {
+        type,
+        html: "<p><strong>This page is ready for content.</strong></p><p>Add text, links, lists, etc.</p>",
+      };
+    case "liveEmbed":
+      return { type, html: "", url: "" };
+    case "section":
+      return {
+        type,
+        heading: "Section title",
+        text: "You can style this section.",
+        imageUrl: "",
+        textAlign: "left",
+        padding: "md",
+        bgColor: "#ffffff",
+        textColor: "#0b1220",
+        bgImage: "",
+      };
+    case "columns":
+      return {
+        type,
+        cols: 3,
+        gap: 12,
+        bgColor: "#ffffff",
+        bgImage: "",
+        items: [
+          { heading: "Column A", text: "Describe something.", imageUrl: "" },
+          { heading: "Column B", text: "Describe something.", imageUrl: "" },
+          { heading: "Column C", text: "Describe something.", imageUrl: "" },
+        ],
+      };
+    case "image":
+      return {
+        type,
+        url: "",
+        alt: "",
+        width: 640,
+        height: 360,
+        align: "center",
+      };
+    case "button":
+      return {
+        type,
+        label: "Click me",
+        url: "#",
+        bgColor: "#2563eb",
+        textColor: "#ffffff",
+        size: "md",
+        align: "left",
+      };
+    default:
+      return { type };
+  }
+};
+
+/* ---------- left toolbar (block palette) ---------- */
+function Toolbar({ onAdd }) {
+  const palette = [
+    ["hero", "Hero"],
+    ["richText", "Rich Text"],
+    ["liveEmbed", "Live Embed"],
+    ["section", "Section"],
+    ["columns", "Columns"],
+    ["image", "Image"],
+    ["button", "Button"],
+  ];
+  return (
+    <div style={{ ...ui.panel, marginBottom: 10 }}>
+      <div style={{ fontWeight: 800, marginBottom: 8 }}>Blocks</div>
+      <div style={{ display: "grid", gap: 8 }}>
+        {palette.map(([type, label]) => (
+          <button
+            key={type}
+            type="button"
+            style={ui.btn}
+            onClick={() => onAdd(type)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div style={{ marginTop: 10, fontSize: 12, color: "#6b7280" }}>
+        Tip: Click a block to edit. Drag cards to reorder.
+      </div>
+    </div>
+  );
+}
+
+/* ---------- canvas (center) ---------- */
+function Canvas({ blocks, selectedIndex, onSelect, onReorder, onRemoveAt }) {
+  const [dragIdx, setDragIdx] = useState(-1);
+  const dragStart = (i) => (e) => {
+    setDragIdx(i);
+    e.dataTransfer.effectAllowed = "move";
+  };
+  const dragOver = (i) => (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  };
+  const dropOn = (i) => (e) => {
+    e.preventDefault();
+    if (dragIdx !== -1 && dragIdx !== i) onReorder(dragIdx, i);
+    setDragIdx(-1);
+  };
+
+  return (
+    <div style={{ display: "grid", gap: 10 }}>
+      {blocks.length === 0 ? (
+        <div style={{ ...ui.panel, color: "#64748b" }}>
+          No blocks yet. Use the palette to add one.
+        </div>
+      ) : (
+        blocks.map((b, i) => (
+          <div
+            key={i}
+            draggable
+            onDragStart={dragStart(i)}
+            onDragOver={dragOver(i)}
+            onDrop={dropOn(i)}
+            onClick={() => onSelect(i)}
+            style={{
+              ...ui.panel,
+              outline: selectedIndex === i ? "2px solid #2563eb" : "none",
+              cursor: "pointer",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span
+                style={{
+                  fontSize: 12,
+                  color: "#64748b",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 999,
+                  padding: "4px 8px",
+                }}
+              >
+                {b.type}
+              </span>
+              <div style={{ fontWeight: 800 }}>
+                {b.heading || b.label || b.type}
+              </div>
+              <button
+                type="button"
+                style={{ ...ui.btn, marginLeft: "auto", padding: "0 8px" }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemoveAt(i);
+                }}
+              >
+                Delete
+              </button>
+            </div>
+            <div style={{ color: "#64748b", marginTop: 6, fontSize: 13 }}>
+              {b.type === "richText" && (
+                <div
+                  dangerouslySetInnerHTML={{
+                    __html: (b.html || "").slice(0, 140),
+                  }}
+                />
+              )}
+              {b.type === "hero" && (
+                <div>
+                  <div style={{ fontWeight: 700 }}>{b.heading}</div>
+                  <div>{b.subheading}</div>
+                </div>
+              )}
+              {b.type === "section" && (
+                <div>
+                  <div style={{ fontWeight: 700 }}>{b.heading}</div>
+                  <div>{(b.text || "").slice(0, 120)}</div>
+                </div>
+              )}
+              {b.type === "columns" && (
+                <div>
+                  {b.cols} columns · {(b.items || []).length} items
+                </div>
+              )}
+              {b.type === "image" && <div>{b.url || "No image selected"}</div>}
+              {b.type === "button" && (
+                <div>
+                  Button: <strong>{b.label}</strong> → {b.url || "#"}
+                </div>
+              )}
+              {b.type === "liveEmbed" && (
+                <div>
+                  {b.url ? b.url : b.html ? "Custom HTML embed" : "No embed"}
+                </div>
+              )}
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+/* ---------- inspector (right) ---------- */
+const Input = (p) => (
+  <input {...p} style={{ ...ui.field, ...(p.style || {}) }} />
+);
+const TextArea = (p) => (
+  <textarea
+    {...p}
+    style={{ ...ui.field, fontFamily: "inherit", ...(p.style || {}) }}
+  />
+);
+const Select = ({ value, onChange, options }) => (
+  <select
+    value={value ?? ""}
+    onChange={(e) => onChange(e.target.value)}
+    style={ui.field}
+  >
+    {options.map(([v, label]) => (
+      <option key={v} value={v}>
+        {label}
+      </option>
+    ))}
+  </select>
+);
+const Color = ({ value, onChange }) => (
+  <input
+    type="color"
+    value={value || "#ffffff"}
+    onChange={(e) => onChange(e.target.value)}
+    style={{
+      height: 36,
+      width: 60,
+      border: "1px solid #e5e7eb",
+      borderRadius: 8,
+    }}
+  />
+);
+
+function Inspector({ block, onChange, onDelete }) {
+  if (!block) {
+    return (
+      <div style={{ ...ui.panel, color: "#64748b" }}>
+        Select a block to edit its fields.
+      </div>
+    );
+  }
+  const set = (k, v) => onChange({ ...block, [k]: v });
+
+  const body = (() => {
+    switch (block.type) {
+      case "hero":
+        return (
+          <>
+            <Labeled label="Heading">
+              <Input
+                value={block.heading}
+                onChange={(e) => set("heading", e.target.value)}
+              />
+            </Labeled>
+            <Labeled label="Subheading">
+              <TextArea
+                rows={6}
+                value={block.subheading}
+                onChange={(e) => set("subheading", e.target.value)}
+              />
+            </Labeled>
+            <Row gap={10}>
+              <div style={{ flex: 1 }}>
+                <Labeled label="CTA text">
+                  <Input
+                    value={block.ctaText}
+                    onChange={(e) => set("ctaText", e.target.value)}
+                  />
+                </Labeled>
+              </div>
+              <div style={{ flex: 2 }}>
+                <Labeled label="CTA URL">
+                  <Input
+                    value={block.ctaUrl}
+                    onChange={(e) => set("ctaUrl", e.target.value)}
+                  />
+                </Labeled>
+              </div>
+            </Row>
+          </>
+        );
+      case "richText":
+        return (
+          <Labeled label="HTML">
+            <TextArea
+              rows={10}
+              value={block.html}
+              onChange={(e) => set("html", e.target.value)}
+            />
+          </Labeled>
+        );
+      case "liveEmbed":
+        return (
+          <>
+            <Labeled label="Embed HTML">
+              <TextArea
+                rows={10}
+                value={block.html || ""}
+                onChange={(e) => set("html", e.target.value)}
+              />
+            </Labeled>
+            <Labeled label="OR iframe URL">
+              <Input
+                placeholder="https://…"
+                value={block.url || ""}
+                onChange={(e) => set("url", e.target.value)}
+              />
+            </Labeled>
+          </>
+        );
+      case "section":
+        return (
+          <>
+            <Row gap={10}>
+              <div style={{ flex: 1 }}>
+                <Labeled label="Heading">
+                  <Input
+                    value={block.heading}
+                    onChange={(e) => set("heading", e.target.value)}
+                  />
+                </Labeled>
+              </div>
+              <div>
+                <Labeled label="Text color">
+                  <Color
+                    value={block.textColor}
+                    onChange={(v) => set("textColor", v)}
+                  />
+                </Labeled>
+              </div>
+            </Row>
+            <Labeled label="Text">
+              <TextArea
+                rows={6}
+                value={block.text}
+                onChange={(e) => set("text", e.target.value)}
+              />
+            </Labeled>
+            <Row gap={10}>
+              <div style={{ flex: 1 }}>
+                <Labeled label="Image URL (optional)">
+                  <Input
+                    placeholder="/uploads/hero.jpg or https://…"
+                    value={block.imageUrl}
+                    onChange={(e) => set("imageUrl", e.target.value)}
+                  />
+                </Labeled>
+              </div>
+              <div style={{ width: 130 }}>
+                <Labeled label="Align">
+                  <Select
+                    value={block.textAlign}
+                    onChange={(v) => set("textAlign", v)}
+                    options={[
+                      ["left", "Left"],
+                      ["center", "Center"],
+                      ["right", "Right"],
+                    ]}
+                  />
+                </Labeled>
+              </div>
+              <div style={{ width: 130 }}>
+                <Labeled label="Padding">
+                  <Select
+                    value={block.padding}
+                    onChange={(v) => set("padding", v)}
+                    options={[
+                      ["sm", "Small"],
+                      ["md", "Medium"],
+                      ["lg", "Large"],
+                    ]}
+                  />
+                </Labeled>
+              </div>
+            </Row>
+            <Row gap={10}>
+              <div style={{ width: 130 }}>
+                <Labeled label="Background color">
+                  <Color
+                    value={block.bgColor}
+                    onChange={(v) => set("bgColor", v)}
+                  />
+                </Labeled>
+              </div>
+              <div style={{ flex: 1 }}>
+                <Labeled label="Background image URL">
+                  <Input
+                    placeholder="/uploads/bg.jpg or https://…"
+                    value={block.bgImage}
+                    onChange={(e) => set("bgImage", e.target.value)}
+                  />
+                </Labeled>
+              </div>
+            </Row>
+          </>
+        );
+      case "columns":
+        return (
+          <>
+            <Row gap={10}>
+              <div style={{ width: 130 }}>
+                <Labeled label="Columns">
+                  <Select
+                    value={block.cols}
+                    onChange={(v) => set("cols", Number(v))}
+                    options={[
+                      [2, "2"],
+                      [3, "3"],
+                    ]}
+                  />
+                </Labeled>
+              </div>
+              <div style={{ width: 130 }}>
+                <Labeled label="Gap (px)">
+                  <Input
+                    type="number"
+                    value={block.gap}
+                    onChange={(e) => set("gap", Number(e.target.value))}
+                  />
+                </Labeled>
+              </div>
+              <div style={{ width: 130 }}>
+                <Labeled label="Background color">
+                  <Color
+                    value={block.bgColor}
+                    onChange={(v) => set("bgColor", v)}
+                  />
+                </Labeled>
+              </div>
+            </Row>
+            <Labeled label="Background image URL">
+              <Input
+                placeholder="/uploads/pattern.png or https://…"
+                value={block.bgImage}
+                onChange={(e) => set("bgImage", e.target.value)}
+              />
+            </Labeled>
+            <div style={{ marginTop: 12, fontWeight: 800 }}>Items</div>
+            <div style={{ display: "grid", gap: 10 }}>
+              {(block.items || []).map((it, i) => (
+                <div
+                  key={i}
+                  style={{ ...ui.panel, padding: 10, borderRadius: 12 }}
+                >
+                  <Row gap={10}>
+                    <div style={{ flex: 1 }}>
+                      <Labeled label="Heading">
+                        <Input
+                          value={it.heading}
+                          onChange={(e) => {
+                            const n = { ...block };
+                            n.items[i].heading = e.target.value;
+                            onChange(n);
+                          }}
+                        />
+                      </Labeled>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <Labeled label="Image URL">
+                        <Input
+                          value={it.imageUrl}
+                          onChange={(e) => {
+                            const n = { ...block };
+                            n.items[i].imageUrl = e.target.value;
+                            onChange(n);
+                          }}
+                        />
+                      </Labeled>
+                    </div>
+                  </Row>
+                  <Labeled label="Text">
+                    <TextArea
+                      rows={4}
+                      value={it.text}
+                      onChange={(e) => {
+                        const n = { ...block };
+                        n.items[i].text = e.target.value;
+                        onChange(n);
+                      }}
+                    />
+                  </Labeled>
+                  <Row gap={8}>
+                    <button
+                      type="button"
+                      style={ui.btn}
+                      onClick={() => {
+                        const n = { ...block };
+                        n.items.splice(i, 1);
+                        onChange(n);
+                      }}
+                    >
+                      Remove item
+                    </button>
+                    <button
+                      type="button"
+                      style={ui.btn}
+                      onClick={() => {
+                        const n = { ...block };
+                        n.items.splice(i + 1, 0, {
+                          heading: "New column",
+                          text: "",
+                          imageUrl: "",
+                        });
+                        onChange(n);
+                      }}
+                    >
+                      + Add item after
+                    </button>
+                  </Row>
+                </div>
+              ))}
+            </div>
+          </>
+        );
+      case "image":
+        return (
+          <>
+            <Labeled label="Image URL">
+              <Input
+                placeholder="/uploads/pic.jpg or https://…"
+                value={block.url}
+                onChange={(e) => set("url", e.target.value)}
+              />
+            </Labeled>
+            <Row gap={10}>
+              <div style={{ width: 120 }}>
+                <Labeled label="Width (px)">
+                  <Input
+                    type="number"
+                    value={block.width}
+                    onChange={(e) => set("width", Number(e.target.value))}
+                  />
+                </Labeled>
+              </div>
+              <div style={{ width: 120 }}>
+                <Labeled label="Height (px)">
+                  <Input
+                    type="number"
+                    value={block.height}
+                    onChange={(e) => set("height", Number(e.target.value))}
+                  />
+                </Labeled>
+              </div>
+              <div style={{ width: 140 }}>
+                <Labeled label="Align">
+                  <Select
+                    value={block.align}
+                    onChange={(v) => set("align", v)}
+                    options={[
+                      ["left", "Left"],
+                      ["center", "Center"],
+                      ["right", "Right"],
+                    ]}
+                  />
+                </Labeled>
+              </div>
+            </Row>
+            <Labeled label="Alt text">
+              <Input
+                value={block.alt}
+                onChange={(e) => set("alt", e.target.value)}
+              />
+            </Labeled>
+          </>
+        );
+      case "button":
+        return (
+          <>
+            <Row gap={10}>
+              <div style={{ flex: 1 }}>
+                <Labeled label="Label">
+                  <Input
+                    value={block.label}
+                    onChange={(e) => set("label", e.target.value)}
+                  />
+                </Labeled>
+              </div>
+              <div style={{ width: 130 }}>
+                <Labeled label="Size">
+                  <Select
+                    value={block.size}
+                    onChange={(v) => set("size", v)}
+                    options={[
+                      ["sm", "Small"],
+                      ["md", "Medium"],
+                      ["lg", "Large"],
+                    ]}
+                  />
+                </Labeled>
+              </div>
+              <div style={{ width: 130 }}>
+                <Labeled label="Align">
+                  <Select
+                    value={block.align}
+                    onChange={(v) => set("align", v)}
+                    options={[
+                      ["left", "Left"],
+                      ["center", "Center"],
+                      ["right", "Right"],
+                    ]}
+                  />
+                </Labeled>
+              </div>
+            </Row>
+            <Labeled label="URL">
+              <Input
+                placeholder="https://…"
+                value={block.url}
+                onChange={(e) => set("url", e.target.value)}
+              />
+            </Labeled>
+            <Row gap={10}>
+              <div>
+                <Labeled label="Background">
+                  <Color
+                    value={block.bgColor}
+                    onChange={(v) => set("bgColor", v)}
+                  />
+                </Labeled>
+              </div>
+              <div>
+                <Labeled label="Text color">
+                  <Color
+                    value={block.textColor}
+                    onChange={(v) => set("textColor", v)}
+                  />
+                </Labeled>
+              </div>
+            </Row>
+          </>
+        );
+      default:
+        return <div>Unsupported block: {block.type}</div>;
+    }
+  })();
+
+  return (
+    <div style={{ ...ui.panel }}>
+      <div style={{ fontWeight: 800, marginBottom: 8 }}>Inspector</div>
+      {body}
+      <div style={{ marginTop: 12 }}>
+        <button
+          type="button"
+          style={{ ...ui.btn, borderColor: "#fecaca", color: "#b91c1c" }}
+          onClick={onDelete}
+        >
+          Delete block
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- main editor grid ---------- */
+export default function BlocksEditor({ value = [], onChange }) {
+  const [sel, setSel] = useState(-1);
+  const blocks = useMemo(() => JSON.parse(JSON.stringify(value)), [value]);
+
+  const add = (type) => {
+    const next = [...blocks, def(type)];
+    onChange(next);
+    setSel(next.length - 1);
+  };
+  const updateSel = (b) => {
+    const next = [...blocks];
+    next[sel] = b;
+    onChange(next);
+    setSel(sel);
+  };
+  const removeAt = (i) => {
+    const next = [...blocks];
+    next.splice(i, 1);
+    onChange(next);
+    setSel(next.length ? Math.min(i, next.length - 1) : -1);
+  };
+  const reorder = (from, to) => {
+    const next = [...blocks];
+    const [m] = next.splice(from, 1);
+    next.splice(to, 0, m);
+    onChange(next);
+    setSel(to);
+  };
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "260px 1fr 320px",
+        gap: 12,
+      }}
+    >
+      <Toolbar onAdd={add} />
+      <Canvas
+        blocks={blocks}
+        selectedIndex={sel}
+        onSelect={setSel}
+        onReorder={reorder}
+        onRemoveAt={removeAt}
+      />
+      <Inspector
+        block={sel >= 0 ? blocks[sel] : null}
+        onChange={updateSel}
+        onDelete={() => sel >= 0 && removeAt(sel)}
+      />
+    </div>
+  );
+}

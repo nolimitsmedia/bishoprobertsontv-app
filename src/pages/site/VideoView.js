@@ -1,0 +1,951 @@
+// src/pages/site/VideoView.js
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
+import api from "../../api";
+import "../site/VideoView.css";
+
+const MAX_VISIBLE_COMMENTS = 6;
+
+/* ---------------- utils ---------------- */
+function apiOrigin() {
+  try {
+    const u = new URL(api.defaults.baseURL || "", window.location.href);
+    return u.origin;
+  } catch {
+    return window.location.origin;
+  }
+}
+function absUrl(u) {
+  if (!u) return "";
+  if (/^(https?:|blob:|data:)/i.test(u)) return u;
+  const base = apiOrigin();
+  return u.startsWith("/") ? `${base}${u}` : `${base}/${u}`;
+}
+function isHlsUrl(u) {
+  if (!u) return false;
+  const clean = u.split("?")[0].split("#")[0];
+  return /\.m3u8$/i.test(clean) || clean.includes(".m3u8");
+}
+function secsFromAny(v) {
+  if (v == null) return null;
+  if (typeof v === "number" || /^\d+(\.\d+)?$/.test(String(v))) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return null;
+    return n > 36000 ? Math.round(n / 1000) : Math.round(n);
+  }
+  const s = String(v).trim();
+  if (/^\d+:\d{2}(:\d{2})?$/.test(s)) {
+    const parts = s.split(":").map(Number);
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+  }
+  return null;
+}
+function formatDuration(secs) {
+  const s = Math.max(0, Number(secs || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = Math.floor(s % 60);
+  const two = (n) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${two(m)}:${two(ss)}` : `${m}:${two(ss)}`;
+}
+function datePretty(iso) {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleDateString(undefined, {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch {
+    return "";
+  }
+}
+
+/** Try a list of endpoints (quietly). Returns the first successful .data or null. */
+async function tryGetFirst(urls) {
+  for (const u of urls) {
+    try {
+      const r = await api.get(u);
+      return r.data;
+    } catch (e) {
+      const code = e?.response?.status;
+      if ([401, 403, 404].includes(code)) continue;
+      continue;
+    }
+  }
+  return null;
+}
+
+export default function VideoView() {
+  const { id } = useParams();
+  const nav = useNavigate();
+  const loc = useLocation();
+
+  // playlist context: /watch/:id?playlist=slug-or-id
+  const search = useMemo(() => new URLSearchParams(loc.search), [loc.search]);
+  const playlistParam = search.get("playlist");
+  const inPlaylistMode = !!playlistParam;
+
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const [video, setVideo] = useState(null);
+  const [resources, setResources] = useState([]);
+
+  // GLOBAL related (when not in playlist mode)
+  const [more, setMore] = useState([]);
+
+  // PLAYLIST related (when in playlist mode)
+  const [playlistMeta, setPlaylistMeta] = useState(null);
+  const [playlistVideos, setPlaylistVideos] = useState([]);
+  const [playlistRest, setPlaylistRest] = useState([]);
+
+  // auth state
+  const [isAuthed, setIsAuthed] = useState(false);
+
+  // preview gate
+  const [previewHit, setPreviewHit] = useState(false);
+
+  // playlists popover (for adding this video TO a playlist)
+  const [showPL, setShowPL] = useState(false);
+  const [myPlaylists, setMyPlaylists] = useState([]);
+  const [memberOf, setMemberOf] = useState(new Set());
+  const [plLoading, setPlLoading] = useState(false);
+
+  // comments
+  const [comments, setComments] = useState([]);
+  const [cmtTxt, setCmtTxt] = useState("");
+  const [cmtLoading, setCmtLoading] = useState(false);
+  const [cmtErr, setCmtErr] = useState("");
+  const [showAllComments, setShowAllComments] = useState(false);
+
+  const videoRef = useRef(null);
+  const hlsRef = useRef(null);
+
+  const srcUrl = useMemo(
+    () => (video?.video_url ? absUrl(video.video_url) : ""),
+    [video?.video_url]
+  );
+  const poster = useMemo(
+    () => (video?.thumbnail_url ? absUrl(video.thumbnail_url) : ""),
+    [video?.thumbnail_url]
+  );
+
+  const previewSeconds = useMemo(() => {
+    const candidates = [
+      video?.free_preview_seconds,
+      video?.preview_seconds,
+      video?.metadata?.free_preview_seconds,
+      video?.metadata?.preview_seconds,
+    ];
+    for (const c of candidates) {
+      const n = Number(c);
+      if (Number.isFinite(n) && n > 0) return Math.round(n);
+    }
+    return 0;
+  }, [video]);
+
+  const previewActive = !isAuthed && previewSeconds > 0;
+
+  /* ---------------- styles (scoped) ---------------- */
+  const styles = `
+  .vv { --bg:#0b0f19; --card:#0f172a; --muted:#9aa4b2; --text:#e5e7eb; --text-strong:#fff; --border:rgba(148,163,184,.18); }
+  .vv { background: var(--bg); color: var(--text); min-height: 100vh; }
+  .vv a { color: #93c5fd; text-decoration: none; }
+  .vv a:hover { text-decoration: underline; }
+
+  .vv-wrap { width: min(1180px, 94vw); margin: 0 auto; padding: 18px 0 40px; }
+  .vv-grid { display:grid; grid-template-columns: minmax(0,1fr) 320px; gap: 18px; align-items:start; }
+  @media (max-width: 1024px) { .vv-grid { grid-template-columns: 1fr; } }
+
+  .vv-card { background: var(--card); border:1px solid var(--border); border-radius:14px; box-shadow: 0 16px 50px rgba(2,6,23,.25); overflow:hidden; }
+  .vv-pad { padding: 14px; }
+  .vv-h1 { font-weight: 800; font-size: 22px; line-height: 1.25; margin: 14px 8px 8px; color: var(--text-strong); }
+  .vv-byline { display:flex; align-items:center; gap:10px; font-size:13px; color:var(--muted); margin: 0 8px 12px; }
+  .vv-badge { display:inline-block; padding:6px 10px; font-size:11px; font-weight:800; border-radius:999px; background:#111827; color:#d1d5db; border:1px solid var(--border); margin-right:6px; margin-bottom:6px; white-space:nowrap; }
+  .vv-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .vv-btn { display:flex; align-items:center; height:36px; padding:0 14px; border-radius:10px; border:1px solid var(--border); background:#0b1020; color:#fff; cursor:pointer; }
+  .vv-btn:hover { background:#0a1328; }
+  .vv-btn.primary { background:#2563eb; border-color:#2563eb; color:#fff; }
+  .vv-btn.primary:hover { background:#1e40af; }
+  .vv-btn.block { display:inline-flex; align-items:center; justify-content:center; width:140px; font-weight:700; }
+
+  .vv-side-card { background: var(--card); border:1px solid var(--border); border-radius:12px; padding: 10px; }
+  .vv-side-title { font-size:12px; color:#cbd5e1; letter-spacing:.02em; font-weight:800; margin: 0 0 8px; }
+  .vv-thumb { width:120px; height:68px; border-radius:10px; overflow:hidden; background:#101827; border:1px solid var(--border); flex:0 0 auto; position:relative; }
+  .vv-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+  .vv-dur { position:absolute; right:6px; bottom:6px; font-size:10px; font-weight:800; background:rgba(0,0,0,.7); color:#fff; padding:2px 6px; border-radius:6px; border:1px solid rgba(255,255,255,.18); }
+  .vv-rel { display:grid; gap:10px; }
+  .vv-rel-item { display:flex; gap:10px; text-decoration:none; }
+  .vv-next-title { color:var(--text); font-weight:700; font-size:13px; line-height:1.25; }
+  .vv-muted { color: var(--muted); }
+  .vv-share { margin-left:auto; }
+  .vv-hr { border:0; border-top:1px solid var(--border); margin: 12px 0; }
+  .vv-comment-box { color: var(--muted); font-size: 14px; }
+
+  .vv-gate { position: absolute; inset: 0; display: grid; place-items: center; background: linear-gradient(180deg, rgba(0,0,0,.15), rgba(0,0,0,.85) 40%, rgba(0,0,0,.95)); pointer-events: auto; }
+  .vv-gate-inner { text-align: center; padding: 18px 16px; border-radius: 12px; background: rgba(2,6,23,.86); border: 1px solid var(--border); color: #fff; width: min(420px, 92%); box-shadow: 0 10px 40px rgba(0,0,0,.45); }
+
+  .vv-pop { position: relative; }
+  .vv-popmenu { position:absolute; top:44px; left:0; background:#0b1020; border:1px solid var(--border); border-radius:10px; padding:10px; width:260px; z-index:30; box-shadow:0 14px 40px rgba(0,0,0,.4); }
+  .vv-poprow { display:flex; align-items:center; gap:8px; padding:6px 4px; border-radius:8px; }
+  .vv-poprow:hover { background:#0a1328; }
+  .vv-poplbl { flex:1; font-size:14px; }
+  `;
+
+  /* ---------------- auth + load video data ---------------- */
+  useEffect(() => {
+    const token =
+      localStorage.getItem("token") || sessionStorage.getItem("token");
+    if (!token) {
+      setIsAuthed(false);
+      return;
+    }
+    api
+      .get("/auth/me")
+      .then(() => setIsAuthed(true))
+      .catch(() => setIsAuthed(false));
+  }, []);
+
+  // load the main video
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      setErr("");
+      try {
+        const data =
+          (await tryGetFirst([`/videos/public/${id}`])) ||
+          (await tryGetFirst([`/videos/${id}`]));
+        if (!alive) return;
+        if (!data) {
+          setErr("Video not found.");
+        } else {
+          setVideo(data || null);
+        }
+      } catch {
+        if (alive) setErr("Video not found.");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [id]);
+
+  /* ------------------------------------------
+     LOAD SIDE LIST
+     - if ?playlist=... → load from that playlist only
+     - else → load global related
+  ------------------------------------------ */
+  useEffect(() => {
+    if (!id) return;
+
+    if (inPlaylistMode) {
+      (async () => {
+        // IMPORTANT: call bare public route FIRST (your API returns playlist + videos here)
+        const data =
+          (await tryGetFirst([
+            `/playlists/public/${playlistParam}`, // ✅ preferred
+            `/playlists/public/${playlistParam}/videos`, // fallback if exists
+          ])) ||
+          (await tryGetFirst([
+            `/playlists/${playlistParam}`, // private (owner) shape
+            `/playlists/${playlistParam}/videos`, // fallback if exists
+          ]));
+
+        if (!data) {
+          setPlaylistMeta(null);
+          setPlaylistVideos([]);
+          setPlaylistRest([]);
+          return;
+        }
+
+        let plVideos = [];
+        let plTitle = "";
+
+        if (Array.isArray(data?.items)) plVideos = data.items;
+        else if (Array.isArray(data?.videos)) plVideos = data.videos;
+        else if (Array.isArray(data)) plVideos = data;
+
+        if (data?.title) plTitle = data.title;
+        if (data?.playlist?.title) plTitle = data.playlist.title;
+
+        const ordered = plVideos.map((v) => ({
+          ...v,
+          id: v.id ?? v.video_id,
+        }));
+
+        const rest = ordered.filter((v) => String(v.id) !== String(id));
+
+        setPlaylistMeta({ title: plTitle || "Playlist", id: playlistParam });
+        setPlaylistVideos(ordered);
+        setPlaylistRest(rest);
+      })();
+
+      return;
+    }
+
+    // NOT in playlist mode → load global list
+    (async () => {
+      const data =
+        (await tryGetFirst([`/videos/public?limit=8`])) ||
+        (await tryGetFirst([`/videos?limit=8`]));
+      const arr = Array.isArray(data) ? data : data?.items || [];
+      setMore(arr.filter((v) => String(v.id) !== String(id)));
+    })();
+  }, [id, inPlaylistMode, playlistParam]);
+
+  /* load resources for list under player */
+  useEffect(() => {
+    if (!id) return;
+    api
+      .get(`/resources/by-video/${id}`)
+      .then((r) => setResources(r.data?.items || []))
+      .catch(() => setResources([]));
+  }, [id]);
+
+  /* attach HLS if needed */
+  useEffect(() => {
+    const el = videoRef.current;
+
+    if (hlsRef.current) {
+      try {
+        hlsRef.current.destroy();
+      } catch {}
+      hlsRef.current = null;
+    }
+    if (!el || !srcUrl) return;
+
+    const hls = isHlsUrl(srcUrl);
+
+    if (hls && el.canPlayType("application/vnd.apple.mpegURL")) {
+      el.src = srcUrl;
+      el.load();
+      return;
+    }
+
+    if (hls) {
+      (async () => {
+        try {
+          const HlsMod = await import("hls.js");
+          const Hls = HlsMod.default || HlsMod;
+          if (Hls.isSupported()) {
+            const instance = new Hls({
+              enableWorker: true,
+              liveSyncDuration: 2,
+            });
+            instance.loadSource(srcUrl);
+            instance.attachMedia(el);
+            hlsRef.current = instance;
+          } else {
+            el.src = srcUrl;
+            el.load();
+          }
+        } catch {
+          el.src = srcUrl;
+          el.load();
+        }
+      })();
+      return () => {
+        if (hlsRef.current) {
+          try {
+            hlsRef.current.destroy();
+          } catch {}
+          hlsRef.current = null;
+        }
+      };
+    }
+
+    el.src = srcUrl;
+    el.load();
+  }, [srcUrl]);
+
+  /* reset preview gate when the video changes  */
+  useEffect(() => {
+    setPreviewHit(false);
+  }, [id, srcUrl]);
+
+  /* preview gate */
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+
+    if (!previewActive) {
+      el.controls = true;
+      el.style.pointerEvents = "auto";
+      return;
+    }
+
+    const clampToLimit = () => {
+      const target = Math.max(0, previewSeconds - 0.01);
+      try {
+        el.currentTime = target;
+      } catch {}
+    };
+
+    const stopAndGate = () => {
+      try {
+        el.pause();
+      } catch {}
+      clampToLimit();
+      setPreviewHit(true);
+      el.controls = false;
+      el.style.pointerEvents = "none";
+    };
+
+    const onTime = () => {
+      if (el.currentTime >= previewSeconds && !previewHit) stopAndGate();
+    };
+    const onPlayAttempt = () => {
+      if (previewHit) stopAndGate();
+    };
+    const onSeeking = () => {
+      if (el.currentTime > previewSeconds) clampToLimit();
+    };
+
+    el.addEventListener("timeupdate", onTime);
+    el.addEventListener("play", onPlayAttempt);
+    el.addEventListener("seeking", onSeeking);
+
+    return () => {
+      el.removeEventListener("timeupdate", onTime);
+      el.removeEventListener("play", onPlayAttempt);
+      el.removeEventListener("seeking", onSeeking);
+    };
+  }, [previewActive, previewSeconds, previewHit]);
+
+  /* playlists: load my playlists + membership for this video (authed only) */
+  useEffect(() => {
+    if (!isAuthed || !id) {
+      setMyPlaylists([]);
+      setMemberOf(new Set());
+      return;
+    }
+    let alive = true;
+    (async () => {
+      try {
+        setPlLoading(true);
+        const [plRes, memRes] = await Promise.allSettled([
+          api.get("/playlists"),
+          api.get(`/playlists/videos/${id}`),
+        ]);
+        if (!alive) return;
+        if (plRes.status === "fulfilled") {
+          const items = plRes.value?.data?.items || [];
+          setMyPlaylists(items);
+        }
+        if (memRes.status === "fulfilled") {
+          const ids = memRes.value?.data?.playlist_ids || [];
+          setMemberOf(new Set(ids.map(String)));
+        }
+      } finally {
+        if (alive) setPlLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [isAuthed, id]);
+
+  async function toggleMembership(pid) {
+    const pidStr = String(pid);
+    const inNow = memberOf.has(pidStr);
+    try {
+      if (inNow) {
+        await api.delete(`/playlists/${pid}/videos/${id}`);
+        const next = new Set(memberOf);
+        next.delete(pidStr);
+        setMemberOf(next);
+      } else {
+        await api.post(`/playlists/${pid}/videos`, { video_id: id });
+        const next = new Set(memberOf);
+        next.add(pidStr);
+        setMemberOf(next);
+      }
+    } catch {
+      alert("Unable to update playlist membership.");
+    }
+  }
+
+  /* comments: load list */
+  useEffect(() => {
+    let alive = true;
+    setCmtErr("");
+    setCmtLoading(true);
+    api
+      .get(`/comments?video_id=${id}`)
+      .then((r) => {
+        if (!alive) return;
+        const items = r.data?.items || r.data || [];
+        setComments(items);
+        setShowAllComments(false);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setComments([]);
+      })
+      .finally(() => alive && setCmtLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, [id]);
+
+  async function postComment(e) {
+    e.preventDefault();
+    if (!isAuthed) {
+      nav("/login");
+      return;
+    }
+    const body = String(cmtTxt || "").trim();
+    if (!body) return;
+    setCmtErr("");
+    try {
+      const r = await api.post("/comments", { video_id: id, body });
+      const saved = r?.data && (r.data.comment || r.data.item || r.data);
+      setComments((prev) => [saved, ...prev]);
+      setCmtTxt("");
+    } catch (e) {
+      setCmtErr("Failed to post comment.");
+    }
+  }
+
+  async function share() {
+    const shareUrl =
+      (typeof window !== "undefined" ? window.location.origin : "") +
+      loc.pathname +
+      (inPlaylistMode ? `?playlist=${playlistParam}` : "");
+    const title = video?.title || "Watch this video";
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, url: shareUrl });
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+        alert("Link copied to clipboard");
+      }
+    } catch {}
+  }
+
+  if (loading) {
+    return (
+      <div className="vv">
+        <style dangerouslySetInnerHTML={{ __html: styles }} />
+        <div className="vv-wrap">
+          <div className="vv-card vv-pad">Loading…</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (err || !video) {
+    return (
+      <div className="vv">
+        <style dangerouslySetInnerHTML={{ __html: styles }} />
+        <div className="vv-wrap">
+          <div className="vv-card vv-pad">{err || "Video not found."}</div>
+        </div>
+      </div>
+    );
+  }
+
+  const tags = video?.metadata?.tags || [];
+  const created = video.created_at || video.created;
+  const author = video?.metadata?.authors?.[0];
+
+  const [nextVideo, ...related] = more;
+
+  const visibleComments = showAllComments
+    ? comments
+    : comments.slice(0, MAX_VISIBLE_COMMENTS);
+  const hasMoreComments = comments.length > MAX_VISIBLE_COMMENTS;
+
+  return (
+    <div className="vv">
+      <style dangerouslySetInnerHTML={{ __html: styles }} />
+
+      <div className="vv-wrap">
+        <div className="vv-grid">
+          {/* LEFT: player and details */}
+          <div>
+            <div className="vv-card">
+              <div style={{ background: "#000", position: "relative" }}>
+                <video
+                  ref={videoRef}
+                  poster={poster || undefined}
+                  style={{
+                    width: "100%",
+                    display: "block",
+                    background: "#000",
+                    pointerEvents:
+                      previewActive && previewHit ? "none" : "auto",
+                  }}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  crossOrigin="anonymous"
+                />
+                {previewActive && previewHit && (
+                  <div className="vv-gate" aria-live="polite">
+                    <div className="vv-gate-inner">
+                      <p className="vv-gate-text">
+                        Please log in to watch the full video.
+                      </p>
+                      <div
+                        className="vv-row"
+                        style={{ justifyContent: "center" }}
+                      >
+                        <Link className="vv-btn primary block" to="/login">
+                          Log in
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="vv-pad">
+                <div className="vv-row">
+                  <button className="vv-btn" onClick={() => nav(-1)}>
+                    ← Back
+                  </button>
+
+                  {isAuthed ? (
+                    <div className="vv-pop">
+                      <button
+                        className="vv-btn"
+                        onClick={() => setShowPL((s) => !s)}
+                      >
+                        + Add to playlist
+                      </button>
+                      {showPL && (
+                        <div className="vv-popmenu">
+                          {plLoading && (
+                            <div className="vv-muted" style={{ padding: 6 }}>
+                              Loading…
+                            </div>
+                          )}
+                          {!plLoading && myPlaylists.length === 0 && (
+                            <div className="vv-muted" style={{ padding: 6 }}>
+                              You don’t have any playlists yet.
+                            </div>
+                          )}
+                          {!plLoading &&
+                            myPlaylists.map((p) => {
+                              const inList = memberOf.has(String(p.id));
+                              return (
+                                <label
+                                  key={p.id}
+                                  className="vv-poprow"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    toggleMembership(p.id);
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={inList}
+                                    readOnly
+                                  />
+                                  <span className="vv-poplbl">{p.title}</span>
+                                </label>
+                              );
+                            })}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <Link className="vv-btn" to="/login">
+                      + Add to playlist
+                    </Link>
+                  )}
+
+                  <button className="vv-btn vv-share" onClick={share}>
+                    📤 Share
+                  </button>
+                </div>
+
+                <h1 className="vv-h1">{video.title || "Untitled video"}</h1>
+
+                <div className="vv-byline">
+                  {author && <span className="vv-badge">{author}</span>}
+                  {created && <span>{datePretty(created)}</span>}
+                </div>
+
+                {!!tags.length && (
+                  <div style={{ margin: "0 8px 8px" }}>
+                    {tags.map((t, i) => (
+                      <span key={`tag-${i}`} className="vv-badge">
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {!!video.description && (
+                  <>
+                    <hr className="vv-hr" />
+                    <div style={{ margin: "0 8px 8px" }} className="vv-muted">
+                      {video.description}
+                    </div>
+                  </>
+                )}
+
+                {/* Resources */}
+                {resources.length > 0 && (
+                  <>
+                    <hr className="vv-hr" />
+                    <div style={{ margin: "0 8px" }}>
+                      <h3 style={{ margin: "0 0 6px", fontSize: 14 }}>
+                        Resources
+                      </h3>
+                      <ul style={{ margin: 0, paddingLeft: 18 }}>
+                        {resources.map((r, i) => (
+                          <li key={i} style={{ marginBottom: 6 }}>
+                            <a
+                              href={absUrl(r.url)}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {r.title || absUrl(r.url)}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </>
+                )}
+
+                {/* Comments */}
+                <hr className="vv-hr" />
+                <div className="vv-comment-box" style={{ margin: "0 8px" }}>
+                  <strong>Comments</strong>
+                  {isAuthed ? (
+                    <form onSubmit={postComment} style={{ marginTop: 8 }}>
+                      <textarea
+                        rows={3}
+                        value={cmtTxt}
+                        onChange={(e) => setCmtTxt(e.target.value)}
+                        placeholder="Write a comment…"
+                        style={{
+                          width: "100%",
+                          background: "#0b1020",
+                          color: "#e5e7eb",
+                          border: "1px solid var(--border)",
+                          borderRadius: 8,
+                          padding: 8,
+                          resize: "vertical",
+                        }}
+                      />
+                      <div className="vv-row" style={{ marginTop: 6 }}>
+                        <button className="vv-btn primary">Post</button>
+                        {cmtErr && (
+                          <span style={{ color: "#ef4444" }}>{cmtErr}</span>
+                        )}
+                      </div>
+                    </form>
+                  ) : (
+                    <div style={{ marginTop: 4 }}>
+                      <Link to="/login">Sign in</Link> to join the conversation.
+                    </div>
+                  )}
+
+                  <div
+                    className="comment-list-wrapper"
+                    style={{ marginTop: 10 }}
+                  >
+                    {cmtLoading ? (
+                      <div className="vv-muted">Loading comments…</div>
+                    ) : comments.length === 0 ? (
+                      <div className="vv-muted">No comments yet.</div>
+                    ) : (
+                      <>
+                        <ul
+                          className="comment-list"
+                          style={{ listStyle: "none", paddingLeft: 0 }}
+                        >
+                          {visibleComments.map((c) => (
+                            <li
+                              key={c.id || c._id || Math.random()}
+                              className="comment-item"
+                              style={{
+                                padding: "8px 0",
+                                borderBottom: "1px solid var(--border)",
+                              }}
+                            >
+                              <div
+                                style={{ fontSize: 13, color: "#cbd5e1" }}
+                                className="comment-meta"
+                              >
+                                {c.author_name ||
+                                  c.user_name ||
+                                  (c.user_id
+                                    ? `Member ${c.user_id}`
+                                    : "Member")}
+                                {c.created_at && (
+                                  <> · {datePretty(c.created_at)}</>
+                                )}
+                              </div>
+                              <div
+                                className="comment-body"
+                                style={{ whiteSpace: "pre-wrap" }}
+                              >
+                                {c.body || c.text || ""}
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+
+                        {hasMoreComments && (
+                          <button
+                            type="button"
+                            onClick={() => setShowAllComments((prev) => !prev)}
+                            className="see-more-btn"
+                          >
+                            {showAllComments
+                              ? "Show fewer comments"
+                              : `See more comments (${
+                                  comments.length - MAX_VISIBLE_COMMENTS
+                                })`}
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* RIGHT: playlist-aware sidebar */}
+          <aside className="vv-side">
+            {inPlaylistMode ? (
+              <>
+                {!!playlistRest.length && (
+                  <div className="vv-side-card">
+                    <div className="vv-side-title">
+                      {playlistMeta?.title || "Playlist"}
+                    </div>
+                    <div className="vv-rel">
+                      {playlistRest.slice(0, 20).map((v) => {
+                        const dur = secsFromAny(
+                          v.duration_seconds ??
+                            v.duration_sec ??
+                            v.duration ??
+                            v?.metadata?.duration
+                        );
+                        return (
+                          <Link
+                            key={v.id}
+                            to={`/watch/${v.id}?playlist=${playlistParam}`}
+                            className="vv-rel-item"
+                          >
+                            <div className="vv-thumb" aria-hidden="true">
+                              {v.thumbnail_url ? (
+                                <img src={absUrl(v.thumbnail_url)} alt="" />
+                              ) : (
+                                <div
+                                  style={{ width: "100%", height: "100%" }}
+                                />
+                              )}
+                              {dur && (
+                                <span className="vv-dur">
+                                  {formatDuration(dur)}
+                                </span>
+                              )}
+                            </div>
+                            <div className="vv-next-title">
+                              {v.title || "Untitled"}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                {nextVideo && (
+                  <div className="vv-side-card" style={{ marginBottom: 12 }}>
+                    <div className="vv-side-title">NEXT VIDEO</div>
+                    <Link to={`/watch/${nextVideo.id}`} className="vv-rel-item">
+                      <div className="vv-thumb" aria-hidden="true">
+                        {nextVideo.thumbnail_url ? (
+                          <img src={absUrl(nextVideo.thumbnail_url)} alt="" />
+                        ) : (
+                          <div style={{ width: "100%", height: "100%" }} />
+                        )}
+                        {secsFromAny(
+                          nextVideo.duration_seconds ??
+                            nextVideo.duration_sec ??
+                            nextVideo.duration ??
+                            nextVideo?.metadata?.duration
+                        ) && (
+                          <span className="vv-dur">
+                            {formatDuration(
+                              secsFromAny(
+                                nextVideo.duration_seconds ??
+                                  nextVideo.duration_sec ??
+                                  nextVideo.duration ??
+                                  nextVideo?.metadata?.duration
+                              )
+                            )}
+                          </span>
+                        )}
+                      </div>
+                      <div className="vv-next-title">
+                        {nextVideo.title || "Untitled"}
+                      </div>
+                    </Link>
+                  </div>
+                )}
+
+                {!!related.length && (
+                  <div className="vv-side-card">
+                    <div className="vv-side-title">Related Videos</div>
+                    <div className="vv-rel">
+                      {related.slice(0, 6).map((v) => {
+                        const dur = secsFromAny(
+                          v.duration_seconds ??
+                            v.duration_sec ??
+                            v.duration ??
+                            v?.metadata?.duration
+                        );
+                        return (
+                          <Link
+                            key={v.id}
+                            to={`/watch/${v.id}`}
+                            className="vv-rel-item"
+                          >
+                            <div className="vv-thumb" aria-hidden="true">
+                              {v.thumbnail_url ? (
+                                <img src={absUrl(v.thumbnail_url)} alt="" />
+                              ) : (
+                                <div
+                                  style={{ width: "100%", height: "100%" }}
+                                />
+                              )}
+                              {dur && (
+                                <span className="vv-dur">
+                                  {formatDuration(dur)}
+                                </span>
+                              )}
+                            </div>
+                            <div className="vv-next-title">
+                              {v.title || "Untitled"}
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,153 @@
+/* src/pages/public/PlaylistView.css */
+
+/* -------- Header: solid black, no background image -------- */
+.pv-hero {
+  background: #0d0f14; /* black/dark */
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 24px 16px;
+}
+
+/* Constrain and align content */
+.pv-wrap {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between; /* title left, buttons right */
+  gap: 16px;
+}
+
+/* Left side: kicker + title (aligned together) */
+.pv-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pv-kicker {
+  text-transform: uppercase;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  font-size: 12px;
+  line-height: 1;
+  color: #b8c0ff; /* subtle accent like reference */
+  opacity: 0.95;
+}
+
+.pv-title {
+  margin: 0;
+  color: #fff;
+  font-size: clamp(22px, 3vw, 34px);
+  font-weight: 900;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+/* Right side: the three inline buttons */
+.pv-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap; /* wrap nicely on smaller screens */
+}
+
+/* -------- Optional button fallbacks (in case Catalog.css isn't loaded) -------- */
+.pv-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.62rem 1rem;
+  border-radius: 10px;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pv-btn--primary {
+  background: #7029c5;
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(107, 75, 255, 0.35);
+}
+.pv-btn--ghost {
+  background: transparent;
+  color: #c9d1ff;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* -------- Video list title row (optional polish) -------- */
+.pv-section-head {
+  display: inline-flex; /* was flex */
+  align-items: center;
+  gap: 10px; /* spacing between label and count */
+  margin: 18px 12px 10px;
+  width: auto; /* don't stretch across the card */
+}
+
+.pv-section-title {
+  margin: 0;
+  color: #fff;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+/* -------- Responsive behavior -------- */
+@media (max-width: 920px) {
+  .pv-wrap {
+    gap: 12px;
+  }
+}
+
+@media (max-width: 720px) {
+  .pv-wrap {
+    flex-direction: column; /* stack on small screens */
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .pv-actions {
+    padding-top: 4px;
+  }
+}
+
+/* src/pages/public/PlaylistView.css */
+
+/* Remove bottom whitespace for this page */
+.pv-page {
+  padding-bottom: 0 !important;
+}
+
+/* Videos row head with count */
+.pv-section-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 12px 10px;
+}
+
+.pv-section-title {
+  margin: 0;
+  color: #fff;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+/* Count pill next to “Videos” */
+.pv-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  color: #e6e8ff;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+/* (The rest of your .pv-hero / .pv-wrap / .pv-left / .pv-actions styles remain the same) */

@@ -1,0 +1,186 @@
+import React from "react";
+import { Link } from "react-router-dom";
+import Slider from "react-slick";
+import PublicHeader from "../../components/PublicHeader";
+import "./Home.css";
+import "slick-carousel/slick/slick.css";
+import "slick-carousel/slick/slick-theme.css";
+
+const Home = () => {
+  const sliderSettings = {
+    dots: false,
+    infinite: true,
+    speed: 7000,
+    slidesToShow: 4,
+    slidesToScroll: 1,
+    autoplay: true,
+    autoplaySpeed: 0,
+    cssEase: "linear",
+    pauseOnHover: false,
+    responsive: [
+      { breakpoint: 1024, settings: { slidesToShow: 2 } },
+      { breakpoint: 600, settings: { slidesToShow: 1 } },
+    ],
+  };
+
+  return (
+    <>
+      {/* <PublicHeader /> */}
+      <div className="home-container">
+        {/* Hero Section */}
+        <section className="hero">
+          <h1>Turn your video content into a thriving business</h1>
+          <p>
+            Build a world-class streaming platform or the next big membership
+            community. Bishop makes it easy to turn your videos into a
+            profitable subscription business.
+          </p>
+          <div className="cta-buttons">
+            <Link to="/register" className="btn-primary">
+              Start Free Trial
+            </Link>
+            <Link to="/demo" className="btn-secondary">
+              Book a Demo
+            </Link>
+          </div>
+          <p className="note">No credit card required to get started.</p>
+        </section>
+
+        {/* Carousel Section */}
+        <section className="carousel-section">
+          <Slider {...sliderSettings}>
+            {[...Array(8)].map((_, i) => (
+              <div key={i} className="carousel-card">
+                <img
+                  src={`/carousel/${i + 1}.jpg`}
+                  alt={`Creator ${i + 1}`}
+                  className="carousel-image"
+                />
+              </div>
+            ))}
+          </Slider>
+        </section>
+
+        {/* Platform Stats */}
+        <section className="stats-section">
+          <div className="stats-grid">
+            <div>
+              <h3>15 MILLION</h3>
+              <p>End users reached</p>
+            </div>
+            <div>
+              <h3>3,500+</h3>
+              <p>Successful creators</p>
+            </div>
+            <div>
+              <h3>$210M+</h3>
+              <p>Revenue generated</p>
+            </div>
+          </div>
+        </section>
+
+        {/* Monetization Features */}
+        <section className="monetization-section">
+          <h2>Monetize Your Content Your Way</h2>
+          <div className="monetization-grid">
+            <div className="monetization-card">
+              <h3>Subscriptions</h3>
+              <p>
+                Offer monthly or yearly plans for unlimited access to your
+                content.
+              </p>
+            </div>
+            <div className="monetization-card">
+              <h3>Pay-Per-View</h3>
+              <p>
+                Charge viewers a one-time fee to access specific videos or
+                events.
+              </p>
+            </div>
+            <div className="monetization-card">
+              <h3>Bundles</h3>
+              <p>Package related content together and sell it as a bundle.</p>
+            </div>
+            <div className="monetization-card">
+              <h3>Donations</h3>
+              <p>
+                Accept voluntary contributions from your loyal audience or
+                supporters.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* Supported Platforms */}
+        <section className="platforms-section">
+          <h2>Available on Every Screen</h2>
+          <div className="platform-icons">
+            <img src="/platforms/web.svg" alt="Web" />
+            <img src="/platforms/ios.svg" alt="iOS" />
+            <img src="/platforms/android.svg" alt="Android" />
+            <img src="/platforms/roku.svg" alt="Roku" />
+            <img src="/platforms/appletv.svg" alt="Apple TV" />
+          </div>
+        </section>
+
+        {/* Benefits Section */}
+        <section className="features-section">
+          <h2>Uscreen is perfect for...</h2>
+          <ul>
+            <li>Fitness & Wellness Brands</li>
+            <li>Educational Creators</li>
+            <li>Faith-Based Media</li>
+            <li>Entertainment Networks</li>
+          </ul>
+        </section>
+
+        {/* Mobile App Feature */}
+        <section className="mobile-app-section">
+          <div className="mobile-app-grid">
+            <img src="/mobile-preview.png" alt="Mobile App" />
+            <div>
+              <h2>Your Branded Mobile App</h2>
+              <p>
+                Give your audience a premium experience with your own branded
+                app on iOS and Android. Increase engagement and deliver content
+                on the go.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* Testimonials */}
+        <section className="testimonials">
+          <h2>What our creators are saying</h2>
+          <div className="testimonial-grid">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="testimonial-card">
+                <p>⭐⭐⭐⭐⭐</p>
+                <p>
+                  "This platform helped us build a loyal audience and triple our
+                  revenue."
+                </p>
+                <small>- Creator {i + 1}</small>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Final CTA */}
+        <section className="final-cta">
+          <h2>Unlock Recurring Membership Revenue — Starting Today</h2>
+          <div className="cta-buttons">
+            <Link to="/register" className="btn-primary">
+              Start Free Trial
+            </Link>
+            <Link to="/demo" className="btn-secondary">
+              Book a Demo
+            </Link>
+          </div>
+        </section>
+      </div>
+    </>
+  );
+};
+
+export default Home;

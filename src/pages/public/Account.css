@@ -1,0 +1,50 @@
+.account-page {
+  padding: 2rem;
+  max-width: 700px;
+  margin: auto;
+}
+
+.account-card {
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 10px;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.primary-btn,
+.danger-btn,
+.outline-btn {
+  padding: 0.7rem 1.2rem;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+  font-weight: 600;
+}
+
+.primary-btn {
+  background: #0055ff;
+  color: #fff;
+}
+.primary-btn:hover {
+  background: #0042c9;
+}
+
+.danger-btn {
+  background: #e53935;
+  color: #fff;
+}
+.danger-btn:hover {
+  background: #c62828;
+}
+
+.outline-btn {
+  background: transparent;
+  border: 1px solid #ccc;
+  color: #333;
+}
+.outline-btn:hover {
+  border-color: #999;
+}

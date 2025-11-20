@@ -1,0 +1,291 @@
+// src/pages/public/channel/ChannelPage.jsx
+import React, { useEffect, useState } from "react";
+import { useOutletContext, useParams } from "react-router-dom";
+import api from "../../../api";
+import RenderBlocksV2 from "../../../components/RenderBlocksV2";
+
+/* ---------- helpers ---------- */
+const absUrlMaybe = (url) => {
+  if (!url) return "";
+  if (/^(https?:|data:|blob:)/i.test(url)) return url;
+  try {
+    const base = new URL(api.defaults.baseURL || window.location.origin);
+    if (url.startsWith("/")) return base.origin + url;
+    return base.origin + "/" + url.replace(/^\.\//, "");
+  } catch {
+    return url;
+  }
+};
+
+const slugify = (s = "") =>
+  String(s)
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+/** Fetch blocks (either legacy array or v2 doc object) for a page slug. */
+async function getPageBlocks(slug, pageSlug) {
+  const k = encodeURIComponent(slug);
+  const p = encodeURIComponent(pageSlug);
+
+  // try aggregator detail first
+  try {
+    const agg = await api
+      .get(`/channels/p/${k}`)
+      .then((r) => r.data?.pages || []);
+    const hit =
+      agg.find((x) => (x.slug || x.page_slug) === pageSlug) ||
+      agg.find((x) => slugify(x.title || "") === pageSlug);
+    if (hit?.blocks) return hit.blocks;
+  } catch {}
+
+  // public detail
+  try {
+    const full = await api
+      .get(`/channels/public/${k}/pages/${p}`)
+      .then((r) => r.data);
+    if (full?.blocks) return full.blocks;
+  } catch {}
+
+  // private detail
+  try {
+    const full = await api.get(`/channels/${k}/pages/${p}`).then((r) => r.data);
+    return full?.blocks || [];
+  } catch {
+    return [];
+  }
+}
+
+/* ---------- component ---------- */
+export default function ChannelPage() {
+  const { slug, pageSlug } = useParams();
+  const ctx = useOutletContext() || {};
+
+  const [channel, setChannel] = useState(ctx.channel || null);
+  const [pages, setPages] = useState(ctx.pages || []);
+  const [blocks, setBlocks] = useState(null); // may be legacy array OR v2 doc object
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+
+    async function load() {
+      setErr("");
+      setLoading(true);
+
+      try {
+        // Work with local variables to avoid racing state reads
+        let localChannel = channel || null;
+        let localPages = Array.isArray(pages) ? pages : [];
+
+        // If shell didn't provide, fetch with fallbacks
+        if (!localChannel || localPages.length === 0) {
+          // Try aggregator (/channels/p/:slug)
+          try {
+            const agg = await api
+              .get(`/channels/p/${encodeURIComponent(slug)}`)
+              .then((r) => r.data);
+            if (agg?.channel) {
+              localChannel = agg.channel;
+              localPages = Array.isArray(agg.pages) ? agg.pages : [];
+            }
+          } catch {}
+
+          // Public endpoints
+          if (!localChannel || localPages.length === 0) {
+            try {
+              const chRes = await api
+                .get(`/channels/public/${encodeURIComponent(slug)}`)
+                .then((r) => r.data);
+              const ch =
+                chRes?.channel /* some backends wrap */ || chRes || null;
+
+              const pagesRes = await api
+                .get(`/channels/public/${encodeURIComponent(slug)}/pages`)
+                .then((r) => r.data);
+              const list = pagesRes?.pages /* wrapped */ || pagesRes || [];
+
+              if (ch || list.length) {
+                localChannel = ch;
+                localPages = Array.isArray(list) ? list : [];
+              }
+            } catch {}
+          }
+
+          // Private endpoints
+          if (!localChannel || localPages.length === 0) {
+            try {
+              const chRes = await api
+                .get(`/channels/${encodeURIComponent(slug)}`)
+                .then((r) => r.data);
+              const ch = chRes?.channel /* wrapped */ || chRes || null;
+
+              const pagesRes = await api
+                .get(`/channels/${encodeURIComponent(slug)}/pages`)
+                .then((r) => r.data);
+              const list = pagesRes?.pages /* wrapped */ || pagesRes || [];
+
+              localChannel = ch;
+              localPages = Array.isArray(list) ? list : [];
+            } catch {}
+          }
+
+          if (alive) {
+            setChannel(localChannel);
+            setPages(localPages);
+          }
+        }
+
+        // Decide which page to show
+        const list = localPages;
+        let showSlug = pageSlug;
+        if (!showSlug && list.length) {
+          const home =
+            list.find((p) => p.is_home) ||
+            list.find((p) => (p.slug || p.page_slug) === "home");
+          showSlug =
+            (home && (home.slug || home.page_slug)) ||
+            list[0].slug ||
+            list[0].page_slug;
+        }
+
+        if (showSlug) {
+          const b = await getPageBlocks(slug, showSlug);
+          if (!alive) return;
+          // Do NOT force to array; v2 is an object with {version:2, root:[...]}
+          setBlocks(b || null);
+        } else {
+          if (alive) setBlocks(null);
+        }
+      } catch {
+        if (!alive) return;
+        setErr("Failed to load page");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug, pageSlug]);
+
+  return (
+    <div>
+      {loading ? (
+        <div style={{ padding: 12 }}>Loading…</div>
+      ) : err ? (
+        <div
+          style={{
+            color: "#7f1d1d",
+            background: "#fee2e2",
+            border: "1px solid #fecaca",
+            borderRadius: 12,
+            padding: 12,
+          }}
+        >
+          {err}
+        </div>
+      ) : (
+        <>
+          {/* v2 renderer (sections/columns/widgets) */}
+          {blocks && blocks.version === 2 ? (
+            <RenderBlocksV2 doc={blocks} />
+          ) : (
+            /* ---------- Legacy renderer for older pages ---------- */
+            Array.isArray(blocks) &&
+            blocks.map((b, i) => {
+              if (b.type === "hero" || b.type === "section") {
+                return (
+                  <section
+                    key={i}
+                    style={{
+                      padding: 16,
+                      marginBottom: 12,
+                      // keep it minimal; no borders by default
+                      background: b.background || "transparent",
+                    }}
+                  >
+                    {b.heading && <h2 style={{ marginTop: 0 }}>{b.heading}</h2>}
+                    {b.subheading && <p>{b.subheading}</p>}
+                    {b.cta_text && (
+                      <a
+                        href={b.cta_url || "#"}
+                        style={{
+                          display: "inline-block",
+                          padding: "8px 12px",
+                          borderRadius: 10,
+                          background: "#2563eb",
+                          color: "#fff",
+                          textDecoration: "none",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {b.cta_text}
+                      </a>
+                    )}
+                  </section>
+                );
+              }
+              if (b.type === "richText" || b.type === "text") {
+                return (
+                  <section key={i} style={{ padding: 16, marginBottom: 12 }}>
+                    <div dangerouslySetInnerHTML={{ __html: b.html || "" }} />
+                  </section>
+                );
+              }
+              if (b.type === "liveEmbed") {
+                return (
+                  <section key={i} style={{ padding: 16, marginBottom: 12 }}>
+                    <h3>Live stream</h3>
+                    {b.html ? (
+                      <div dangerouslySetInnerHTML={{ __html: b.html }} />
+                    ) : b.url ? (
+                      <div
+                        style={{ position: "relative", paddingTop: "56.25%" }}
+                      >
+                        <iframe
+                          src={b.url}
+                          title="Live stream"
+                          allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+                          allowFullScreen
+                          style={{
+                            position: "absolute",
+                            inset: 0,
+                            width: "100%",
+                            height: "100%",
+                            border: 0,
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <div style={{ color: "#64748b" }}>
+                        No live embed configured.
+                      </div>
+                    )}
+                  </section>
+                );
+              }
+              if (b.type === "image" && (b.src || b.url)) {
+                return (
+                  <section key={i} style={{ padding: 16, marginBottom: 12 }}>
+                    <img
+                      src={absUrlMaybe(b.src || b.url)}
+                      alt={b.alt || ""}
+                      style={{ maxWidth: "100%", display: "block" }}
+                    />
+                  </section>
+                );
+              }
+              return null;
+            })
+          )}
+        </>
+      )}
+    </div>
+  );
+}

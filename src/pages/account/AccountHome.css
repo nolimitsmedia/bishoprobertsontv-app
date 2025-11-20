@@ -1,0 +1,150 @@
+.acct-wrap {
+  max-width: 1100px;
+  margin: 24px auto;
+  padding: 0 16px;
+}
+.acct-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.acct-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.acct-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #0f172a;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+.acct-name {
+  font-weight: 700;
+}
+.acct-email {
+  color: #6b7280;
+  font-size: 14px;
+}
+.acct-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.acct-grid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 900px) {
+  .acct-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.acct-stat {
+  margin-bottom: 12px;
+}
+.acct-stat-label {
+  color: #6b7280;
+  font-size: 13px;
+}
+.acct-stat-value {
+  font-weight: 700;
+  margin-top: 2px;
+}
+.acct-stat-sub {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.acct-error {
+  color: #b91c1c;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+.skeleton-line {
+  height: 20px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #eee, #f6f6f6, #eee);
+  animation: sk 1.3s infinite;
+}
+.skeleton-line.big {
+  height: 28px;
+}
+@keyframes sk {
+  0% {
+    background-position: -200px 0;
+  }
+  100% {
+    background-position: calc(200px + 100%) 0;
+  }
+}
+
+/* src/pages/account/Account.css */
+.account-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.account-header .avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #111;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+.account-header .spacer {
+  flex: 1;
+}
+.account-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.card.soft {
+  background: #fff;
+}
+.usage-item {
+  margin: 8px 0;
+}
+.usage-head {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.usage-bar {
+  height: 8px;
+  background: #eef2f7;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.usage-bar-fill {
+  height: 100%;
+  background: #1677ff;
+}
+.big {
+  font-size: 20px;
+  font-weight: 800;
+  margin: 4px 0 10px;
+}
+.muted {
+  color: #64748b;
+  font-size: 12px;
+  margin-top: 10px;
+}

@@ -1,0 +1,179 @@
+.ls-page {
+  display: grid;
+  gap: 16px;
+}
+
+/* Hero */
+.ls-hero {
+  padding: 20px;
+}
+.ls-hero-title {
+  font-size: 22px;
+  font-weight: 800;
+}
+.ls-hero-sub {
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.ls-hero-video {
+  padding: 0;
+  overflow: hidden;
+}
+.ls-hero-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.ls-hero-bar-title {
+  font-weight: 700;
+}
+.ls-hero-player {
+  background: #0b1320;
+  width: 100%;
+  aspect-ratio: 16/9;
+}
+.ls-hero-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.ls-cta {
+  display: flex;
+  justify-content: center;
+  padding-top: 8px;
+}
+
+/* Lists */
+.ls-h {
+  margin: 0 0 10px;
+}
+.ls-empty {
+  padding: 10px 0;
+  color: var(--muted);
+}
+.ls-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 1024px) {
+  .ls-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .ls-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ls-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+  background: #fff;
+}
+.ls-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.ls-title {
+  font-weight: 700;
+}
+.ls-sub {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 6px 0 10px;
+}
+.ls-meta {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  color: #334155;
+  font-size: 13px;
+}
+.ls-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.ls-pill {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+/* Forms / modal */
+.ls-form {
+  display: grid;
+  gap: 10px;
+}
+.ls-form label span {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.ls-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.ls-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: grid;
+  place-items: center;
+  z-index: 100;
+}
+.ls-modal-card {
+  width: min(640px, 96vw);
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  padding: 16px;
+}
+.ls-modal-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.ls-rtmp-grid {
+  display: grid;
+  gap: 10px;
+}
+.ls-field .ls-copy {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Button icon style from app */
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.icon-btn:hover {
+  background: #f7f8fa;
+}

@@ -1,0 +1,74 @@
+/* src/pages/Subscribe.css */
+
+.subscribe-page {
+  padding: 2rem;
+  max-width: 600px;
+  margin: auto;
+  text-align: center;
+}
+
+.subscribe-page h1 {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+}
+
+.subscribe-page p {
+  font-size: 1.1rem;
+  margin-bottom: 1.5rem;
+}
+
+.subscribe-btn {
+  padding: 0.75rem 1.5rem;
+  background-color: #4caf50;
+  border: none;
+  color: white;
+  font-size: 1rem;
+  cursor: pointer;
+  border-radius: 5px;
+}
+
+.subscribe-btn:hover {
+  background-color: #45a049;
+}
+
+.subscribed-box {
+  font-size: 1.2rem;
+  background: #f0fff0;
+  border: 1px solid #c5ecc5;
+  padding: 1rem;
+  border-radius: 5px;
+  color: #2e7d32;
+}
+
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin: 1rem 0 1.5rem;
+}
+
+.plan-card {
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  padding: 1rem;
+  cursor: pointer;
+  text-align: left;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.plan-card input {
+  display: none;
+}
+
+.plan-card.active {
+  border-color: #0055ff;
+  box-shadow: 0 0 0 3px rgba(0, 85, 255, 0.15);
+}
+
+.plan-name {
+  font-weight: 700;
+}
+.plan-price {
+  color: #444;
+}
