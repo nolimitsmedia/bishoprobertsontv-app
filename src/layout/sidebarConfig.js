@@ -4,9 +4,10 @@ export const ADMIN_SIDEBAR = [
   { label: "Videos", to: "/admin/videos", icon: "🎬" },
   { label: "Categories", to: "/admin/categories", icon: "🗂️" },
   { label: "Collections", to: "/admin/collections", icon: "📚" },
-  { label: "Live Streaming", to: "/admin/live", icon: "🔴" },
+  { label: "Live Streaming", to: "/admin/content/live", icon: "🔴" },
+  { label: "Live Stream", to: "/admin/live", icon: "🔴" },
   { label: "Subscriptions", to: "/admin/subscriptions", icon: "💳" },
-  { label: "Website Pages", to: "/admin/pages", icon: "📝" },
+  // { label: "Website Pages", to: "/admin/pages", icon: "📝" },
 ];
 
 export const PUBLIC_SIDEBAR = [

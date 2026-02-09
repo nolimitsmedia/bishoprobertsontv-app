@@ -1,0 +1,149 @@
+/* src/pages/public/About.css */
+
+.about-page {
+  background: #0b0d12;
+  color: #fff;
+  min-height: 100vh;
+}
+
+.about-wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 28px 20px 48px;
+
+  display: grid;
+  grid-template-columns: 420px 1fr;
+  gap: 34px;
+  align-items: start;
+}
+
+/* -----------------------------
+   LEFT COLUMN (IMAGES)
+------------------------------ */
+.about-left {
+  display: grid;
+  gap: 22px;
+}
+
+.about-imgCard {
+  border-radius: 18px;
+  overflow: hidden;
+  background: rgba(17, 24, 39, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+.about-imgCard--tall {
+  aspect-ratio: 5 / 5;
+  display: flex;
+  justify-content: center;
+}
+
+.about-imgCard:not(.about-imgCard--tall) {
+  aspect-ratio: 16 / 10;
+}
+
+.about-imgCard img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+/* -----------------------------
+   RIGHT COLUMN (TEXT)
+------------------------------ */
+.about-right {
+  padding-top: 4px;
+}
+
+.about-title {
+  margin: 0 0 18px;
+  font-size: 44px;
+  line-height: 1.12;
+  font-weight: 950;
+  letter-spacing: -0.02em;
+}
+
+.about-body {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 14.5px;
+  line-height: 1.8;
+}
+
+.about-body p {
+  margin: 0 0 18px;
+}
+
+.about-body a {
+  color: rgba(154, 92, 255, 0.95);
+  text-decoration: none;
+  font-weight: 800;
+}
+
+.about-body a:hover {
+  text-decoration: underline;
+}
+
+/* -----------------------------
+   RESPONSIVE
+------------------------------ */
+@media (max-width: 1050px) {
+  .about-wrap {
+    grid-template-columns: 360px 1fr;
+    gap: 26px;
+  }
+
+  .about-title {
+    font-size: 38px;
+  }
+}
+
+@media (max-width: 900px) {
+  .about-wrap {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+
+  .about-left {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .about-imgCard--tall {
+    grid-column: 1 / -1;
+    aspect-ratio: 16 / 10;
+  }
+
+  .about-title {
+    font-size: 36px;
+    text-align: left;
+  }
+}
+
+@media (max-width: 560px) {
+  .about-wrap {
+    padding: 20px 16px 40px;
+  }
+
+  .about-left {
+    grid-template-columns: 1fr;
+  }
+
+  .about-imgCard--tall {
+    aspect-ratio: 4 / 5;
+  }
+
+  .about-title {
+    font-size: 30px;
+  }
+
+  .about-body {
+    font-size: 14px;
+    line-height: 1.75;
+  }
+}
+
+.bishopImage {
+  width: 150px !important;
+}

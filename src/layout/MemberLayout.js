@@ -8,23 +8,22 @@ export default function MemberLayout() {
   const nav = useNavigate();
   const loc = useLocation();
   const [me, setMe] = useState(null);
-  const [sub, setSub] = useState(null); // <- subscription
+  const [sub, setSub] = useState(null);
   const [open, setOpen] = useState(false);
 
+  // Load user + subscription
   useEffect(() => {
     let ok = true;
     (async () => {
       try {
         const [{ data: meData }, subRes] = await Promise.all([
           api.get("/auth/me"),
-          // best-effort; if it fails we'll just show full menu
           api.get("/subscription/me").catch(() => ({ data: null })),
         ]);
         if (!ok) return;
         setMe(meData || null);
         setSub(subRes?.data || null);
       } catch {
-        // if token invalid, push to login
         nav("/login", { replace: true });
       }
     })();
@@ -43,6 +42,7 @@ export default function MemberLayout() {
   const initial =
     (me?.name || me?.email || "U").slice(0, 1).toUpperCase() || "U";
 
+  // Helper to build nav links
   const link = (to, label) => (
     <NavLink
       to={to}
@@ -53,22 +53,35 @@ export default function MemberLayout() {
     </NavLink>
   );
 
-  // ── Free-plan detection (status none/missing OR code/title contains "free")
+  /* ---------------------------------------------------------
+     PLAN + ROLE DETECTION
+  --------------------------------------------------------- */
   const planStr = (
     sub?.plan_code ||
     sub?.plan ||
     sub?.plan_title ||
     ""
   ).toLowerCase();
+
   const isFree =
     !sub?.status || sub?.status === "none" || planStr.includes("free");
 
-  // If Free and user opens /account (dashboard index), redirect to /account/playlists
+  const isAdmin = me?.role === "admin";
+
+  /* ---------------------------------------------------------
+     BLOCK FREE USERS & BLOCK NON-ADMINS FROM LIVE EVENTS
+  --------------------------------------------------------- */
   useEffect(() => {
+    // Free users cannot open /account dashboard → redirect to playlists
     if (isFree && loc.pathname === "/account") {
       nav("/account/playlists", { replace: true });
     }
-  }, [isFree, loc.pathname, nav]);
+
+    // Non-admins cannot access live studio pages
+    if (!isAdmin && loc.pathname.startsWith("/studio/live")) {
+      nav("/account/playlists", { replace: true });
+    }
+  }, [isFree, isAdmin, loc.pathname, nav]);
 
   return (
     <div className={`ml-shell ${open ? "is-open" : ""}`}>
@@ -86,13 +99,14 @@ export default function MemberLayout() {
 
         <nav className="ml-nav">
           <div className="ml-section">Account</div>
-          {/* Hide Dashboard for Free */}
+          {/* Dashboard hidden for Free */}
           {!isFree && link("/account", "Dashboard")}
 
           <div className="ml-section">Manage</div>
-          {/* Replace "My videos" -> "My Playlists" */}
           {link("/account/playlists", "My Playlists")}
-          {link("/studio/live", "Live events")}
+
+          {/* LIVE EVENTS — ONLY ADMINS CAN SEE */}
+          {isAdmin && link("/studio/live", "Live events")}
 
           {/* Mobile & TV Apps — hidden on Free */}
           {!isFree && (
@@ -119,7 +133,7 @@ export default function MemberLayout() {
         </div>
       </aside>
 
-      {/* Main */}
+      {/* Main content area */}
       <div className="ml-main">
         <header className="ml-topbar">
           <button
@@ -145,7 +159,7 @@ export default function MemberLayout() {
         </main>
       </div>
 
-      {/* Mobile dimmer */}
+      {/* Mobile dim background */}
       {open && (
         <button
           className="ml-dim"

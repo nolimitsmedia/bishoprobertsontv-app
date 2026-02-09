@@ -25,7 +25,7 @@ import {
  */
 export const MENU = [
   {
-    label: "ADMIN",
+    // label: "ADMIN",
     items: [
       { title: "Dashboard", to: "/admin", icon: Gauge },
 
@@ -33,11 +33,11 @@ export const MENU = [
         title: "Content",
         icon: Folder,
         children: [
-          // New Pages item
-          { title: "Pages", to: "/admin/pages", icon: BookText },
+          // ✅ Pages manager (Admin)
 
           { title: "Videos", to: "/admin/content/videos", icon: Video },
-          { title: "Live Streaming", to: "/studio/live", icon: Radio },
+          { title: "Live Streaming", to: "/admin/content/live", icon: Radio },
+          // { title: "Live Stream", to: "/studio/live", icon: Radio },
           {
             title: "Collections",
             to: "/admin/content/collections",
@@ -58,6 +58,50 @@ export const MENU = [
             title: "Community",
             to: "/community/new",
             icon: PanelsTopLeft,
+          },
+        ],
+      },
+      // {
+      //   title: "Pages",
+      //   to: "/admin/pages",
+      //   icon: BookText,
+      // },
+      {
+        title: "Analytics",
+        to: "/admin/content/analytics",
+        icon: BookText,
+      },
+      {
+        title: "Users",
+        to: "/admin/users",
+        icon: BookText,
+      },
+      // {
+      //   title: "Wasabi Import",
+      //   to: "/admin/content/wasabi-import",
+      //   icon: BookText,
+      // },
+      // {
+      //   title: "Wasabi to Bunny Import",
+      //   to: "/admin/content/wasabi-importer",
+      //   icon: BookText,
+      // },
+
+      {
+        title: "Integration",
+        icon: Folder,
+        children: [
+          // ✅ Pages manager (Admin)
+
+          {
+            title: "Wasabi Import",
+            to: "/admin/content/wasabi-import",
+            icon: BookText,
+          },
+          {
+            title: "Wasabi to Bunny Import",
+            to: "/admin/content/wasabi-importer",
+            icon: BookText,
           },
         ],
       },

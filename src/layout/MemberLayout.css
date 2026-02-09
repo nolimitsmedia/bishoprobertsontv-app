@@ -38,16 +38,17 @@
 }
 .ml-user-name {
   font-weight: 700;
+  color: #0b1220 !important;
 }
 .ml-user-email {
-  color: var(--muted);
+  color: var(--muted) !important;
   font-size: 12px;
 }
 
 .ml-section {
   margin-top: 12px;
   margin-bottom: 6px;
-  color: var(--muted);
+  color: var(--muted) !important;
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -81,6 +82,11 @@
   padding: 10px 12px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.ml-logout:hover {
+  background-color: rgb(247, 44, 44) !important;
+  color: #fff !important;
 }
 
 .ml-main {

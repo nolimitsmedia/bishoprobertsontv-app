@@ -1,0 +1,283 @@
+// src/pages/acc ount/PlaylistEditor.js
+import React, { useEffect, useMemo, useState, useRef } from "react";
+import { useParams, Link, useNavigate } from "react-router-dom";
+import api from "../../api";
+
+/** Fallback reorder payloads (different backends prefer different keys) */
+async function putReorder(playlistId, order) {
+  const attempts = [
+    () => api.put(`/playlists/${playlistId}/reorder`, { order }),
+    () => api.put(`/playlists/${playlistId}/reorder`, { video_ids: order }),
+    () => api.put(`/playlists/${playlistId}`, { order }), // last resort
+  ];
+  let lastErr;
+  for (const fn of attempts) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error("Reorder failed");
+}
+
+/** Try to fetch owner detail. Fallback to public detail if needed. */
+async function getDetail(idOrSlug) {
+  const attempts = [
+    () => api.get(`/playlists/${idOrSlug}`), // owner scope
+    () => api.get(`/playlists/public/${idOrSlug}`),
+  ];
+  for (const fn of attempts) {
+    try {
+      const r = await fn();
+      const p = r.data?.playlist ?? r.data;
+      // normalize shape: expect p.videos = [{id, title, thumb_url, ...}]
+      if (Array.isArray(p?.videos)) return p;
+    } catch (_) {}
+  }
+  throw new Error("Unable to load playlist");
+}
+
+export default function PlaylistEditor() {
+  const { idOrSlug } = useParams();
+  const nav = useNavigate();
+  const [pl, setPl] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const dragIndex = useRef(null);
+
+  useEffect(() => {
+    let ok = true;
+    (async () => {
+      setLoading(true);
+      setErr("");
+      try {
+        const detail = await getDetail(idOrSlug);
+        if (!ok) return;
+        setPl(detail);
+      } catch (e) {
+        if (!ok) return;
+        setErr(e?.response?.data?.message || e.message || "Failed to load");
+      } finally {
+        if (ok) setLoading(false);
+      }
+    })();
+    return () => {
+      ok = false;
+    };
+  }, [idOrSlug]);
+
+  function onDragStart(e, index) {
+    dragIndex.current = index;
+    e.dataTransfer.effectAllowed = "move";
+  }
+  function onDragOver(e) {
+    e.preventDefault();
+  }
+  function onDrop(e, index) {
+    e.preventDefault();
+    const from = dragIndex.current;
+    const to = index;
+    if (from == null || to == null || from === to) return;
+    setPl((p) => {
+      const items = [...(p?.videos || [])];
+      const [mv] = items.splice(from, 1);
+      items.splice(to, 0, mv);
+      return { ...p, videos: items };
+    });
+  }
+
+  async function saveOrder() {
+    if (!pl?.id || !Array.isArray(pl?.videos)) return;
+    setSaving(true);
+    setErr("");
+    try {
+      const order = pl.videos.map((v) => v.id);
+      await putReorder(pl.id, order);
+      alert("Order saved");
+    } catch (e) {
+      setErr(e?.response?.data?.message || "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeVideo(videoId) {
+    if (!window.confirm("Remove this video from the playlist?")) return;
+    try {
+      await api.delete(`/playlists/${pl.id}/videos/${videoId}`);
+      setPl((p) => ({
+        ...p,
+        videos: (p.videos || []).filter((v) => v.id !== videoId),
+      }));
+    } catch (e) {
+      alert(e?.response?.data?.message || "Remove failed");
+    }
+  }
+
+  if (loading) return <div style={{ padding: 16 }}>Loading…</div>;
+  if (err) return <div style={{ padding: 16, color: "crimson" }}>{err}</div>;
+  if (!pl) return null;
+
+  return (
+    <div style={{ maxWidth: 960, margin: "0 auto", padding: 16 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 12,
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>
+            Editing playlist
+          </div>
+          <h1 style={{ margin: 0 }}>{pl.title}</h1>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Link to={`/playlists/${pl.slug || pl.id}`} className="btn-outline">
+            Open public page
+          </Link>
+          <button onClick={() => nav(-1)} className="btn-outline">
+            Back
+          </button>
+        </div>
+      </div>
+
+      {Array.isArray(pl.videos) && pl.videos.length === 0 ? (
+        <div
+          style={{
+            color: "#667085",
+            border: "1px dashed #cbd5e1",
+            padding: 16,
+            borderRadius: 12,
+          }}
+        >
+          No videos yet. Go to any video and use “Add to playlist”.
+        </div>
+      ) : (
+        <>
+          <div style={{ fontSize: 13, color: "#667085", marginBottom: 8 }}>
+            Drag items to reorder. Changes are local until you click{" "}
+            <b>Save order</b>.
+          </div>
+
+          <ul
+            style={{
+              listStyle: "none",
+              margin: 0,
+              padding: 0,
+              display: "grid",
+              gap: 8,
+            }}
+          >
+            {pl.videos.map((v, i) => (
+              <li
+                key={v.id}
+                draggable
+                onDragStart={(e) => onDragStart(e, i)}
+                onDragOver={onDragOver}
+                onDrop={(e) => onDrop(e, i)}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "60px 1fr auto",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: 10,
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 10,
+                  background: "#fff",
+                  cursor: "move",
+                }}
+                title="Drag to reorder"
+              >
+                <img
+                  src={
+                    v.thumb_url ||
+                    v.thumbnail ||
+                    v.poster ||
+                    "/placeholder-thumb.jpg"
+                  }
+                  alt=""
+                  style={{
+                    width: 60,
+                    height: 36,
+                    objectFit: "cover",
+                    borderRadius: 8,
+                    background: "#f1f5f9",
+                  }}
+                  loading="lazy"
+                />
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {v.title || v.name || `Video ${v.id}`}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#667085" }}>
+                    {v.duration_label || v.duration || ""}{" "}
+                    {v.is_free ? "· Free" : ""}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Link
+                    to={`/videos/${v.slug || v.id}`}
+                    className="btn-outline"
+                  >
+                    View
+                  </Link>
+                  <button
+                    className="btn-danger"
+                    onClick={() => removeVideo(v.id)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <button
+              disabled={saving}
+              onClick={saveOrder}
+              style={{
+                padding: "10px 14px",
+                borderRadius: 10,
+                border: "1px solid #0b5cff",
+                background: "#0b5cff",
+                color: "#fff",
+                fontWeight: 600,
+              }}
+            >
+              {saving ? "Saving…" : "Save order"}
+            </button>
+            <Link to={`/playlists/${pl.slug || pl.id}`} className="btn-outline">
+              Open public page
+            </Link>
+          </div>
+        </>
+      )}
+
+      <style>{`
+        .btn-outline {
+          padding: 8px 12px; border-radius: 10px; border: 1px solid #cbd5e1;
+          background: #fff; color: #0b5cff; text-decoration: none; font-weight: 600;
+        }
+        .btn-outline:hover { background: #f8fafc; }
+        .btn-danger {
+          padding: 8px 12px; border-radius: 10px; border: 1px solid #fee2e2;
+          background: #fff; color: #b91c1c; font-weight: 600;
+        }
+        .btn-danger:hover { background: #fff1f2; }
+      `}</style>
+    </div>
+  );
+}

@@ -1,7 +1,25 @@
+// src/pages/public/CommunityEdit.js
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import api from "../../api";
 import "./Community.css";
+
+const API_ORIGIN = (() => {
+  try {
+    const u = new URL(api.defaults.baseURL || "", window.location.href);
+    return u.origin || window.location.origin;
+  } catch {
+    return window.location.origin;
+  }
+})();
+
+function absUrl(url) {
+  if (!url) return "";
+  if (/^(https?:|data:|blob:)/i.test(url)) return url;
+  if (url.startsWith("//")) return window.location.protocol + url;
+  if (url.startsWith("/")) return API_ORIGIN + url;
+  return API_ORIGIN + "/" + url.replace(/^\.\//, "");
+}
 
 export default function CommunityEdit() {
   const { id } = useParams();
@@ -9,7 +27,9 @@ export default function CommunityEdit() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+
+  // toast state
+  const [notice, setNotice] = useState(null); // { type: "success"|"error", text: string }
 
   // post fields
   const [title, setTitle] = useState("");
@@ -24,36 +44,52 @@ export default function CommunityEdit() {
   const [channels, setChannels] = useState([]);
 
   // live preview if a new file was chosen
-  const previewSrc = useMemo(
-    () => (file ? URL.createObjectURL(file) : mediaUrl),
-    [file, mediaUrl]
-  );
+  const previewSrc = useMemo(() => {
+    if (file) return URL.createObjectURL(file);
+    return mediaUrl ? absUrl(mediaUrl) : "";
+  }, [file, mediaUrl]);
 
-  // load post + channels
+  // cleanup blob url when file changes/unmounts
+  useEffect(() => {
+    if (!file) return;
+    const blobUrl = previewSrc;
+    return () => {
+      try {
+        URL.revokeObjectURL(blobUrl);
+      } catch {
+        /* no-op */
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file]);
+
+  // load post + channels (fixed endpoints)
   useEffect(() => {
     let alive = true;
 
     (async () => {
       try {
         const [{ data: postRes }, { data: chRes }] = await Promise.all([
-          api.get(`/api/community/posts/${id}`),
-          api
-            .get("/api/community/channels")
-            .catch(() => ({ data: { items: [] } })),
+          api.get(`/community/posts/${id}`),
+          api.get("/community/channels").catch(() => ({ data: { items: [] } })),
         ]);
         if (!alive) return;
 
         const p = postRes.post;
         setTitle(p.title || "");
         setBody(p.body || "");
-        setMediaUrl(p.media_url || null);
+        setMediaUrl(p.media_url ? absUrl(p.media_url) : null);
         setIsPinned(!!p.is_pinned);
         setVisibility(p.visibility || "public");
         setChannelId(p.channel_id ?? "");
         setChannels(chRes.items || []);
       } catch (e) {
         if (!alive) return;
-        setError(e?.response?.data?.message || "Unable to load the post.");
+        setNotice({
+          type: "error",
+          text: e?.response?.data?.message || "Unable to load the post.",
+        });
+        setTimeout(() => setNotice(null), 3000);
       } finally {
         if (alive) setLoading(false);
       }
@@ -61,9 +97,7 @@ export default function CommunityEdit() {
 
     return () => {
       alive = false;
-      if (file) URL.revokeObjectURL(previewSrc);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const onSelectFile = (e) => {
@@ -76,25 +110,33 @@ export default function CommunityEdit() {
     if (saving) return;
 
     setSaving(true);
-    setError("");
+    setNotice(null);
 
     try {
       const fd = new FormData();
       fd.append("title", title || "");
-      fd.append("content", body || "");
+      fd.append("body", body || ""); // backend supports body/content/text
       if (file) fd.append("media", file);
-      // backend enforces who can set these
+
       fd.append("is_pinned", isPinned ? "true" : "false");
       fd.append("visibility", visibility || "public");
       if (channelId !== "") fd.append("channel_id", String(channelId));
 
-      const { data } = await api.patch(`/api/community/posts/${id}`, fd, {
+      const { data } = await api.patch(`/community/posts/${id}`, fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
-      navigate(`/community/${data.post.id}`);
-    } catch (e) {
-      setError(e?.response?.data?.message || "Save failed.");
+      setNotice({ type: "success", text: "Post updated successfully." });
+      setTimeout(() => setNotice(null), 2500);
+
+      // small delay to let the toast show
+      setTimeout(() => navigate(`/community/${data.post.id}`), 650);
+    } catch (e2) {
+      setNotice({
+        type: "error",
+        text: e2?.response?.data?.message || "Save failed.",
+      });
+      setTimeout(() => setNotice(null), 3000);
     } finally {
       setSaving(false);
     }
@@ -121,8 +163,6 @@ export default function CommunityEdit() {
         </div>
       </div>
 
-      {error && <div className="alert alert-danger">{error}</div>}
-
       {loading ? (
         <div className="card p-24">Loading…</div>
       ) : (
@@ -134,7 +174,13 @@ export default function CommunityEdit() {
                 <label className="form-label">Image</label>
                 <div className="media-preview">
                   {previewSrc ? (
-                    <img src={previewSrc} alt="preview" />
+                    <img
+                      src={previewSrc}
+                      alt="preview"
+                      onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                      }}
+                    />
                   ) : (
                     <div className="media-empty">No image</div>
                   )}
@@ -232,6 +278,17 @@ export default function CommunityEdit() {
             </div>
           </div>
         </form>
+      )}
+
+      {/* Toast */}
+      {notice && (
+        <div
+          className={`comm-toast ${
+            notice.type === "error" ? "is-error" : "is-success"
+          }`}
+        >
+          {notice.text}
+        </div>
       )}
     </div>
   );

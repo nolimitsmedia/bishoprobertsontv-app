@@ -1,0 +1,811 @@
+// src/pages/admin/LiveStreaming.js
+import React, { useEffect, useMemo, useState } from "react";
+import api from "../../api";
+import "./LiveStreaming.css";
+
+/* ---------------------------- small helpers ---------------------------- */
+function cls(...xs) {
+  return xs.filter(Boolean).join(" ");
+}
+function fmtSince(sec) {
+  if (!sec || sec < 0) return "";
+  if (sec < 60) return `since ${sec}s ago`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  if (m < 60) return `since ${m}m ${s}s ago`;
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return `since ${h}h ${mm}m ago`;
+}
+function copy(text) {
+  try {
+    navigator.clipboard.writeText(text || "");
+  } catch (_) {}
+}
+
+/* ------------------------------ page css ------------------------------ */
+const styles = {
+  page: { display: "grid", gap: 16 },
+
+  statsGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+    gap: 12,
+  },
+
+  // responsive grid for main content (channel + schedule)
+  mainGrid: {
+    display: "grid",
+    gap: 16,
+    gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
+    alignItems: "flex-start",
+  },
+
+  card: {
+    background: "#fff",
+    border: "1px solid #e5e7eb",
+    borderRadius: 12,
+    padding: 16,
+  },
+
+  statTitle: {
+    fontSize: 12,
+    color: "#6b7280",
+    textTransform: "uppercase",
+    marginBottom: 8,
+  },
+
+  statValueRow: { display: "flex", alignItems: "center", gap: 10 },
+
+  statValue: { fontWeight: 800, fontSize: 18 },
+
+  badge: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    padding: "4px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+  },
+
+  channelHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+
+  channelTitle: { fontWeight: 800, fontSize: 18 },
+
+  toggleWrap: { display: "flex", alignItems: "center", gap: 8 },
+
+  toggle: (on) => ({
+    position: "relative",
+    width: 46,
+    height: 26,
+    borderRadius: 999,
+    background: on ? "#4ade80" : "#e5e7eb",
+    transition: "background .2s",
+    cursor: "pointer",
+  }),
+
+  knob: (on) => ({
+    position: "absolute",
+    top: 3,
+    left: on ? 22 : 3,
+    width: 20,
+    height: 20,
+    borderRadius: "50%",
+    background: "#fff",
+    transition: "left .2s",
+  }),
+
+  playerWrap: {
+    position: "relative",
+    width: "100%",
+    aspectRatio: "16/9",
+    background: "#0b0b0b",
+    borderRadius: 10,
+    overflow: "hidden",
+    minHeight: 420,
+  },
+
+  iframeFill: {
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    height: "100%",
+    border: 0,
+  },
+
+  offlineCenter: {
+    position: "absolute",
+    inset: 0,
+    display: "grid",
+    placeItems: "center",
+    color: "#e5e7eb",
+  },
+
+  playOverlay: {
+    position: "absolute",
+    inset: 0,
+    display: "grid",
+    placeItems: "center",
+    background:
+      "radial-gradient(60% 60% at 50% 50%, rgba(0,0,0,.35) 0%, rgba(0,0,0,.65) 100%)",
+  },
+
+  playBtn: {
+    width: 74,
+    height: 74,
+    borderRadius: "50%",
+    background: "#fff",
+    display: "grid",
+    placeItems: "center",
+    cursor: "pointer",
+    boxShadow: "0 6px 20px rgba(0,0,0,.35)",
+  },
+
+  btnRow: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 12,
+  },
+
+  btn: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "10px 14px",
+    border: "1px solid #e5e7eb",
+    borderRadius: 8,
+    background: "#fff",
+    cursor: "pointer",
+    fontWeight: 600,
+  },
+
+  modalBackdrop: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,.45)",
+    display: "grid",
+    placeItems: "center",
+    zIndex: 1000,
+  },
+
+  modal: {
+    width: "min(720px, 92vw)",
+    background: "#fff",
+    borderRadius: 12,
+    padding: 18,
+  },
+
+  modalHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+
+  modalTitle: { fontWeight: 800, fontSize: 18 },
+
+  modalClose: {
+    border: "1px solid #e5e7eb",
+    padding: "8px 10px",
+    borderRadius: 8,
+    background: "#fff",
+    cursor: "pointer",
+  },
+
+  inputRow: { position: "relative" },
+
+  input: {
+    width: "100%",
+    border: "1px solid #e5e7eb",
+    borderRadius: 8,
+    padding: "12px 44px 12px 12px",
+    fontFamily: "monospace",
+    background: "#f8fafc",
+  },
+
+  copyBtn: {
+    position: "absolute",
+    right: 8,
+    top: 8,
+    padding: "0 10px",
+    height: 30,
+    border: "1px solid #e5e7eb",
+    borderRadius: 6,
+    background: "#fff",
+    cursor: "pointer",
+  },
+
+  /* toast styles */
+  toastContainer: {
+    position: "fixed",
+    right: 24,
+    bottom: 24,
+    zIndex: 2000,
+  },
+  toast: (type) => ({
+    minWidth: 260,
+    maxWidth: 360,
+    padding: "10px 14px",
+    borderRadius: 10,
+    boxShadow: "0 10px 25px rgba(0,0,0,.25)",
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    fontSize: 14,
+    background: type === "error" ? "#fee2e2" : "#dcfce7",
+    color: type === "error" ? "#b91c1c" : "#166534",
+  }),
+  toastDot: (type) => ({
+    width: 8,
+    height: 8,
+    borderRadius: "50%",
+    background: type === "error" ? "#b91c1c" : "#16a34a",
+  }),
+  toastCloseBtn: {
+    marginLeft: "auto",
+    border: "none",
+    background: "transparent",
+    cursor: "pointer",
+    fontSize: 16,
+    lineHeight: 1,
+  },
+};
+
+/* ------------------------------ Modal Component ------------------------------ */
+function Modal({ open, title, onClose, children }) {
+  if (!open) return null;
+  return (
+    <div style={styles.modalBackdrop} onClick={onClose}>
+      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={styles.modalHeader}>
+          <div style={styles.modalTitle}>{title}</div>
+          <button style={styles.modalClose} onClick={onClose}>
+            Close
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function CopyInput({ label, value }) {
+  return (
+    <div style={{ marginBottom: 12 }}>
+      {!!label && (
+        <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>
+          {label}
+        </div>
+      )}
+      <div style={styles.inputRow}>
+        <input readOnly value={value || ""} style={styles.input} />
+        <button
+          style={styles.copyBtn}
+          title="Copy"
+          onClick={() => copy(value || "")}
+        >
+          ⧉
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* --------------------------- stat card widgets --------------------------- */
+function StatusCard({ online, startingSince }) {
+  const color = online ? "#10b981" : "#6b7280";
+  const label = online ? "Broadcasting" : "Ready";
+  return (
+    <div style={styles.card}>
+      <div style={styles.statTitle}>Status</div>
+      <div style={styles.statValueRow}>
+        <span style={{ ...styles.badge, background: color + "20", color }}>
+          <span
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: color,
+              display: "inline-block",
+            }}
+          />
+          {label}
+        </span>
+        {online && startingSince ? (
+          <span style={{ color: "#6b7280", fontSize: 12 }}>
+            {fmtSince(startingSince)}
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ViewersCard({ viewers = 0 }) {
+  return (
+    <div style={styles.card}>
+      <div style={styles.statTitle}>Viewers</div>
+      <div style={styles.statValueRow}>
+        <div style={styles.statValue}>{viewers} Online</div>
+        <span style={{ color: "#6b7280", fontSize: 12 }}>
+          0% Since last hour
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function BroadcastCard({ mbps = 0, profile = "" }) {
+  return (
+    <div style={styles.card}>
+      <div style={styles.statTitle}>Broadcast</div>
+      <div style={styles.statValueRow}>
+        <div style={styles.statValue}>{mbps.toFixed(2)} Mbps</div>
+        {profile ? (
+          <span style={{ color: "#6b7280", fontSize: 12 }}>{profile}</span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+// Display-only RecordingCard (no click, no toggle)
+function RecordingCard({ recording = false }) {
+  const active = !!recording;
+  return (
+    <div style={styles.card}>
+      <div style={styles.statTitle}>Recording</div>
+      <div style={styles.statValueRow}>
+        <span
+          style={{
+            ...styles.badge,
+            background: (active ? "#ef4444" : "#6b7280") + "20",
+            color: active ? "#ef4444" : "#6b7280",
+          }}
+        >
+          <span
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: active ? "#ef4444" : "#9ca3af",
+              display: "inline-block",
+            }}
+          />
+          {active ? "Recording" : "Not Recording"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* ----------------------------- Toast Component ----------------------------- */
+function Toast({ open, type, message, onClose }) {
+  if (!open || !message) return null;
+  return (
+    <div style={styles.toastContainer}>
+      <div style={styles.toast(type)}>
+        <span style={styles.toastDot(type)} />
+        <span>{message}</span>
+        <button style={styles.toastCloseBtn} onClick={onClose}>
+          ×
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------- MAIN PAGE ------------------------------- */
+export default function LiveStreaming() {
+  const [loading, setLoading] = useState(true);
+  const [channels, setChannels] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
+
+  const [stats, setStats] = useState({
+    online: false,
+    starting_for_sec: 0,
+    viewers: 0,
+    bitrate_mbps: 0,
+    recording: false,
+    quality: "",
+  });
+
+  const [overrideOnline, setOverrideOnline] = useState(null);
+  const [previewStarted, setPreviewStarted] = useState(false);
+
+  // NEXT LIVE SCHEDULE
+  const [nextLive, setNextLive] = useState(""); // local "YYYY-MM-DDTHH:MM"
+  const [nextLiveLoading, setNextLiveLoading] = useState(false);
+  const [nextLiveSaving, setNextLiveSaving] = useState(false);
+
+  // toast
+  const [toast, setToast] = useState({
+    open: false,
+    type: "success",
+    message: "",
+  });
+
+  // modals
+  const [encOpen, setEncOpen] = useState(false);
+  const [codeOpen, setCodeOpen] = useState(false);
+  const [eventsOpen, setEventsOpen] = useState(false);
+  const [fallbackOpen, setFallbackOpen] = useState(false);
+
+  const channel = useMemo(
+    () => channels.find((c) => String(c.id) === String(selectedId)) || null,
+    [channels, selectedId]
+  );
+
+  const showToast = (type, message) => {
+    setToast({ open: true, type, message });
+    // auto-hide after 3 seconds
+    setTimeout(() => {
+      setToast((prev) =>
+        prev.message === message ? { ...prev, open: false } : prev
+      );
+    }, 3000);
+  };
+
+  /* ---------------------------- load channels ---------------------------- */
+  useEffect(() => {
+    let alive = true;
+    async function run() {
+      try {
+        setLoading(true);
+        const { data } = await api.get("/streamcontrol/channels");
+        if (!alive) return;
+
+        setChannels(data || []);
+        const first = data?.[0]?.id || null;
+
+        setSelectedId(first);
+        if (first) {
+          const saved = localStorage.getItem(`live_toggle_${first}`);
+          if (saved === "1" || saved === "0") {
+            setOverrideOnline(saved === "1");
+          }
+        }
+      } catch (e) {
+        console.error("load channels failed", e);
+      } finally {
+        setLoading(false);
+      }
+    }
+    run();
+    return () => (alive = false);
+  }, []);
+
+  /* -------------- load next live schedule (AFTER selectedId set) -------------- */
+  useEffect(() => {
+    if (!selectedId) return;
+
+    async function loadSchedule() {
+      try {
+        setNextLiveLoading(true);
+        const { data } = await api.get(
+          `/streamcontrol/${selectedId}/next-live`
+        );
+        const ts = data?.next_live_datetime;
+
+        if (!ts) {
+          setNextLive("");
+          return;
+        }
+
+        const d = new Date(ts);
+        if (isNaN(d.getTime())) {
+          console.warn("Invalid next_live_datetime from server:", ts);
+          setNextLive("");
+          return;
+        }
+
+        const pad = (n) => String(n).padStart(2, "0");
+        const localValue =
+          `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+          `T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+        setNextLive(localValue);
+      } catch (e) {
+        console.error("Failed loading next live schedule", e);
+        setNextLive("");
+      } finally {
+        setNextLiveLoading(false);
+      }
+    }
+
+    loadSchedule();
+  }, [selectedId]);
+
+  /* ------------------------------ poll stats ------------------------------ */
+  useEffect(() => {
+    if (!selectedId) return;
+    let disposed = false;
+
+    async function tick() {
+      try {
+        const { data } = await api.get(
+          `/streamcontrol/${encodeURIComponent(selectedId)}/stats`
+        );
+
+        if (!disposed) {
+          setStats((prev) => ({
+            ...prev,
+            online:
+              overrideOnline !== null
+                ? overrideOnline
+                : !!(data?.online ?? data?.status === "online"),
+            starting_for_sec: Number(data?.starting_for_sec || 0),
+            viewers: Number(data?.viewers || 0),
+            bitrate_mbps: Number(data?.bitrate_mbps || 0),
+            recording: !!data?.recording,
+            quality: data?.quality || "",
+          }));
+        }
+      } catch (e) {
+        console.warn("stats error:", e?.message || e);
+      }
+    }
+
+    tick();
+    const id = setInterval(tick, 5000);
+    return () => {
+      disposed = true;
+      clearInterval(id);
+    };
+  }, [selectedId, overrideOnline]);
+
+  const effectiveOnline = overrideOnline ?? stats.online;
+
+  /* ------------------------------ save schedule ------------------------------ */
+  async function saveSchedule() {
+    if (!selectedId || !nextLive) return;
+
+    try {
+      setNextLiveSaving(true);
+
+      const utcIso = new Date(nextLive).toISOString();
+
+      await api.post(`/streamcontrol/${selectedId}/next-live`, {
+        next_live_datetime: utcIso,
+      });
+
+      showToast("success", "Next live schedule saved.");
+    } catch (e) {
+      console.error("Saving schedule failed", e);
+      showToast("error", "Error saving schedule. Please try again.");
+    } finally {
+      setNextLiveSaving(false);
+    }
+  }
+
+  /* --------------------------- toggle broadcast --------------------------- */
+  function toggleBroadcast() {
+    setOverrideOnline((prev) => {
+      const next = !(prev ?? stats.online);
+      if (selectedId) {
+        localStorage.setItem(`live_toggle_${selectedId}`, next ? "1" : "0");
+      }
+      setPreviewStarted(false);
+      return next;
+    });
+  }
+
+  /* ------------------------------ modal values ------------------------------ */
+  const serverUrl =
+    channel?.rtmp_url || "rtmps://ingest.mycloudstream.io:1936/static";
+  const streamKey = channel?.stream_key || "";
+  const playerIframe = channel?.player_iframe_src || "";
+  const hlsUrl = channel?.hls_url || "";
+  const publicUrl = channel?.public_url || "";
+
+  /* ------------------------------ render ------------------------------ */
+  if (loading) return <div className="card">Loading…</div>;
+  if (!channel) return <div className="card">No channels found.</div>;
+
+  return (
+    <>
+      <div style={styles.page}>
+        {/* top stat cards */}
+        <div style={styles.statsGrid}>
+          <StatusCard
+            online={effectiveOnline}
+            startingSince={stats.starting_for_sec}
+          />
+          <ViewersCard viewers={stats.viewers} />
+          <BroadcastCard
+            mbps={stats.bitrate_mbps}
+            profile={stats.quality || ""}
+          />
+          <RecordingCard recording={stats.recording} />
+        </div>
+
+        {/* 2-column responsive layout for channel (left) + schedule (right) */}
+        <div style={styles.mainGrid}>
+          {/* channel section - NOW FIRST */}
+          <section style={styles.card}>
+            <div style={styles.channelHeader}>
+              <div style={styles.channelTitle}>
+                {channel.title || channel.name || "Live Channel"}
+              </div>
+
+              <div style={styles.toggleWrap}>
+                <div
+                  onClick={toggleBroadcast}
+                  style={styles.toggle(effectiveOnline)}
+                >
+                  <span style={styles.knob(effectiveOnline)} />
+                </div>
+                <span style={{ color: "#6b7280", fontWeight: 700 }}>
+                  {effectiveOnline ? "On" : "Off"}
+                </span>
+              </div>
+            </div>
+
+            {/* preview player */}
+            <div style={styles.playerWrap}>
+              {effectiveOnline ? (
+                <>
+                  {!previewStarted && (
+                    <div style={styles.playOverlay}>
+                      <div
+                        style={styles.playBtn}
+                        onClick={() => setPreviewStarted(true)}
+                      >
+                        ▶
+                      </div>
+                    </div>
+                  )}
+                  {previewStarted && (
+                    <iframe
+                      src={playerIframe}
+                      title="Stream Preview"
+                      style={styles.iframeFill}
+                      allow="autoplay; fullscreen; picture-in-picture"
+                    />
+                  )}
+                </>
+              ) : (
+                <div style={styles.offlineCenter}>
+                  <div style={{ textAlign: "center" }}>
+                    <div
+                      style={{
+                        fontSize: 18,
+                        fontWeight: 800,
+                        color: "#fff",
+                        marginBottom: 6,
+                      }}
+                    >
+                      Broadcast Offline
+                    </div>
+                    <div style={{ color: "#9ca3af" }}>
+                      Waiting for encoder connection…
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* actions */}
+            <div style={styles.btnRow}>
+              <button style={styles.btn} onClick={() => setEncOpen(true)}>
+                🎛 Encoder Setup
+              </button>
+              <button style={styles.btn} onClick={() => setCodeOpen(true)}>
+                ▶ Player Code
+              </button>
+              <button style={styles.btn} onClick={() => setEventsOpen(true)}>
+                🗂 Stream Events
+              </button>
+              <button style={styles.btn} onClick={() => setFallbackOpen(true)}>
+                ⤵ Fallback Video
+              </button>
+            </div>
+          </section>
+
+          {/* NEXT LIVE SCHEDULE - NOW SECOND */}
+          <section style={styles.card}>
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>
+              Next Live Schedule
+            </div>
+            <div>
+              <input
+                type="datetime-local"
+                value={nextLive}
+                onChange={(e) => setNextLive(e.target.value)}
+                style={{
+                  marginTop: 6,
+                  padding: "10px",
+                  width: "100%",
+                  borderRadius: 8,
+                  border: "1px solid #ccc",
+                }}
+              />
+
+              <button
+                onClick={saveSchedule}
+                disabled={nextLiveSaving}
+                style={{
+                  marginTop: 10,
+                  padding: "10px 14px",
+                  background: "#2563eb",
+                  color: "#fff",
+                  borderRadius: 8,
+                  border: "none",
+                  cursor: "pointer",
+                }}
+              >
+                {nextLiveSaving ? "Saving..." : "Save Schedule"}
+              </button>
+            </div>
+          </section>
+        </div>
+
+        {/* ---------------------------- Modals ---------------------------- */}
+        <Modal
+          open={encOpen}
+          title="Encoder Setup"
+          onClose={() => setEncOpen(false)}
+        >
+          <CopyInput label="Server URL" value={serverUrl} />
+          <CopyInput label="Stream Key" value={streamKey} />
+        </Modal>
+
+        <Modal
+          open={codeOpen}
+          title="Player Code"
+          onClose={() => setCodeOpen(false)}
+        >
+          <CopyInput
+            label="Embed iframe"
+            value={`<iframe src="${playerIframe}" width="100%" height="480" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>`}
+          />
+          <CopyInput label="Direct HLS Link" value={hlsUrl} />
+          <CopyInput label="Public Page" value={publicUrl} />
+        </Modal>
+
+        <Modal
+          open={eventsOpen}
+          title="Stream Events"
+          onClose={() => setEventsOpen(false)}
+        >
+          <div style={{ color: "#6b7280" }}>Events will appear here soon.</div>
+        </Modal>
+
+        <Modal
+          open={fallbackOpen}
+          title="Fallback Video"
+          onClose={() => setFallbackOpen(false)}
+        >
+          <div style={{ color: "#6b7280", marginBottom: 10 }}>
+            Upload a fallback video to play when offline.
+          </div>
+          <div
+            style={{
+              border: "2px dashed #e5e7eb",
+              padding: 24,
+              borderRadius: 12,
+              textAlign: "center",
+              color: "#6b7280",
+            }}
+          >
+            Drag & drop .mp4 here (UI only)
+          </div>
+        </Modal>
+      </div>
+
+      {/* Toast */}
+      <Toast
+        open={toast.open}
+        type={toast.type}
+        message={toast.message}
+        onClose={() => setToast((t) => ({ ...t, open: false }))}
+      />
+    </>
+  );
+}

@@ -1,0 +1,111 @@
+/* src/pages/public/PastoralLeadership.css */
+
+.pl-page {
+  background: #0b0d12;
+  color: #fff;
+  min-height: 100vh;
+}
+
+/* container */
+.pl-wrap {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 20px 60px;
+}
+
+/* ----------------------------------------
+   HERO: lots of black space + centered portrait
+---------------------------------------- */
+.pl-hero {
+  padding: 34px 0 8px;
+}
+
+.pl-hero-inner {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  /* mimic the large top spacing from screenshot */
+  min-height: 420px;
+}
+
+.pl-portrait {
+  width: min(520px, 72vw);
+  aspect-ratio: 1 / 1;
+  display: grid;
+  place-items: center;
+}
+
+.pl-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+
+  /* subtle lift without changing your dark theme */
+  filter: drop-shadow(0 28px 60px rgba(0, 0, 0, 0.6));
+}
+
+/* ----------------------------------------
+   TEXT
+---------------------------------------- */
+.pl-content {
+  padding-top: 10px;
+}
+
+.pl-text {
+  max-width: 980px;
+  margin: 0 auto;
+
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 14.5px;
+  line-height: 1.9;
+}
+
+.pl-text p {
+  margin: 0 0 18px;
+}
+
+/* ----------------------------------------
+   RESPONSIVE
+---------------------------------------- */
+@media (max-width: 900px) {
+  .pl-hero-inner {
+    min-height: 360px;
+  }
+
+  .pl-portrait {
+    width: min(440px, 78vw);
+  }
+
+  .pl-text {
+    font-size: 14px;
+    line-height: 1.85;
+  }
+}
+
+@media (max-width: 560px) {
+  .pl-wrap {
+    padding: 0 16px 50px;
+  }
+
+  .pl-hero {
+    padding-top: 22px;
+  }
+
+  .pl-hero-inner {
+    min-height: 300px;
+  }
+
+  .pl-portrait {
+    width: min(360px, 86vw);
+  }
+
+  .pl-text {
+    font-size: 13.8px;
+    line-height: 1.8;
+  }
+}
+.bishopImage {
+  width: 270px !important;
+}

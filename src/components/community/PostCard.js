@@ -1,5 +1,6 @@
 // src/components/community/PostCard.jsx
 import React, { useState } from "react";
+import { Link } from "react-router-dom"; // <-- ADD THIS
 import api from "../../api";
 import Markdown from "./Markdown";
 import "./PostCard.css";
@@ -23,7 +24,6 @@ export default function PostCard({ post, onLike, onEdit, onDelete }) {
     try {
       setLiking(true);
       const { data } = await api.post(`/community/posts/${post.id}/like`);
-      // optimistic notify parent to update count
       onLike?.(post.id, data?.liked === true);
     } catch (e) {
       console.error("like failed", e);
@@ -40,21 +40,21 @@ export default function PostCard({ post, onLike, onEdit, onDelete }) {
         {!!when && <div className="comm-date">{when}</div>}
       </div>
 
-      {/* Media (clickable to detail) */}
+      {/* Media */}
       {post?.media_url && (
-        <a className="comm-card__media" href={`/community/${post.id}`}>
+        <Link className="comm-card__media" to={`/community/${post.id}`}>
           <img src={post.media_url} alt="" loading="lazy" />
-        </a>
+        </Link>
       )}
 
-      {/* Title under the image (also clickable) */}
+      {/* Title */}
       {post?.title && (
-        <a href={`/community/${post.id}`} className="comm-card__title">
+        <Link to={`/community/${post.id}`} className="comm-card__title">
           {post.title}
-        </a>
+        </Link>
       )}
 
-      {/* Body (markdown) */}
+      {/* Body */}
       {post?.body && (
         <div className="comm-card__body">
           <Markdown>{post.body}</Markdown>
@@ -74,8 +74,8 @@ export default function PostCard({ post, onLike, onEdit, onDelete }) {
             <span className="badge">{post?.likes_count ?? 0}</span>
           </button>
 
-          <a
-            href={`/community/${post?.id}`}
+          <Link
+            to={`/community/${post?.id}`}
             className="comm-btn"
             title="View & comment"
           >
@@ -83,7 +83,7 @@ export default function PostCard({ post, onLike, onEdit, onDelete }) {
             {post?.comments_count ? (
               <span className="badge">{post.comments_count}</span>
             ) : null}
-          </a>
+          </Link>
         </div>
 
         {(post?.can_edit || post?.can_delete) && (

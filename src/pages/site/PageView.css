@@ -1,0 +1,41 @@
+/* src/pages/site/PageView.css */
+.pv-wrap {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 18px;
+}
+.pv-card {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  padding: 18px;
+}
+.pv-card--error {
+  border-color: rgba(255, 80, 80, 0.25);
+}
+.pv-title {
+  margin: 0 0 10px;
+  font-size: 30px;
+}
+.pv-muted {
+  opacity: 0.75;
+}
+.pv-errorTitle {
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+.pv-errorText {
+  opacity: 0.9;
+}
+.pv-content {
+  line-height: 1.65;
+}
+.pv-content a {
+  color: inherit;
+  text-decoration: underline;
+}
+.pv-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 14px;
+}

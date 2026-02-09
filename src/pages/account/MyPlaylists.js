@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../../api";
+import "./MyPlaylists.css";
 
 /** Try multiple endpoints until one works and normalize shapes. */
 async function getMyPlaylists() {
@@ -137,7 +138,10 @@ export default function MyPlaylists() {
           marginBottom: 14,
         }}
       >
-        <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>
+        <h1
+          style={{ fontSize: 22, fontWeight: 700, margin: 0, color: "#000" }}
+          className="playlist-head"
+        >
           My Playlists
         </h1>
         <Link to="/catalog" className="btn-outline">
@@ -210,7 +214,7 @@ export default function MyPlaylists() {
             border: "1px dashed #cbd5e1",
             borderRadius: 12,
             padding: 16,
-            color: "#64748b",
+            color: "#64748b!important",
             background: "#f8fafc",
           }}
         >
@@ -242,8 +246,17 @@ export default function MyPlaylists() {
               }}
             >
               <div>
-                <div style={{ fontWeight: 700 }}>{p.title || "Untitled"}</div>
-                <div style={{ fontSize: 13, color: "#667085", marginTop: 2 }}>
+                <div style={{ fontWeight: 700 }} className="playlists-title">
+                  {p.title || "Untitled"}
+                </div>
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: "#667085!important",
+                    marginTop: 2,
+                  }}
+                  className="playlists-sub"
+                >
                   {p.is_public ? "Public" : "Private"} · {count}{" "}
                   {count === 1 ? "video" : "videos"}
                 </div>

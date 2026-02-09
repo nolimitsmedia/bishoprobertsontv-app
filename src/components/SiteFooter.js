@@ -3,12 +3,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../api";
 import "./SiteFooter.css";
-
-function getBrandFallback() {
-  const host = window.location.hostname.replace(/^www\./, "");
-  const guess = host.split(".")[0] || "BishopTV";
-  return guess.charAt(0).toUpperCase() + guess.slice(1);
-}
+import Logo from "../assets/BishopRobertsonTVLogo.png";
 
 // Feature flag: only fetch /public/site when explicitly enabled.
 // Turn on via any of:
@@ -23,7 +18,7 @@ const shouldFetchPublicSite =
 
 export default function SiteFooter() {
   const [meta, setMeta] = useState({
-    brand: getBrandFallback(),
+    brand: "Bishop Robertson TV",
     tagline: "",
     links: [
       { label: "Terms & Conditions", to: "/terms" },
@@ -70,7 +65,10 @@ export default function SiteFooter() {
       <div className="sf__wrap">
         <div className="sf__brand">
           {/* use dynamic brand (fixes hard-coded/typo’d text) */}
-          <div className="sf__logo">{meta.brand}</div>
+          <Link to="/" className="sf__logoWrap">
+            <img src={Logo} alt="BishopRobertson.TV" className="sf__logoImg" />
+            {/* <div className="sf__logoText">BishopRobertson.TV</div> */}
+          </Link>
           {meta.tagline ? <div className="sf__tag">{meta.tagline}</div> : null}
         </div>
 

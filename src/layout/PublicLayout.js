@@ -5,11 +5,13 @@ import "./PublicLayout.css";
 import useSupportWidget from "../support/useSupportWidget";
 import api from "../api";
 import SiteFooter from "../components/SiteFooter";
+import Logo from "../assets/BishopRobertsonTVLogo.png";
 
 export default function PublicLayout() {
   useSupportWidget();
 
   const [open, setOpen] = useState(false); // mobile menu
+  const [aboutDrawerOpen, setAboutDrawerOpen] = useState(false); // mobile submenu
   const [me, setMe] = useState(null);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
@@ -26,12 +28,14 @@ export default function PublicLayout() {
   const token = useMemo(
     () => localStorage.getItem("token") || sessionStorage.getItem("token"),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [location.key]
+    [location.key],
   );
 
   // Close mobile menu on route change
   useEffect(() => {
     setOpen(false);
+    setAboutDrawerOpen(false);
+    setNotifOpen(false);
   }, [location.pathname]);
 
   // Lock body scroll on mobile menu
@@ -86,6 +90,12 @@ export default function PublicLayout() {
   }
 
   const linkClass = ({ isActive }) => "pl-link" + (isActive ? " active" : "");
+
+  const aboutActive =
+    location.pathname === "/about" ||
+    location.pathname.startsWith("/about/") ||
+    location.pathname === "/pastoral-leadership" ||
+    location.pathname.startsWith("/pastoral-leadership/");
 
   /* ----------------------- Notifications ----------------------- */
 
@@ -143,7 +153,7 @@ export default function PublicLayout() {
     // Optimistically mark read locally
     if (!notif.is_read) {
       setNotifications((prev) =>
-        prev.map((n) => (n.id === notif.id ? { ...n, is_read: true } : n))
+        prev.map((n) => (n.id === notif.id ? { ...n, is_read: true } : n)),
       );
       setUnreadCount((c) => Math.max(0, c - 1));
       try {
@@ -161,13 +171,11 @@ export default function PublicLayout() {
       return;
     }
     if (payload.video_id) {
-      // generic fallback if only video_id was stored
       navigate(`/watch/${payload.video_id}`);
       setNotifOpen(false);
       return;
     }
 
-    // If still nothing, just close dropdown
     setNotifOpen(false);
   }
 
@@ -191,10 +199,7 @@ export default function PublicLayout() {
           <header className="pl-header">
             <div className="pl-brand">
               <NavLink to="/" className="pl-logo">
-                <span className="pl-logo-dot">B</span>
-                <span className="pl-logo-text">
-                  Bishop<span className="accent">TV</span>
-                </span>
+                <img src={Logo} alt="Bishop Robertson TV Logo" />
               </NavLink>
               <button
                 className="pl-burger"
@@ -213,26 +218,61 @@ export default function PublicLayout() {
               </button>
             </div>
 
-            <nav className="pl-nav">{/* primary nav left */}</nav>
+            <nav className="pl-nav">{/* primary nav left (unused) */}</nav>
 
             <div className="pl-actions">
               <nav className="pl-nav">
                 <NavLink end to="/" className={linkClass}>
                   Home
                 </NavLink>
+
+                {/* ✅ About Bishop dropdown (hover on desktop) */}
+                <div className={`pl-dropdown ${aboutActive ? "active" : ""}`}>
+                  <NavLink
+                    to="/about"
+                    className={() => "pl-link" + (aboutActive ? " active" : "")}
+                    aria-haspopup="menu"
+                    aria-expanded="false"
+                  >
+                    About Bishop
+                    <span className="pl-caret" aria-hidden="true">
+                      ▾
+                    </span>
+                  </NavLink>
+
+                  <div className="pl-dropdown-menu" role="menu">
+                    <NavLink to="/about" className="pl-dd-item" role="menuitem">
+                      Bio
+                    </NavLink>
+                    <NavLink
+                      to="/pastoral-leadership"
+                      className="pl-dd-item"
+                      role="menuitem"
+                    >
+                      Pastoral Leadership
+                    </NavLink>
+                  </div>
+                </div>
+
                 <NavLink to="/catalog" className={linkClass}>
                   Watch
+                </NavLink>
+                <NavLink to="/live-streaming" className={linkClass}>
+                  Live
                 </NavLink>
                 <NavLink to="/community" className={linkClass}>
                   Community
                 </NavLink>
-                <NavLink to="/become-a-partner" className={linkClass}>
+                <NavLink to="/partnership" className={linkClass}>
                   Become a Partner
                 </NavLink>
                 <NavLink to="/store" className={linkClass}>
                   Store
                 </NavLink>
-                <NavLink to="/give" className={linkClass}>
+                <NavLink
+                  to="https://secure.myvanco.com/L-YRQM"
+                  className={linkClass}
+                >
                   Give
                 </NavLink>
               </nav>
@@ -316,7 +356,7 @@ export default function PublicLayout() {
                   <NavLink to="/account" className="pl-btn outline">
                     My Account
                   </NavLink>
-                  <button className="pl-btn ghost" onClick={logout}>
+                  <button className="logout-btn" onClick={logout}>
                     Logout
                   </button>
                 </>
@@ -326,7 +366,7 @@ export default function PublicLayout() {
                     Login
                   </NavLink>
                   <NavLink to="/free-account" className="pl-btn outline">
-                    Start for Free
+                    Register
                   </NavLink>
                 </>
               )}
@@ -343,6 +383,57 @@ export default function PublicLayout() {
             >
               Home
             </NavLink>
+
+            {/* ✅ Mobile About Bishop submenu */}
+            <button
+              type="button"
+              className="pl-drawer-link pl-drawer-toggle"
+              aria-expanded={aboutDrawerOpen}
+              onClick={() => setAboutDrawerOpen((v) => !v)}
+            >
+              <span>About Bishop</span>
+              <span
+                className={`pl-drawer-caret ${aboutDrawerOpen ? "open" : ""}`}
+                aria-hidden="true"
+              >
+                ▾
+              </span>
+            </button>
+
+            {aboutDrawerOpen && (
+              <div className="pl-drawer-sub">
+                <NavLink
+                  to="/about"
+                  className="pl-drawer-sublink"
+                  onClick={() => setOpen(false)}
+                >
+                  Bio
+                </NavLink>
+                <NavLink
+                  to="/pastoral-leadership"
+                  className="pl-drawer-sublink"
+                  onClick={() => setOpen(false)}
+                >
+                  Pastoral Leadership
+                </NavLink>
+              </div>
+            )}
+
+            <NavLink
+              to="/catalog"
+              className="pl-drawer-link"
+              onClick={() => setOpen(false)}
+            >
+              Watch
+            </NavLink>
+
+            <NavLink
+              to="/live-streaming"
+              className="pl-drawer-link"
+              onClick={() => setOpen(false)}
+            >
+              Live
+            </NavLink>
             <NavLink
               to="/community"
               className="pl-drawer-link"
@@ -351,25 +442,25 @@ export default function PublicLayout() {
               Community
             </NavLink>
             <NavLink
-              to="/catalog"
+              to="/partnership"
               className="pl-drawer-link"
               onClick={() => setOpen(false)}
             >
-              Watch
+              Become a Partner
             </NavLink>
             <NavLink
-              to="/p/events"
+              to="/store"
               className="pl-drawer-link"
               onClick={() => setOpen(false)}
             >
-              Events
+              Store
             </NavLink>
             <NavLink
-              to="/pricing"
+              to="https://secure.myvanco.com/L-YRQM/home"
               className="pl-drawer-link"
               onClick={() => setOpen(false)}
             >
-              Pricing
+              Give
             </NavLink>
 
             <div className="pl-drawer-sep" />
@@ -394,7 +485,7 @@ export default function PublicLayout() {
                   My Account
                 </NavLink>
                 <button
-                  className="pl-drawer-link btnlike"
+                  className="pl-drawer-link logout-btn"
                   onClick={() => {
                     setOpen(false);
                     logout();

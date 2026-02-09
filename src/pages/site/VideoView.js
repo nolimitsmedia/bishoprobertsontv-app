@@ -2,9 +2,43 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
 import api from "../../api";
-import "../site/VideoView.css";
+import "./VideoView.css";
+import BishopRobertsonTVLogo from "../../assets/BishopRobertsonTVLogo.png";
 
 const MAX_VISIBLE_COMMENTS = 6;
+const isLocalhost = ["localhost", "127.0.0.1"].includes(
+  window.location.hostname,
+);
+const log = (...args) => {
+  if (isLocalhost) console.log("[VideoView]", ...args);
+};
+
+/* ---------------- resume / progress helpers ---------------- */
+const PROGRESS_SAVE_MS = 3000;
+
+function progressKey(videoId) {
+  return `vv_progress_${videoId}`;
+}
+function readProgressSeconds(videoId) {
+  try {
+    const raw = localStorage.getItem(progressKey(videoId));
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+function writeProgressSeconds(videoId, seconds) {
+  try {
+    const s = Math.max(0, Math.floor(Number(seconds) || 0));
+    if (s > 0) localStorage.setItem(progressKey(videoId), String(s));
+  } catch {}
+}
+function clamp(n, min, max) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return min;
+  return Math.min(max, Math.max(min, x));
+}
 
 /* ---------------- utils ---------------- */
 function apiOrigin() {
@@ -61,8 +95,6 @@ function datePretty(iso) {
     return "";
   }
 }
-
-/** Try a list of endpoints (quietly). Returns the first successful .data or null. */
 async function tryGetFirst(urls) {
   for (const u of urls) {
     try {
@@ -77,12 +109,203 @@ async function tryGetFirst(urls) {
   return null;
 }
 
+/* ---------------- auth helpers ---------------- */
+function getAnyToken() {
+  try {
+    return (
+      localStorage.getItem("token") ||
+      sessionStorage.getItem("token") ||
+      localStorage.getItem("admin_token") ||
+      sessionStorage.getItem("admin_token") ||
+      localStorage.getItem("member_token") ||
+      sessionStorage.getItem("member_token") ||
+      null
+    );
+  } catch {
+    return null;
+  }
+}
+
+/* ---------------- analytics helpers ---------------- */
+function safeInt(n, min = 0, max = 24 * 60 * 60) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return null;
+  const xi = Math.floor(x);
+  return Math.max(min, Math.min(max, xi));
+}
+function beaconAnalyticsEvent(url, payload) {
+  try {
+    if (!navigator.sendBeacon) return false;
+    const blob = new Blob([JSON.stringify(payload)], {
+      type: "application/json",
+    });
+    return navigator.sendBeacon(url, blob);
+  } catch {
+    return false;
+  }
+}
+async function sendAnalyticsEventFetch(payload, { timeoutMs = 8000 } = {}) {
+  const url = `${apiOrigin()}/api/analytics/event`;
+  const token = getAnyToken();
+
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+      signal: ctrl.signal,
+      keepalive: true,
+    });
+
+    if (isLocalhost) log("analytics:", payload.event_type, res.status);
+    return res.ok;
+  } catch (e) {
+    if (isLocalhost) {
+      const msg =
+        e?.name === "AbortError" ? `timeout after ${timeoutMs}ms` : e?.message;
+      console.warn("[VideoView] analytics failed:", payload?.event_type, msg);
+    }
+    return false;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/* ---------------- date sorting helpers (published -> created fallback) ---------------- */
+function getPublishedMs(v) {
+  const cand = [
+    v?.published_at,
+    v?.publish_date,
+    v?.published_date,
+    v?.public_published_at,
+    v?.metadata?.published_at,
+    v?.metadata?.publish_date,
+    v?.metadata?.published_date,
+    v?.created_at,
+    v?.created,
+  ].filter(Boolean)[0];
+
+  const ms = cand ? new Date(cand).getTime() : 0;
+  return Number.isFinite(ms) ? ms : 0;
+}
+function sortLatestToOldestByPublished(a, b) {
+  return getPublishedMs(b) - getPublishedMs(a);
+}
+
+/* ---------------- thumb component (fallback like Catalog) ---------------- */
+function ThumbImg({ src, alt = "" }) {
+  const [bad, setBad] = useState(false);
+  const finalSrc = !src || bad ? BishopRobertsonTVLogo : src;
+
+  return (
+    <img
+      src={finalSrc}
+      alt={alt}
+      loading="lazy"
+      onError={() => setBad(true)}
+      style={{
+        width: "100%",
+        height: "100%",
+        objectFit: src && !bad ? "cover" : "contain",
+        padding: src && !bad ? 0 : 10,
+      }}
+    />
+  );
+}
+
+/* ---------------- youtube-like loading skeleton ---------------- */
+function SkeletonBox({ className = "", style = {} }) {
+  return <div className={`vv-skel ${className}`} style={style} />;
+}
+function VideoViewSkeleton() {
+  return (
+    <div className="vv">
+      <div className="vv-wrap">
+        <div className="vv-grid">
+          <div>
+            <div className="vv-card">
+              <div className="vv-skel-video">
+                <SkeletonBox style={{ width: "100%", height: "100%" }} />
+              </div>
+              <div className="vv-pad">
+                <div className="vv-row" style={{ marginBottom: 10 }}>
+                  <SkeletonBox
+                    style={{ width: 86, height: 36, borderRadius: 10 }}
+                  />
+                  <SkeletonBox
+                    style={{ width: 140, height: 36, borderRadius: 10 }}
+                  />
+                  <SkeletonBox
+                    style={{ width: 96, height: 36, borderRadius: 10 }}
+                  />
+                </div>
+                <SkeletonBox
+                  style={{
+                    width: "78%",
+                    height: 22,
+                    borderRadius: 8,
+                    margin: "10px 0",
+                  }}
+                />
+                <SkeletonBox
+                  style={{
+                    width: "36%",
+                    height: 14,
+                    borderRadius: 8,
+                    marginBottom: 14,
+                  }}
+                />
+                <SkeletonBox
+                  style={{ width: "100%", height: 120, borderRadius: 12 }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <aside>
+            <div className="vv-side-card">
+              <div className="vv-side-title">Up next</div>
+              <div className="vv-rel">
+                {Array.from({ length: 7 }).map((_, i) => (
+                  <div key={i} className="vv-rel-item">
+                    <div className="vv-thumb">
+                      <SkeletonBox style={{ width: "100%", height: "100%" }} />
+                    </div>
+                    <div className="vv-rel-meta" style={{ flex: 1 }}>
+                      <SkeletonBox
+                        style={{
+                          width: "90%",
+                          height: 14,
+                          borderRadius: 8,
+                          marginBottom: 8,
+                        }}
+                      />
+                      <SkeletonBox
+                        style={{ width: "60%", height: 12, borderRadius: 8 }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function VideoView() {
   const { id } = useParams();
   const nav = useNavigate();
   const loc = useLocation();
 
-  // playlist context: /watch/:id?playlist=slug-or-id
   const search = useMemo(() => new URLSearchParams(loc.search), [loc.search]);
   const playlistParam = search.get("playlist");
   const inPlaylistMode = !!playlistParam;
@@ -92,44 +315,83 @@ export default function VideoView() {
   const [video, setVideo] = useState(null);
   const [resources, setResources] = useState([]);
 
-  // GLOBAL related (when not in playlist mode)
-  const [more, setMore] = useState([]);
+  const [categoryVideos, setCategoryVideos] = useState([]);
+  const [moreGlobal, setMoreGlobal] = useState([]);
 
-  // PLAYLIST related (when in playlist mode)
   const [playlistMeta, setPlaylistMeta] = useState(null);
-  const [playlistVideos, setPlaylistVideos] = useState([]);
   const [playlistRest, setPlaylistRest] = useState([]);
 
-  // auth state
   const [isAuthed, setIsAuthed] = useState(false);
-
-  // preview gate
   const [previewHit, setPreviewHit] = useState(false);
 
-  // playlists popover (for adding this video TO a playlist)
   const [showPL, setShowPL] = useState(false);
   const [myPlaylists, setMyPlaylists] = useState([]);
   const [memberOf, setMemberOf] = useState(new Set());
   const [plLoading, setPlLoading] = useState(false);
 
-  // comments
   const [comments, setComments] = useState([]);
   const [cmtTxt, setCmtTxt] = useState("");
   const [cmtLoading, setCmtLoading] = useState(false);
   const [cmtErr, setCmtErr] = useState("");
   const [showAllComments, setShowAllComments] = useState(false);
 
+  const [videoErr, setVideoErr] = useState(false);
+
+  // youtube-like autoplay controls
+  const [autoNextOn, setAutoNextOn] = useState(() => {
+    try {
+      const raw = localStorage.getItem("vv_autonext");
+      return raw == null ? true : raw === "true";
+    } catch {
+      return true;
+    }
+  });
+  const [upNextCountdown, setUpNextCountdown] = useState(0);
+  const autoNavRef = useRef(false);
+  const countdownRef = useRef(null);
+
   const videoRef = useRef(null);
   const hlsRef = useRef(null);
 
+  // resume/progress refs
+  const lastWatchSecondsRef = useRef(0);
+  const lastSavedAtRef = useRef(0);
+  const restoredRef = useRef(false);
+
+  // build next path (preserves playlist param etc.)
+  const watchPath = useMemo(
+    () => loc.pathname + loc.search,
+    [loc.pathname, loc.search],
+  );
+  const loginBase = useMemo(() => {
+    const next = encodeURIComponent(watchPath || `/watch/${id}`);
+    return `/login?next=${next}`;
+  }, [watchPath, id]);
+
+  function currentSecondsNow() {
+    const el = videoRef.current;
+    if (!el) return Math.floor(lastWatchSecondsRef.current || 0);
+    const cur = Number(el.currentTime || 0);
+    if (Number.isFinite(cur) && cur > 0) return Math.floor(cur);
+    return Math.floor(lastWatchSecondsRef.current || 0);
+  }
+
+  function goLoginWithResume() {
+    const t = currentSecondsNow();
+    writeProgressSeconds(id, t);
+    nav(`${loginBase}${t ? `&t=${t}` : ""}`);
+  }
+
   const srcUrl = useMemo(
     () => (video?.video_url ? absUrl(video.video_url) : ""),
-    [video?.video_url]
+    [video?.video_url],
   );
-  const poster = useMemo(
-    () => (video?.thumbnail_url ? absUrl(video.thumbnail_url) : ""),
-    [video?.thumbnail_url]
-  );
+
+  // main poster fallback
+  const poster = useMemo(() => {
+    const p = video?.thumbnail_url ? absUrl(video.thumbnail_url) : "";
+    return p || BishopRobertsonTVLogo;
+  }, [video?.thumbnail_url]);
 
   const previewSeconds = useMemo(() => {
     const candidates = [
@@ -146,68 +408,61 @@ export default function VideoView() {
   }, [video]);
 
   const previewActive = !isAuthed && previewSeconds > 0;
+  const hardLoginGate = !isAuthed && !srcUrl;
 
-  /* ---------------- styles (scoped) ---------------- */
-  const styles = `
-  .vv { --bg:#0b0f19; --card:#0f172a; --muted:#9aa4b2; --text:#e5e7eb; --text-strong:#fff; --border:rgba(148,163,184,.18); }
-  .vv { background: var(--bg); color: var(--text); min-height: 100vh; }
-  .vv a { color: #93c5fd; text-decoration: none; }
-  .vv a:hover { text-decoration: underline; }
+  /* ------------ analytics state (refs) -------------- */
+  const playSentRef = useRef(false);
+  const completeSentRef = useRef(false);
+  const lastPingAtRef = useRef(0);
 
-  .vv-wrap { width: min(1180px, 94vw); margin: 0 auto; padding: 18px 0 40px; }
-  .vv-grid { display:grid; grid-template-columns: minmax(0,1fr) 320px; gap: 18px; align-items:start; }
-  @media (max-width: 1024px) { .vv-grid { grid-template-columns: 1fr; } }
+  const lastPosRef = useRef(null);
+  const analyticsInFlightRef = useRef(false);
+  const endedHandledRef = useRef(false);
 
-  .vv-card { background: var(--card); border:1px solid var(--border); border-radius:14px; box-shadow: 0 16px 50px rgba(2,6,23,.25); overflow:hidden; }
-  .vv-pad { padding: 14px; }
-  .vv-h1 { font-weight: 800; font-size: 22px; line-height: 1.25; margin: 14px 8px 8px; color: var(--text-strong); }
-  .vv-byline { display:flex; align-items:center; gap:10px; font-size:13px; color:var(--muted); margin: 0 8px 12px; }
-  .vv-badge { display:inline-block; padding:6px 10px; font-size:11px; font-weight:800; border-radius:999px; background:#111827; color:#d1d5db; border:1px solid var(--border); margin-right:6px; margin-bottom:6px; white-space:nowrap; }
-  .vv-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-  .vv-btn { display:flex; align-items:center; height:36px; padding:0 14px; border-radius:10px; border:1px solid var(--border); background:#0b1020; color:#fff; cursor:pointer; }
-  .vv-btn:hover { background:#0a1328; }
-  .vv-btn.primary { background:#2563eb; border-color:#2563eb; color:#fff; }
-  .vv-btn.primary:hover { background:#1e40af; }
-  .vv-btn.block { display:inline-flex; align-items:center; justify-content:center; width:140px; font-weight:700; }
-
-  .vv-side-card { background: var(--card); border:1px solid var(--border); border-radius:12px; padding: 10px; }
-  .vv-side-title { font-size:12px; color:#cbd5e1; letter-spacing:.02em; font-weight:800; margin: 0 0 8px; }
-  .vv-thumb { width:120px; height:68px; border-radius:10px; overflow:hidden; background:#101827; border:1px solid var(--border); flex:0 0 auto; position:relative; }
-  .vv-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
-  .vv-dur { position:absolute; right:6px; bottom:6px; font-size:10px; font-weight:800; background:rgba(0,0,0,.7); color:#fff; padding:2px 6px; border-radius:6px; border:1px solid rgba(255,255,255,.18); }
-  .vv-rel { display:grid; gap:10px; }
-  .vv-rel-item { display:flex; gap:10px; text-decoration:none; }
-  .vv-next-title { color:var(--text); font-weight:700; font-size:13px; line-height:1.25; }
-  .vv-muted { color: var(--muted); }
-  .vv-share { margin-left:auto; }
-  .vv-hr { border:0; border-top:1px solid var(--border); margin: 12px 0; }
-  .vv-comment-box { color: var(--muted); font-size: 14px; }
-
-  .vv-gate { position: absolute; inset: 0; display: grid; place-items: center; background: linear-gradient(180deg, rgba(0,0,0,.15), rgba(0,0,0,.85) 40%, rgba(0,0,0,.95)); pointer-events: auto; }
-  .vv-gate-inner { text-align: center; padding: 18px 16px; border-radius: 12px; background: rgba(2,6,23,.86); border: 1px solid var(--border); color: #fff; width: min(420px, 92%); box-shadow: 0 10px 40px rgba(0,0,0,.45); }
-
-  .vv-pop { position: relative; }
-  .vv-popmenu { position:absolute; top:44px; left:0; background:#0b1020; border:1px solid var(--border); border-radius:10px; padding:10px; width:260px; z-index:30; box-shadow:0 14px 40px rgba(0,0,0,.4); }
-  .vv-poprow { display:flex; align-items:center; gap:8px; padding:6px 4px; border-radius:8px; }
-  .vv-poprow:hover { background:#0a1328; }
-  .vv-poplbl { flex:1; font-size:14px; }
-  `;
-
-  /* ---------------- auth + load video data ---------------- */
   useEffect(() => {
-    const token =
-      localStorage.getItem("token") || sessionStorage.getItem("token");
-    if (!token) {
-      setIsAuthed(false);
-      return;
-    }
+    playSentRef.current = false;
+    completeSentRef.current = false;
+    lastPingAtRef.current = 0;
+    lastPosRef.current = null;
+    analyticsInFlightRef.current = false;
+    endedHandledRef.current = false;
+
+    lastWatchSecondsRef.current = 0;
+    lastSavedAtRef.current = 0;
+    restoredRef.current = false;
+
+    setVideoErr(false);
+
+    // reset youtube autoplay state
+    autoNavRef.current = false;
+    setUpNextCountdown(0);
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    countdownRef.current = null;
+  }, [id]);
+
+  /* ------------ AUTH -------------- */
+  useEffect(() => {
+    const token = getAnyToken();
+    const hasToken = !!token;
+    setIsAuthed(hasToken);
+
+    if (isLocalhost) log("auth token present:", hasToken);
+    if (!hasToken) return;
+
     api
       .get("/auth/me")
-      .then(() => setIsAuthed(true))
-      .catch(() => setIsAuthed(false));
+      .then((r) => {
+        if (isLocalhost) log("/auth/me ok:", r?.status);
+        setIsAuthed(true);
+      })
+      .catch((e) => {
+        if (isLocalhost)
+          log("/auth/me failed (keeping authed):", e?.response?.status);
+        setIsAuthed(true);
+      });
   }, []);
 
-  // load the main video
+  /* ------------ LOAD VIDEO -------------- */
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -218,10 +473,10 @@ export default function VideoView() {
           (await tryGetFirst([`/videos/public/${id}`])) ||
           (await tryGetFirst([`/videos/${id}`]));
         if (!alive) return;
-        if (!data) {
-          setErr("Video not found.");
-        } else {
-          setVideo(data || null);
+        if (!data) setErr("Video not found.");
+        else {
+          setVideo(data);
+          log("Loaded video:", data);
         }
       } catch {
         if (alive) setErr("Video not found.");
@@ -234,70 +489,102 @@ export default function VideoView() {
     };
   }, [id]);
 
-  /* ------------------------------------------
-     LOAD SIDE LIST
-     - if ?playlist=... → load from that playlist only
-     - else → load global related
-  ------------------------------------------ */
+  /* ------------ LOAD CATEGORY VIDEOS -------------- */
   useEffect(() => {
-    if (!id) return;
+    if (!video?.category_id) return;
 
-    if (inPlaylistMode) {
-      (async () => {
-        // IMPORTANT: call bare public route FIRST (your API returns playlist + videos here)
-        const data =
+    (async () => {
+      try {
+        const res =
           (await tryGetFirst([
-            `/playlists/public/${playlistParam}`, // ✅ preferred
-            `/playlists/public/${playlistParam}/videos`, // fallback if exists
+            `/videos/public?category_id=${video.category_id}&limit=200`,
           ])) ||
           (await tryGetFirst([
-            `/playlists/${playlistParam}`, // private (owner) shape
-            `/playlists/${playlistParam}/videos`, // fallback if exists
+            `/videos?category_id=${video.category_id}&limit=200`,
           ]));
 
-        if (!data) {
-          setPlaylistMeta(null);
-          setPlaylistVideos([]);
-          setPlaylistRest([]);
-          return;
-        }
+        const items = Array.isArray(res?.items) ? res.items : res || [];
+        const sorted = [...items].sort(sortLatestToOldestByPublished);
 
-        let plVideos = [];
-        let plTitle = "";
+        setCategoryVideos(sorted);
+        log("Category videos:", sorted);
+      } catch (e) {
+        log("Category load failed", e);
+        setCategoryVideos([]);
+      }
+    })();
+  }, [video?.category_id]);
 
-        if (Array.isArray(data?.items)) plVideos = data.items;
-        else if (Array.isArray(data?.videos)) plVideos = data.videos;
-        else if (Array.isArray(data)) plVideos = data;
+  /* ------------ GLOBAL FALLBACK -------------- */
+  useEffect(() => {
+    if (!id) return;
+    (async () => {
+      const data =
+        (await tryGetFirst([`/videos/public?limit=200`])) ||
+        (await tryGetFirst([`/videos?limit=200`]));
+      const arr = Array.isArray(data) ? data : data?.items || [];
+      const sorted = [...arr].sort(sortLatestToOldestByPublished);
 
-        if (data?.title) plTitle = data.title;
-        if (data?.playlist?.title) plTitle = data.playlist.title;
+      setMoreGlobal(sorted.filter((v) => String(v.id) !== String(id)));
+      log("Global fallback list:", sorted);
+    })();
+  }, [id]);
 
-        const ordered = plVideos.map((v) => ({
-          ...v,
-          id: v.id ?? v.video_id,
-        }));
+  /* ------------ LOAD PLAYLIST FOR WATCH -------------- */
+  useEffect(() => {
+    let alive = true;
 
-        const rest = ordered.filter((v) => String(v.id) !== String(id));
-
-        setPlaylistMeta({ title: plTitle || "Playlist", id: playlistParam });
-        setPlaylistVideos(ordered);
-        setPlaylistRest(rest);
-      })();
-
+    if (!playlistParam) {
+      setPlaylistMeta(null);
+      setPlaylistRest([]);
       return;
     }
 
-    // NOT in playlist mode → load global list
+    // IMPORTANT: playlist mode logic stays here (as requested)
     (async () => {
-      const data =
-        (await tryGetFirst([`/videos/public?limit=8`])) ||
-        (await tryGetFirst([`/videos?limit=8`]));
-      const arr = Array.isArray(data) ? data : data?.items || [];
-      setMore(arr.filter((v) => String(v.id) !== String(id)));
-    })();
-  }, [id, inPlaylistMode, playlistParam]);
+      try {
+        setPlaylistMeta(null);
+        setPlaylistRest([]);
 
-  /* load resources for list under player */
+        const data = await tryGetFirst([
+          `/playlists/public/${playlistParam}`,
+          `/playlists/${playlistParam}`,
+        ]);
+        if (!alive || !data) return;
+
+        const rawVideos = Array.isArray(data.videos)
+          ? data.videos
+          : data.items || [];
+
+        const ordered = [...rawVideos].sort((a, b) => {
+          const pa = Number.isFinite(+a.position) ? +a.position : 1e9;
+          const pb = Number.isFinite(+b.position) ? +b.position : 1e9;
+          if (pa !== pb) return pa - pb;
+          return new Date(a.created_at || 0) - new Date(b.created_at || 0);
+        });
+
+        const currentIdx = ordered.findIndex(
+          (v) => String(v.id) === String(id),
+        );
+        const rest = currentIdx >= 0 ? ordered.slice(currentIdx + 1) : ordered;
+
+        setPlaylistMeta({ id: data.id, title: data.title });
+        setPlaylistRest(rest);
+        log("Loaded playlist for watch:", data, rest);
+      } catch (e) {
+        if (!alive) return;
+        log("Playlist load failed", e);
+        setPlaylistMeta(null);
+        setPlaylistRest([]);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [playlistParam, id]);
+
+  /* ------------ RESOURCES -------------- */
   useEffect(() => {
     if (!id) return;
     api
@@ -306,7 +593,66 @@ export default function VideoView() {
       .catch(() => setResources([]));
   }, [id]);
 
-  /* attach HLS if needed */
+  /* ------------ PLAYLISTS (for "+ Add to playlist") -------------- */
+  useEffect(() => {
+    let alive = true;
+
+    if (!isAuthed) {
+      setMyPlaylists([]);
+      setMemberOf(new Set());
+      return;
+    }
+
+    (async () => {
+      try {
+        setPlLoading(true);
+
+        const data =
+          (await tryGetFirst([
+            `/playlists/my`,
+            `/playlists/me`,
+            `/playlists`,
+          ])) || [];
+        const items = Array.isArray(data?.items) ? data.items : data || [];
+        if (!alive) return;
+        setMyPlaylists(items);
+
+        const m =
+          (await tryGetFirst([
+            `/playlists/by-video/${id}`,
+            `/playlists/for-video/${id}`,
+            `/playlists/videos/${id}`,
+          ])) || null;
+
+        const raw = Array.isArray(m?.items)
+          ? m.items
+          : Array.isArray(m?.playlist_ids)
+            ? m.playlist_ids
+            : Array.isArray(m)
+              ? m
+              : [];
+
+        const inSet = new Set(
+          raw.map((x) => String(x?.playlist_id ?? x?.id ?? x)),
+        );
+
+        if (!alive) return;
+        setMemberOf(inSet);
+      } catch (e) {
+        if (!alive) return;
+        setMyPlaylists([]);
+        setMemberOf(new Set());
+      } finally {
+        alive && setPlLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [isAuthed, id]);
+
+  /* ------------ HLS SETUP (improved + recovery) -------------- */
   useEffect(() => {
     const el = videoRef.current;
 
@@ -316,39 +662,83 @@ export default function VideoView() {
       } catch {}
       hlsRef.current = null;
     }
-    if (!el || !srcUrl) return;
 
+    if (!el || !srcUrl) return;
     const hls = isHlsUrl(srcUrl);
 
     if (hls && el.canPlayType("application/vnd.apple.mpegURL")) {
       el.src = srcUrl;
-      el.load();
+      try {
+        el.load();
+      } catch {}
       return;
     }
 
     if (hls) {
+      let cancelled = false;
+
       (async () => {
         try {
           const HlsMod = await import("hls.js");
           const Hls = HlsMod.default || HlsMod;
+          if (cancelled) return;
+
           if (Hls.isSupported()) {
             const instance = new Hls({
               enableWorker: true,
-              liveSyncDuration: 2,
+              lowLatencyMode: false,
+              maxBufferLength: 30,
+              maxMaxBufferLength: 60,
+              backBufferLength: 90,
+              maxBufferSize: 30 * 1000 * 1000,
+
+              fragLoadingTimeOut: 20000,
+              fragLoadingMaxRetry: 6,
+              fragLoadingRetryDelay: 1000,
+              fragLoadingMaxRetryTimeout: 64000,
+              manifestLoadingTimeOut: 20000,
+              manifestLoadingMaxRetry: 4,
+              manifestLoadingRetryDelay: 1000,
+              levelLoadingTimeOut: 20000,
+              levelLoadingMaxRetry: 4,
+              levelLoadingRetryDelay: 1000,
             });
+
             instance.loadSource(srcUrl);
             instance.attachMedia(el);
+
+            instance.on(Hls.Events.ERROR, function (_, data) {
+              if (!data?.fatal) return;
+              try {
+                if (data.type === Hls.ErrorTypes.NETWORK_ERROR)
+                  instance.startLoad();
+                else if (data.type === Hls.ErrorTypes.MEDIA_ERROR)
+                  instance.recoverMediaError();
+                else instance.destroy();
+              } catch {
+                try {
+                  instance.destroy();
+                } catch {}
+              }
+            });
+
             hlsRef.current = instance;
           } else {
             el.src = srcUrl;
-            el.load();
+            try {
+              el.load();
+            } catch {}
           }
         } catch {
           el.src = srcUrl;
-          el.load();
+          try {
+            el.load();
+          } catch {}
         }
       })();
+
       return () => {
+        cancelled = true;
         if (hlsRef.current) {
           try {
             hlsRef.current.destroy();
@@ -359,15 +749,16 @@ export default function VideoView() {
     }
 
     el.src = srcUrl;
-    el.load();
+    try {
+      el.load();
+    } catch {}
   }, [srcUrl]);
 
-  /* reset preview gate when the video changes  */
+  /* ------------ PREVIEW GATE -------------- */
   useEffect(() => {
     setPreviewHit(false);
   }, [id, srcUrl]);
 
-  /* preview gate */
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
@@ -378,76 +769,400 @@ export default function VideoView() {
       return;
     }
 
-    const clampToLimit = () => {
-      const target = Math.max(0, previewSeconds - 0.01);
+    const clampPreview = () => {
+      const t = Math.max(0, previewSeconds - 0.01);
       try {
-        el.currentTime = target;
+        el.currentTime = t;
       } catch {}
     };
 
-    const stopAndGate = () => {
+    const stop = () => {
       try {
         el.pause();
       } catch {}
-      clampToLimit();
+      clampPreview();
       setPreviewHit(true);
       el.controls = false;
       el.style.pointerEvents = "none";
     };
 
     const onTime = () => {
-      if (el.currentTime >= previewSeconds && !previewHit) stopAndGate();
+      if (el.currentTime >= previewSeconds && !previewHit) stop();
     };
-    const onPlayAttempt = () => {
-      if (previewHit) stopAndGate();
-    };
-    const onSeeking = () => {
-      if (el.currentTime > previewSeconds) clampToLimit();
+    const onPlay = () => previewHit && stop();
+    const onSeek = () => {
+      if (el.currentTime > previewSeconds) clampPreview();
     };
 
     el.addEventListener("timeupdate", onTime);
-    el.addEventListener("play", onPlayAttempt);
-    el.addEventListener("seeking", onSeeking);
+    el.addEventListener("play", onPlay);
+    el.addEventListener("seeking", onSeek);
 
     return () => {
       el.removeEventListener("timeupdate", onTime);
-      el.removeEventListener("play", onPlayAttempt);
-      el.removeEventListener("seeking", onSeeking);
+      el.removeEventListener("play", onPlay);
+      el.removeEventListener("seeking", onSeek);
     };
   }, [previewActive, previewSeconds, previewHit]);
 
-  /* playlists: load my playlists + membership for this video (authed only) */
+  /* ------------ SAVE PROGRESS (always) -------------- */
   useEffect(() => {
-    if (!isAuthed || !id) {
-      setMyPlaylists([]);
-      setMemberOf(new Set());
+    const el = videoRef.current;
+    if (!el || !id) return;
+
+    const onTime = () => {
+      const cur = Number(el.currentTime || 0);
+      lastWatchSecondsRef.current = cur;
+
+      const now = Date.now();
+      if (now - lastSavedAtRef.current > PROGRESS_SAVE_MS) {
+        lastSavedAtRef.current = now;
+        writeProgressSeconds(id, cur);
+      }
+    };
+
+    el.addEventListener("timeupdate", onTime);
+    return () => el.removeEventListener("timeupdate", onTime);
+  }, [id]);
+
+  /* ------------ RESTORE PROGRESS (robust for HLS) -------------- */
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || !id || !srcUrl) return;
+    if (restoredRef.current) return;
+
+    const qs = new URLSearchParams(loc.search);
+    const tFromUrl = Number(qs.get("t"));
+    const tFromStorage = readProgressSeconds(id);
+
+    let desired =
+      Number.isFinite(tFromUrl) && tFromUrl > 0 ? tFromUrl : tFromStorage;
+
+    if (!desired || desired <= 0) {
+      restoredRef.current = true;
       return;
     }
-    let alive = true;
-    (async () => {
-      try {
-        setPlLoading(true);
-        const [plRes, memRes] = await Promise.allSettled([
-          api.get("/playlists"),
-          api.get(`/playlists/videos/${id}`),
-        ]);
-        if (!alive) return;
-        if (plRes.status === "fulfilled") {
-          const items = plRes.value?.data?.items || [];
-          setMyPlaylists(items);
-        }
-        if (memRes.status === "fulfilled") {
-          const ids = memRes.value?.data?.playlist_ids || [];
-          setMemberOf(new Set(ids.map(String)));
-        }
-      } finally {
-        if (alive) setPlLoading(false);
+
+    let attempts = 0;
+    const MAX_ATTEMPTS = 8;
+
+    const computeTarget = () => {
+      const dur = Number(el.duration || 0);
+      let safe =
+        dur > 0
+          ? clamp(desired, 0, Math.max(0, dur - 2))
+          : Math.max(0, desired);
+
+      if (previewActive && previewSeconds) {
+        safe = Math.min(safe, Math.max(0, previewSeconds - 0.25));
       }
-    })();
+
+      return safe;
+    };
+
+    const trySeekOnce = () => {
+      const target = computeTarget();
+      if (!Number.isFinite(target) || target <= 0) return false;
+
+      try {
+        el.currentTime = target;
+      } catch {
+        return false;
+      }
+
+      const ok = Math.abs(Number(el.currentTime || 0) - target) < 1;
+      if (ok) {
+        restoredRef.current = true;
+
+        if (qs.get("t")) {
+          qs.delete("t");
+          const newSearch = qs.toString();
+          nav(
+            {
+              pathname: loc.pathname,
+              search: newSearch ? `?${newSearch}` : "",
+            },
+            { replace: true },
+          );
+        }
+
+        return true;
+      }
+      return false;
+    };
+
+    const tick = () => {
+      attempts++;
+      if (el.readyState >= 1) {
+        if (trySeekOnce()) return;
+      }
+      if (attempts >= MAX_ATTEMPTS) {
+        restoredRef.current = true;
+        return;
+      }
+      setTimeout(tick, 250);
+    };
+
+    if (el.readyState >= 1) tick();
+    else el.addEventListener("loadedmetadata", tick, { once: true });
+
+    const onCanPlay = () => {
+      if (!restoredRef.current) tick();
+    };
+    el.addEventListener("canplay", onCanPlay, { once: true });
+
+    return () => {
+      el.removeEventListener("loadedmetadata", tick);
+      el.removeEventListener("canplay", onCanPlay);
+    };
+  }, [
+    id,
+    srcUrl,
+    loc.pathname,
+    loc.search,
+    nav,
+    previewActive,
+    previewSeconds,
+  ]);
+
+  /* ------------ VOD ANALYTICS (play/progress/complete) -------------- */
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+
+    if (!isAuthed) return;
+    if (hardLoginGate) return;
+    if (previewActive) return;
+    if (!id) return;
+
+    const PING_SECONDS = 15;
+
+    const rawVid = video?.id ?? id;
+    const videoIdNum = Number(rawVid);
+    const safeVideoId = Number.isFinite(videoIdNum)
+      ? videoIdNum
+      : String(rawVid);
+
+    const payloadBase = () => {
+      const dur = safeInt(el.duration);
+      const pos = safeInt(el.currentTime);
+      return {
+        video_id: safeVideoId,
+        position_seconds: pos,
+        duration_seconds: dur,
+        page: window.location.pathname + window.location.search,
+        meta: {},
+      };
+    };
+
+    const isActuallyPlaying = () =>
+      !el.paused && !el.ended && el.readyState >= 2;
+
+    const calcDeltaSeconds = () => {
+      const cur = Number(el.currentTime || 0);
+
+      if (lastPosRef.current == null || !Number.isFinite(lastPosRef.current)) {
+        lastPosRef.current = cur;
+        return 0;
+      }
+
+      const raw = cur - Number(lastPosRef.current || 0);
+      const delta = Math.floor(raw);
+
+      if (!Number.isFinite(delta) || delta < 0) {
+        lastPosRef.current = cur;
+        return 0;
+      }
+
+      const capped = Math.min(delta, 60);
+      lastPosRef.current = cur;
+      return capped;
+    };
+
+    const sendOne = async (payload, { force = false } = {}) => {
+      if (analyticsInFlightRef.current) {
+        if (!force) return false;
+      }
+      analyticsInFlightRef.current = true;
+      try {
+        return await sendAnalyticsEventFetch(payload, { timeoutMs: 8000 });
+      } finally {
+        analyticsInFlightRef.current = false;
+      }
+    };
+
+    const sendPlayOnce = async () => {
+      if (playSentRef.current) return;
+      playSentRef.current = true;
+
+      lastPosRef.current = Number(el.currentTime || 0);
+      await sendOne(
+        { event_type: "video_play", ...payloadBase() },
+        { force: true },
+      );
+    };
+
+    const sendProgress = async (force = false) => {
+      if (!force && !isActuallyPlaying()) return;
+
+      const now = Date.now();
+      if (!force && now - lastPingAtRef.current < PING_SECONDS * 1000) return;
+      lastPingAtRef.current = now;
+
+      const delta_seconds = calcDeltaSeconds();
+
+      await sendOne(
+        {
+          event_type: "video_progress",
+          ...payloadBase(),
+          meta: { delta_seconds },
+        },
+        { force },
+      );
+    };
+
+    const sendCompleteOnce = async () => {
+      if (completeSentRef.current) return;
+      completeSentRef.current = true;
+
+      await sendProgress(true);
+
+      await sendOne(
+        {
+          event_type: "video_complete",
+          ...payloadBase(),
+          meta: { delta_seconds: 0 },
+        },
+        { force: true },
+      );
+    };
+
+    const onPlay = async () => {
+      endedHandledRef.current = false;
+      // mark user interacted so we can autoplay unmuted next time (like youtube)
+      try {
+        localStorage.setItem("vv_user_interacted", "true");
+      } catch {}
+      await sendPlayOnce();
+      await sendProgress(true);
+    };
+
+    const onPause = async () => {
+      await sendProgress(true);
+    };
+
+    const onTimeUpdate = async () => {
+      const dur = Number(el.duration || 0);
+      const cur = Number(el.currentTime || 0);
+
+      if (dur > 0 && cur >= dur - 0.75 && !endedHandledRef.current) {
+        endedHandledRef.current = true;
+        await sendCompleteOnce();
+        return;
+      }
+
+      await sendProgress(false);
+    };
+
+    const onEnded = async () => {
+      if (endedHandledRef.current) return;
+      endedHandledRef.current = true;
+      await sendCompleteOnce();
+    };
+
+    const onVisibility = async () => {
+      if (document.visibilityState === "hidden") {
+        await sendProgress(true);
+      }
+    };
+
+    el.addEventListener("play", onPlay);
+    el.addEventListener("pause", onPause);
+    el.addEventListener("timeupdate", onTimeUpdate);
+    el.addEventListener("ended", onEnded);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    const intv = setInterval(() => {
+      sendProgress(false);
+    }, PING_SECONDS * 1000);
+
+    const onBeforeUnload = () => {
+      const base = payloadBase();
+      const payload = {
+        event_type: "video_progress",
+        ...base,
+        meta: { delta_seconds: calcDeltaSeconds() },
+      };
+      beaconAnalyticsEvent(`${apiOrigin()}/api/analytics/event`, payload);
+    };
+
+    window.addEventListener("beforeunload", onBeforeUnload);
+
+    return () => {
+      clearInterval(intv);
+      el.removeEventListener("play", onPlay);
+      el.removeEventListener("pause", onPause);
+      el.removeEventListener("timeupdate", onTimeUpdate);
+      el.removeEventListener("ended", onEnded);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [id, video?.id, isAuthed, hardLoginGate, previewActive]);
+
+  /* ------------ COMMENTS -------------- */
+  useEffect(() => {
+    let alive = true;
+    setCmtErr("");
+    setCmtLoading(true);
+    api
+      .get(`/comments?video_id=${id}`)
+      .then((r) => {
+        if (!alive) return;
+        const items = r.data?.items || r.data || [];
+        setComments(items);
+        setShowAllComments(false);
+      })
+      .catch(() => alive && setComments([]))
+      .finally(() => alive && setCmtLoading(false));
+
     return () => {
       alive = false;
     };
-  }, [isAuthed, id]);
+  }, [id]);
+
+  async function postComment(e) {
+    e.preventDefault();
+    if (!isAuthed) return goLoginWithResume();
+
+    const body = cmtTxt.trim();
+    if (!body) return;
+
+    setCmtErr("");
+    try {
+      const r = await api.post("/comments", { video_id: id, body });
+      const saved = r?.data?.comment || r?.data?.item || r?.data;
+      setComments((prev) => [saved, ...prev]);
+      setCmtTxt("");
+    } catch {
+      setCmtErr("Failed to post comment.");
+    }
+  }
+
+  async function share() {
+    const shareUrl =
+      window.location.origin +
+      loc.pathname +
+      (inPlaylistMode ? `?playlist=${playlistParam}` : "");
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: video?.title, url: shareUrl });
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+        alert("Link copied!");
+      }
+    } catch {}
+  }
 
   async function toggleMembership(pid) {
     const pidStr = String(pid);
@@ -465,95 +1180,201 @@ export default function VideoView() {
         setMemberOf(next);
       }
     } catch {
-      alert("Unable to update playlist membership.");
+      alert("Unable to update playlist.");
     }
   }
 
-  /* comments: load list */
-  useEffect(() => {
-    let alive = true;
-    setCmtErr("");
-    setCmtLoading(true);
-    api
-      .get(`/comments?video_id=${id}`)
-      .then((r) => {
-        if (!alive) return;
-        const items = r.data?.items || r.data || [];
-        setComments(items);
-        setShowAllComments(false);
-      })
-      .catch(() => {
-        if (!alive) return;
-        setComments([]);
-      })
-      .finally(() => alive && setCmtLoading(false));
-    return () => {
-      alive = false;
-    };
-  }, [id]);
+  // compute next/related using published date sorting (public view)
+  const categoryWithoutCurrent = categoryVideos.filter(
+    (v) => String(v.id) !== String(id),
+  );
+  const globalWithoutCurrent = moreGlobal.filter(
+    (v) => String(v.id) !== String(id),
+  );
 
-  async function postComment(e) {
-    e.preventDefault();
-    if (!isAuthed) {
-      nav("/login");
-      return;
-    }
-    const body = String(cmtTxt || "").trim();
-    if (!body) return;
-    setCmtErr("");
-    try {
-      const r = await api.post("/comments", { video_id: id, body });
-      const saved = r?.data && (r.data.comment || r.data.item || r.data);
-      setComments((prev) => [saved, ...prev]);
-      setCmtTxt("");
-    } catch (e) {
-      setCmtErr("Failed to post comment.");
-    }
-  }
+  let nextVideos = [];
+  let relatedVideos = [];
 
-  async function share() {
-    const shareUrl =
-      (typeof window !== "undefined" ? window.location.origin : "") +
-      loc.pathname +
-      (inPlaylistMode ? `?playlist=${playlistParam}` : "");
-    const title = video?.title || "Watch this video";
-    try {
-      if (navigator.share) {
-        await navigator.share({ title, url: shareUrl });
-      } else {
-        await navigator.clipboard.writeText(shareUrl);
-        alert("Link copied to clipboard");
-      }
-    } catch {}
-  }
+  if (categoryVideos.length > 0 && video) {
+    nextVideos = [...categoryWithoutCurrent]
+      .sort(sortLatestToOldestByPublished)
+      .slice(0, 30);
 
-  if (loading) {
-    return (
-      <div className="vv">
-        <style dangerouslySetInnerHTML={{ __html: styles }} />
-        <div className="vv-wrap">
-          <div className="vv-card vv-pad">Loading…</div>
-        </div>
-      </div>
+    relatedVideos = [...globalWithoutCurrent]
+      .filter((v) => v.category_id !== video.category_id)
+      .sort(sortLatestToOldestByPublished)
+      .slice(0, 18);
+  } else {
+    const sortedGlobal = [...globalWithoutCurrent].sort(
+      sortLatestToOldestByPublished,
     );
+    nextVideos = sortedGlobal.slice(0, 30);
+    relatedVideos = sortedGlobal.slice(30, 48);
   }
 
-  if (err || !video) {
+  const nextVideo = nextVideos[0] || null;
+  const remainingNext = nextVideos.slice(1);
+
+  const nextCountTotal = 1 + remainingNext.length;
+  const shouldScrollNext = !inPlaylistMode && nextCountTotal > 10;
+
+  /* ------------ YOUTUBE-STYLE MAIN AUTOPLAY -------------- */
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    if (!srcUrl) return;
+    if (hardLoginGate) return;
+    if (previewActive && previewHit) return;
+
+    // reset countdown if user starts playing again
+    setUpNextCountdown(0);
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    countdownRef.current = null;
+    autoNavRef.current = false;
+
+    const attempt = async () => {
+      try {
+        const interacted = (() => {
+          try {
+            return localStorage.getItem("vv_user_interacted") === "true";
+          } catch {
+            return false;
+          }
+        })();
+
+        // YouTube-like: try unmuted if user interacted; otherwise try muted
+        if (!interacted) el.muted = true;
+
+        const p = el.play();
+        if (p && typeof p.then === "function") await p;
+      } catch {
+        // fallback: try muted autoplay
+        try {
+          el.muted = true;
+          const p2 = el.play();
+          if (p2 && typeof p2.then === "function") await p2;
+        } catch {}
+      }
+    };
+
+    // slight delay to allow HLS attach / metadata
+    const t = setTimeout(attempt, 60);
+    return () => clearTimeout(t);
+  }, [id, srcUrl, hardLoginGate, previewActive, previewHit]);
+
+  /* ------------ YOUTUBE-STYLE AUTOPLAY NEXT -------------- */
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+
+    const clearCountdown = () => {
+      setUpNextCountdown(0);
+      if (countdownRef.current) clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    };
+
+    const startCountdownAndGo = (targetUrl) => {
+      if (!targetUrl) return;
+      if (autoNavRef.current) return;
+      autoNavRef.current = true;
+
+      let s = 5;
+      setUpNextCountdown(s);
+
+      countdownRef.current = setInterval(() => {
+        s -= 1;
+        setUpNextCountdown(s);
+
+        if (s <= 0) {
+          clearCountdown();
+          nav(targetUrl);
+        }
+      }, 1000);
+    };
+
+    const onEnded = () => {
+      if (!autoNextOn) return;
+      if (hardLoginGate) return;
+      if (previewActive) return;
+
+      // Prefer playlist continuation when in playlist mode
+      if (inPlaylistMode && playlistRest && playlistRest.length > 0) {
+        const nxt = playlistRest[0];
+        startCountdownAndGo(`/watch/${nxt.id}?playlist=${playlistParam}`);
+        return;
+      }
+
+      // Otherwise go to Up Next
+      if (nextVideo?.id) {
+        startCountdownAndGo(`/watch/${nextVideo.id}`);
+      }
+    };
+
+    const onPlay = () => {
+      // If user manually resumes/plays, cancel countdown
+      clearCountdown();
+      autoNavRef.current = false;
+    };
+
+    el.addEventListener("ended", onEnded);
+    el.addEventListener("play", onPlay);
+
+    return () => {
+      el.removeEventListener("ended", onEnded);
+      el.removeEventListener("play", onPlay);
+      clearCountdown();
+      autoNavRef.current = false;
+    };
+  }, [
+    nav,
+    autoNextOn,
+    nextVideo?.id,
+    hardLoginGate,
+    previewActive,
+    inPlaylistMode,
+    playlistRest,
+    playlistParam,
+  ]);
+
+  function toggleAutoNext() {
+    setAutoNextOn((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem("vv_autonext", String(next));
+      } catch {}
+      return next;
+    });
+  }
+
+  function cancelUpNext() {
+    setUpNextCountdown(0);
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    countdownRef.current = null;
+    autoNavRef.current = false;
+  }
+
+  // ✅ YouTube-style loading (no “Loading…” text)
+  if (loading) return <VideoViewSkeleton />;
+
+  if (err || !video)
     return (
       <div className="vv">
-        <style dangerouslySetInnerHTML={{ __html: styles }} />
         <div className="vv-wrap">
           <div className="vv-card vv-pad">{err || "Video not found."}</div>
         </div>
       </div>
     );
-  }
 
-  const tags = video?.metadata?.tags || [];
   const created = video.created_at || video.created;
   const author = video?.metadata?.authors?.[0];
-
-  const [nextVideo, ...related] = more;
+  const currentPublishedLabel = (() => {
+    const ms = getPublishedMs(video);
+    return ms
+      ? datePretty(new Date(ms).toISOString())
+      : created
+        ? datePretty(created)
+        : "";
+  })();
 
   const visibleComments = showAllComments
     ? comments
@@ -562,11 +1383,8 @@ export default function VideoView() {
 
   return (
     <div className="vv">
-      <style dangerouslySetInnerHTML={{ __html: styles }} />
-
       <div className="vv-wrap">
         <div className="vv-grid">
-          {/* LEFT: player and details */}
           <div>
             <div className="vv-card">
               <div style={{ background: "#000", position: "relative" }}>
@@ -578,27 +1396,81 @@ export default function VideoView() {
                     display: "block",
                     background: "#000",
                     pointerEvents:
-                      previewActive && previewHit ? "none" : "auto",
+                      (previewActive && previewHit) || hardLoginGate
+                        ? "none"
+                        : "auto",
                   }}
                   controls
                   playsInline
                   preload="metadata"
                   crossOrigin="anonymous"
+                  controlsList="nodownload"
+                  disablePictureInPicture
+                  onContextMenu={(e) => e.preventDefault()}
+                  onError={() => setVideoErr(true)}
+                  onLoadedData={() => setVideoErr(false)}
                 />
-                {previewActive && previewHit && (
-                  <div className="vv-gate" aria-live="polite">
+
+                {/* fallback image layer */}
+                {(hardLoginGate || !srcUrl || videoErr) && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background:
+                        "radial-gradient(800px 400px at 20% 30%, rgba(99,102,241,.22), rgba(0,0,0,0) 55%)",
+                      pointerEvents: "none",
+                    }}
+                    aria-hidden="true"
+                  >
+                    <img
+                      src={BishopRobertsonTVLogo}
+                      alt=""
+                      style={{
+                        width: "min(420px, 60%)",
+                        opacity: 0.92,
+                        filter: "drop-shadow(0 18px 60px rgba(0,0,0,.55))",
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* Up Next countdown overlay (YouTube-like) */}
+                {upNextCountdown > 0 && (
+                  <div
+                    className="vv-upnext-overlay"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <div className="vv-upnext-card">
+                      <div className="vv-upnext-title">Up next</div>
+                      <div className="vv-upnext-sub">
+                        Playing next in <strong>{upNextCountdown}</strong>s
+                      </div>
+                      <div className="vv-upnext-actions">
+                        <button className="vv-btn" onClick={cancelUpNext}>
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {(hardLoginGate || (previewActive && previewHit)) && (
+                  <div className="vv-gate">
                     <div className="vv-gate-inner">
-                      <p className="vv-gate-text">
+                      <p style={{ marginTop: 0 }}>
                         Please log in to watch the full video.
                       </p>
-                      <div
-                        className="vv-row"
-                        style={{ justifyContent: "center" }}
+                      <button
+                        className="vv-btn primary"
+                        onClick={goLoginWithResume}
                       >
-                        <Link className="vv-btn primary block" to="/login">
-                          Log in
-                        </Link>
-                      </div>
+                        Log in
+                      </button>
                     </div>
                   </div>
                 )}
@@ -618,18 +1490,13 @@ export default function VideoView() {
                       >
                         + Add to playlist
                       </button>
+
                       {showPL && (
                         <div className="vv-popmenu">
                           {plLoading && (
-                            <div className="vv-muted" style={{ padding: 6 }}>
-                              Loading…
-                            </div>
+                            <div className="vv-muted">Loading…</div>
                           )}
-                          {!plLoading && myPlaylists.length === 0 && (
-                            <div className="vv-muted" style={{ padding: 6 }}>
-                              You don’t have any playlists yet.
-                            </div>
-                          )}
+
                           {!plLoading &&
                             myPlaylists.map((p) => {
                               const inList = memberOf.has(String(p.id));
@@ -637,17 +1504,14 @@ export default function VideoView() {
                                 <label
                                   key={p.id}
                                   className="vv-poprow"
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    toggleMembership(p.id);
-                                  }}
+                                  onClick={() => toggleMembership(p.id)}
                                 >
                                   <input
                                     type="checkbox"
                                     checked={inList}
                                     readOnly
                                   />
-                                  <span className="vv-poplbl">{p.title}</span>
+                                  <span>{p.title}</span>
                                 </label>
                               );
                             })}
@@ -655,9 +1519,9 @@ export default function VideoView() {
                       )}
                     </div>
                   ) : (
-                    <Link className="vv-btn" to="/login">
+                    <button className="vv-btn" onClick={goLoginWithResume}>
                       + Add to playlist
-                    </Link>
+                    </button>
                   )}
 
                   <button className="vv-btn vv-share" onClick={share}>
@@ -665,63 +1529,23 @@ export default function VideoView() {
                   </button>
                 </div>
 
-                <h1 className="vv-h1">{video.title || "Untitled video"}</h1>
+                <h1 className="vv-h1">{video.title}</h1>
 
                 <div className="vv-byline">
                   {author && <span className="vv-badge">{author}</span>}
-                  {created && <span>{datePretty(created)}</span>}
+                  {currentPublishedLabel && (
+                    <span>{currentPublishedLabel}</span>
+                  )}
                 </div>
 
-                {!!tags.length && (
-                  <div style={{ margin: "0 8px 8px" }}>
-                    {tags.map((t, i) => (
-                      <span key={`tag-${i}`} className="vv-badge">
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {!!video.description && (
-                  <>
-                    <hr className="vv-hr" />
-                    <div style={{ margin: "0 8px 8px" }} className="vv-muted">
-                      {video.description}
-                    </div>
-                  </>
-                )}
-
-                {/* Resources */}
-                {resources.length > 0 && (
-                  <>
-                    <hr className="vv-hr" />
-                    <div style={{ margin: "0 8px" }}>
-                      <h3 style={{ margin: "0 0 6px", fontSize: 14 }}>
-                        Resources
-                      </h3>
-                      <ul style={{ margin: 0, paddingLeft: 18 }}>
-                        {resources.map((r, i) => (
-                          <li key={i} style={{ marginBottom: 6 }}>
-                            <a
-                              href={absUrl(r.url)}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              {r.title || absUrl(r.url)}
-                            </a>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </>
-                )}
-
-                {/* Comments */}
                 <hr className="vv-hr" />
-                <div className="vv-comment-box" style={{ margin: "0 8px" }}>
+
+                {/* Comments (kept) */}
+                <div>
                   <strong>Comments</strong>
+
                   {isAuthed ? (
-                    <form onSubmit={postComment} style={{ marginTop: 8 }}>
+                    <form onSubmit={postComment}>
                       <textarea
                         rows={3}
                         value={cmtTxt}
@@ -731,82 +1555,74 @@ export default function VideoView() {
                           width: "100%",
                           background: "#0b1020",
                           color: "#e5e7eb",
-                          border: "1px solid var(--border)",
+                          border: "1px solid rgba(148,163,184,.18)",
                           borderRadius: 8,
                           padding: 8,
-                          resize: "vertical",
                         }}
                       />
-                      <div className="vv-row" style={{ marginTop: 6 }}>
-                        <button className="vv-btn primary">Post</button>
-                        {cmtErr && (
-                          <span style={{ color: "#ef4444" }}>{cmtErr}</span>
-                        )}
-                      </div>
+
+                      <button
+                        className="vv-btn primary"
+                        style={{ marginTop: 6 }}
+                      >
+                        Post
+                      </button>
+                      {cmtErr && (
+                        <span style={{ color: "#ef4444" }}>{cmtErr}</span>
+                      )}
                     </form>
                   ) : (
-                    <div style={{ marginTop: 4 }}>
-                      <Link to="/login">Sign in</Link> to join the conversation.
+                    <div>
+                      <button
+                        type="button"
+                        onClick={goLoginWithResume}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "#93c5fd",
+                          padding: 0,
+                          cursor: "pointer",
+                          textDecoration: "underline",
+                        }}
+                      >
+                        Sign in
+                      </button>{" "}
+                      to comment.
                     </div>
                   )}
 
-                  <div
-                    className="comment-list-wrapper"
-                    style={{ marginTop: 10 }}
-                  >
+                  <div style={{ marginTop: 14 }}>
                     {cmtLoading ? (
                       <div className="vv-muted">Loading comments…</div>
                     ) : comments.length === 0 ? (
                       <div className="vv-muted">No comments yet.</div>
                     ) : (
                       <>
-                        <ul
-                          className="comment-list"
-                          style={{ listStyle: "none", paddingLeft: 0 }}
-                        >
-                          {visibleComments.map((c) => (
-                            <li
-                              key={c.id || c._id || Math.random()}
-                              className="comment-item"
-                              style={{
-                                padding: "8px 0",
-                                borderBottom: "1px solid var(--border)",
-                              }}
-                            >
-                              <div
-                                style={{ fontSize: 13, color: "#cbd5e1" }}
-                                className="comment-meta"
-                              >
-                                {c.author_name ||
-                                  c.user_name ||
-                                  (c.user_id
-                                    ? `Member ${c.user_id}`
-                                    : "Member")}
-                                {c.created_at && (
-                                  <> · {datePretty(c.created_at)}</>
-                                )}
-                              </div>
-                              <div
-                                className="comment-body"
-                                style={{ whiteSpace: "pre-wrap" }}
-                              >
-                                {c.body || c.text || ""}
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
+                        {visibleComments.map((c) => (
+                          <div
+                            key={c.id}
+                            style={{
+                              borderBottom: "1px solid rgba(148,163,184,.18)",
+                              padding: "8px 0",
+                            }}
+                          >
+                            <div style={{ color: "#cbd5e1", fontSize: 13 }}>
+                              {c.user_name || "Member"} •{" "}
+                              {datePretty(c.created_at)}
+                            </div>
+                            <div>{c.body}</div>
+                          </div>
+                        ))}
 
                         {hasMoreComments && (
                           <button
-                            type="button"
-                            onClick={() => setShowAllComments((prev) => !prev)}
-                            className="see-more-btn"
+                            className="vv-btn"
+                            onClick={() => setShowAllComments((x) => !x)}
+                            style={{ marginTop: 6 }}
                           >
                             {showAllComments
-                              ? "Show fewer comments"
-                              : `See more comments (${
-                                  comments.length - MAX_VISIBLE_COMMENTS
-                                })`}
+                              ? "Show less"
+                              : `Show more (${comments.length - MAX_VISIBLE_COMMENTS})`}
                           </button>
                         )}
                       </>
@@ -817,45 +1633,46 @@ export default function VideoView() {
             </div>
           </div>
 
-          {/* RIGHT: playlist-aware sidebar */}
-          <aside className="vv-side">
+          <aside>
             {inPlaylistMode ? (
               <>
-                {!!playlistRest.length && (
+                {playlistRest.length > 0 && (
                   <div className="vv-side-card">
-                    <div className="vv-side-title">
-                      {playlistMeta?.title || "Playlist"}
-                    </div>
+                    <div className="vv-side-title">{playlistMeta?.title}</div>
                     <div className="vv-rel">
-                      {playlistRest.slice(0, 20).map((v) => {
+                      {playlistRest.map((v) => {
                         const dur = secsFromAny(
                           v.duration_seconds ??
                             v.duration_sec ??
                             v.duration ??
-                            v?.metadata?.duration
+                            v?.metadata?.duration,
                         );
+                        const thumb = v.thumbnail_url
+                          ? absUrl(v.thumbnail_url)
+                          : "";
+                        const ms = getPublishedMs(v);
+
                         return (
                           <Link
                             key={v.id}
                             to={`/watch/${v.id}?playlist=${playlistParam}`}
                             className="vv-rel-item"
                           >
-                            <div className="vv-thumb" aria-hidden="true">
-                              {v.thumbnail_url ? (
-                                <img src={absUrl(v.thumbnail_url)} alt="" />
-                              ) : (
-                                <div
-                                  style={{ width: "100%", height: "100%" }}
-                                />
-                              )}
+                            <div className="vv-thumb">
+                              <ThumbImg src={thumb} alt="" />
                               {dur && (
                                 <span className="vv-dur">
                                   {formatDuration(dur)}
                                 </span>
                               )}
                             </div>
-                            <div className="vv-next-title">
-                              {v.title || "Untitled"}
+                            <div className="vv-rel-meta">
+                              <div className="vv-rel-title">{v.title}</div>
+                              <div className="vv-rel-date">
+                                {ms
+                                  ? datePretty(new Date(ms).toISOString())
+                                  : ""}
+                              </div>
                             </div>
                           </Link>
                         );
@@ -866,74 +1683,197 @@ export default function VideoView() {
               </>
             ) : (
               <>
-                {nextVideo && (
-                  <div className="vv-side-card" style={{ marginBottom: 12 }}>
-                    <div className="vv-side-title">NEXT VIDEO</div>
-                    <Link to={`/watch/${nextVideo.id}`} className="vv-rel-item">
-                      <div className="vv-thumb" aria-hidden="true">
-                        {nextVideo.thumbnail_url ? (
-                          <img src={absUrl(nextVideo.thumbnail_url)} alt="" />
-                        ) : (
-                          <div style={{ width: "100%", height: "100%" }} />
-                        )}
-                        {secsFromAny(
-                          nextVideo.duration_seconds ??
-                            nextVideo.duration_sec ??
-                            nextVideo.duration ??
-                            nextVideo?.metadata?.duration
-                        ) && (
-                          <span className="vv-dur">
-                            {formatDuration(
-                              secsFromAny(
+                {(nextVideo || remainingNext.length > 0) && (
+                  <div className="vv-side-card">
+                    <div
+                      className="vv-side-title"
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: 10,
+                      }}
+                    >
+                      <span>Up next</span>
+
+                      <div className="vv-autonext">
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: "#94a3b8",
+                            fontWeight: 800,
+                          }}
+                        >
+                          Autoplay
+                        </span>
+                        <button
+                          type="button"
+                          className={`vv-toggle ${autoNextOn ? "on" : ""}`}
+                          onClick={toggleAutoNext}
+                          aria-pressed={autoNextOn}
+                          title="Autoplay next video"
+                        >
+                          <span className="vv-toggle-knob" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div
+                      className={
+                        shouldScrollNext ? "vv-side-scroll" : undefined
+                      }
+                    >
+                      {/* Playing row (YouTube-style pinned) */}
+                      <div
+                        className="vv-rel-item vv-playing"
+                        style={{ cursor: "default", pointerEvents: "none" }}
+                      >
+                        <div className="vv-thumb">
+                          <ThumbImg src={poster} alt="" />
+                        </div>
+                        <div className="vv-rel-meta">
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 10,
+                              alignItems: "center",
+                            }}
+                          >
+                            <div className="vv-rel-title">{video.title}</div>
+                            <span className="vv-playing-pill">Playing</span>
+                          </div>
+                          <div className="vv-rel-date">
+                            {currentPublishedLabel}
+                          </div>
+                        </div>
+                      </div>
+
+                      {nextVideo && (
+                        <Link
+                          to={`/watch/${nextVideo.id}`}
+                          className="vv-rel-item"
+                        >
+                          <div className="vv-thumb">
+                            <ThumbImg
+                              src={
+                                nextVideo.thumbnail_url
+                                  ? absUrl(nextVideo.thumbnail_url)
+                                  : ""
+                              }
+                              alt=""
+                            />
+                            {(() => {
+                              const dur = secsFromAny(
                                 nextVideo.duration_seconds ??
                                   nextVideo.duration_sec ??
                                   nextVideo.duration ??
-                                  nextVideo?.metadata?.duration
-                              )
-                            )}
-                          </span>
-                        )}
-                      </div>
-                      <div className="vv-next-title">
-                        {nextVideo.title || "Untitled"}
-                      </div>
-                    </Link>
+                                  nextVideo?.metadata?.duration,
+                              );
+                              return dur ? (
+                                <span className="vv-dur">
+                                  {formatDuration(dur)}
+                                </span>
+                              ) : null;
+                            })()}
+                          </div>
+                          <div className="vv-rel-meta">
+                            <div className="vv-rel-title">
+                              {nextVideo.title}
+                            </div>
+                            <div className="vv-rel-date">
+                              {(() => {
+                                const ms = getPublishedMs(nextVideo);
+                                return ms
+                                  ? datePretty(new Date(ms).toISOString())
+                                  : "";
+                              })()}
+                            </div>
+                          </div>
+                        </Link>
+                      )}
+
+                      {remainingNext.length > 0 && (
+                        <div className="vv-rel">
+                          {remainingNext.map((v) => {
+                            const thumb = v.thumbnail_url
+                              ? absUrl(v.thumbnail_url)
+                              : "";
+                            const dur = secsFromAny(
+                              v.duration_seconds ??
+                                v.duration_sec ??
+                                v.duration ??
+                                v?.metadata?.duration,
+                            );
+                            const ms = getPublishedMs(v);
+
+                            return (
+                              <Link
+                                key={v.id}
+                                to={`/watch/${v.id}`}
+                                className="vv-rel-item"
+                              >
+                                <div className="vv-thumb">
+                                  <ThumbImg src={thumb} alt="" />
+                                  {dur && (
+                                    <span className="vv-dur">
+                                      {formatDuration(dur)}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="vv-rel-meta">
+                                  <div className="vv-rel-title">{v.title}</div>
+                                  <div className="vv-rel-date">
+                                    {ms
+                                      ? datePretty(new Date(ms).toISOString())
+                                      : ""}
+                                  </div>
+                                </div>
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 
-                {!!related.length && (
+                {relatedVideos.length > 0 && (
                   <div className="vv-side-card">
-                    <div className="vv-side-title">Related Videos</div>
+                    <div className="vv-side-title">Related</div>
                     <div className="vv-rel">
-                      {related.slice(0, 6).map((v) => {
+                      {relatedVideos.map((v) => {
+                        const thumb = v.thumbnail_url
+                          ? absUrl(v.thumbnail_url)
+                          : "";
                         const dur = secsFromAny(
                           v.duration_seconds ??
                             v.duration_sec ??
                             v.duration ??
-                            v?.metadata?.duration
+                            v?.metadata?.duration,
                         );
+                        const ms = getPublishedMs(v);
+
                         return (
                           <Link
                             key={v.id}
                             to={`/watch/${v.id}`}
                             className="vv-rel-item"
                           >
-                            <div className="vv-thumb" aria-hidden="true">
-                              {v.thumbnail_url ? (
-                                <img src={absUrl(v.thumbnail_url)} alt="" />
-                              ) : (
-                                <div
-                                  style={{ width: "100%", height: "100%" }}
-                                />
-                              )}
+                            <div className="vv-thumb">
+                              <ThumbImg src={thumb} alt="" />
                               {dur && (
                                 <span className="vv-dur">
                                   {formatDuration(dur)}
                                 </span>
                               )}
                             </div>
-                            <div className="vv-next-title">
-                              {v.title || "Untitled"}
+                            <div className="vv-rel-meta">
+                              <div className="vv-rel-title">{v.title}</div>
+                              <div className="vv-rel-date">
+                                {ms
+                                  ? datePretty(new Date(ms).toISOString())
+                                  : ""}
+                              </div>
                             </div>
                           </Link>
                         );

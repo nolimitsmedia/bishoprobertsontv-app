@@ -1,0 +1,682 @@
+// src/pages/site/LivePage.js
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import api from "../../api";
+import "./LivePage.css";
+
+const DEBUG = false;
+
+// Cache key for instant countdown on refresh
+const LS_NEXT_LIVE_KEY = "brtv_next_live_at_v1";
+
+// ✅ analytics ping interval (matches your analytics summary ping_seconds=15)
+const LIVE_PING_SECONDS = 15;
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+function ymd(d) {
+  const x = new Date(d);
+  return `${x.getFullYear()}-${pad2(x.getMonth() + 1)}-${pad2(x.getDate())}`;
+}
+
+function formatDuration(totalSec) {
+  const s = Math.max(0, Math.floor(totalSec));
+  const days = Math.floor(s / 86400);
+  const hours = Math.floor((s % 86400) / 3600);
+  const minutes = Math.floor((s % 3600) / 60);
+  const seconds = s % 60;
+
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(days)} Days : ${pad(hours)} Hours : ${pad(
+    minutes
+  )} Minutes : ${pad(seconds)} Seconds`;
+}
+
+function safeDate(v) {
+  if (!v) return null;
+  let d = new Date(v);
+  if (!Number.isNaN(d.getTime())) return d;
+
+  if (typeof v === "string") {
+    d = new Date(v.replace(" ", "T"));
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  return null;
+}
+
+function buildStreamControlEmbedUrl(channelId) {
+  if (!channelId) return null;
+
+  const id = String(channelId).trim();
+
+  // If someone stored a full URL already, respect it
+  if (/^https?:\/\//i.test(id)) return id;
+
+  // Otherwise build the correct player URL
+  return `https://my.streamcontrol.live/player/${encodeURIComponent(
+    id
+  )}?autoplay=true&muted=1&playsinline=1`;
+}
+
+function loadCachedNextLive() {
+  try {
+    const raw = localStorage.getItem(LS_NEXT_LIVE_KEY);
+    if (!raw) return null;
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? null : d;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedNextLive(dateObj) {
+  try {
+    if (!dateObj) return;
+    localStorage.setItem(LS_NEXT_LIVE_KEY, dateObj.toISOString());
+  } catch {
+    // ignore
+  }
+}
+
+export default function LivePage() {
+  const isMountedRef = useRef(true);
+
+  const [loading, setLoading] = useState(true);
+
+  const [channelUuid, setChannelUuid] = useState(null);
+  const [providerChannelId, setProviderChannelId] = useState("gworrdns");
+
+  // raw -> stable to prevent UI bouncing
+  const [rawStatus, setRawStatus] = useState("offline");
+  const [stableStatus, setStableStatus] = useState("offline");
+  const offlineStreakRef = useRef(0);
+  const onlineStreakRef = useRef(0);
+
+  const [mode, setMode] = useState("none"); // live_window | countdown | none
+  const [nextLiveAt, setNextLiveAt] = useState(null);
+  const [countdown, setCountdown] = useState("");
+  const [forceShowPlayer, setForceShowPlayer] = useState(false);
+
+  const lastNextLiveMsRef = useRef(null);
+
+  // ✅ Player src is set ONLY when we actually want to show the player
+  // and then we keep it stable forever.
+  const [playerSrc, setPlayerSrc] = useState(null);
+
+  // ✅ auth for analytics (members-only)
+  const [isAuthed, setIsAuthed] = useState(false);
+
+  // ✅ analytics state refs
+  const liveSessionStartedRef = useRef(false);
+  const lastPingAtRef = useRef(0);
+
+  // ✅ prevent sending live_leave twice
+  const didLeaveRef = useRef(false);
+
+  // ✅ always have latest values inside intervals without re-wiring effects
+  const latestRef = useRef({
+    isAuthed: false,
+    channelUuid: null,
+    providerChannelId: "gworrdns",
+    stableStatus: "offline",
+    rawStatus: "offline",
+    mode: "none",
+    shouldShowPlayer: false,
+    isOnline: false,
+  });
+
+  const computeAndSetCountdownNow = useCallback((dateObj) => {
+    if (!dateObj) return;
+    const now = Date.now();
+    const diffSec = Math.floor((dateObj.getTime() - now) / 1000);
+    if (diffSec > 0) setCountdown(formatDuration(diffSec));
+    else setCountdown("");
+  }, []);
+
+  // ✅ auth bootstrap (same style as your other pages)
+  useEffect(() => {
+    const token =
+      localStorage.getItem("token") || sessionStorage.getItem("token");
+    if (!token) {
+      setIsAuthed(false);
+      return;
+    }
+    api
+      .get("/auth/me")
+      .then(() => setIsAuthed(true))
+      .catch(() => setIsAuthed(false));
+  }, []);
+
+  // ✅ helper: send analytics event safely (never breaks UI)
+  // IMPORTANT: analytics route currently requires video_id; we send a safe placeholder
+  // and mark it as kind=live in meta so analytics can separate it.
+  const sendLiveAnalytics = useCallback(async (eventType, extraMeta = {}) => {
+    const L = latestRef.current;
+    if (!L.isAuthed) return; // members-only analytics
+
+    try {
+      await api.post("/analytics/event", {
+        event_type: eventType,
+        // analytics.js requires video_id; use 0 for "live"
+        // (your /summary query groups by type and ignores video_id null; 0 will still group under live events via meta.kind)
+        video_id: 0,
+        duration_seconds:
+          eventType === "live_progress" ? LIVE_PING_SECONDS : null,
+        position_seconds: null,
+        page: "/live",
+        meta: {
+          kind: "live",
+          channel_uuid: L.channelUuid || null,
+          provider_channel_id: L.providerChannelId || null,
+          stable_status: L.stableStatus || null,
+          raw_status: L.rawStatus || null,
+          mode: L.mode || null,
+          ...extraMeta,
+        },
+      });
+    } catch {
+      // ignore (analytics should never break playback UI)
+    }
+  }, []);
+
+  const loadChannel = useCallback(async () => {
+    try {
+      const res = await api.get("/streamcontrol/channels");
+      const list = Array.isArray(res.data) ? res.data : [];
+      if (!list.length) return;
+
+      const ch = list[0];
+      const uuid = ch.id || ch.uuid || null;
+
+      const providerId =
+        ch.streamcontrol_channel_id ||
+        ch.provider_channel_id ||
+        ch.slug ||
+        ch.channel_code ||
+        providerChannelId ||
+        null;
+
+      if (!isMountedRef.current) return;
+
+      setChannelUuid(uuid);
+
+      if (providerId) {
+        setProviderChannelId(String(providerId));
+      }
+    } catch (err) {
+      // not fatal
+    }
+  }, [providerChannelId]);
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const idForStats = channelUuid || providerChannelId;
+      if (!idForStats) {
+        if (isMountedRef.current) setRawStatus("offline");
+        return;
+      }
+
+      const res = await api.get(
+        `/streamcontrol/${encodeURIComponent(idForStats)}/stats?_=${Date.now()}`
+      );
+
+      const data = res.data || {};
+      const apiOnline =
+        typeof data.online === "boolean"
+          ? data.online
+          : data.status === "online" || data.status === "broadcasting";
+
+      if (!isMountedRef.current) return;
+      setRawStatus(apiOnline ? "online" : "offline");
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      setRawStatus("offline");
+    } finally {
+      if (isMountedRef.current) setLoading(false);
+    }
+  }, [channelUuid, providerChannelId]);
+
+  // Debounce: flip to offline only after 3 consecutive offline polls
+  useEffect(() => {
+    if (!isMountedRef.current) return;
+
+    if (rawStatus === "online") {
+      onlineStreakRef.current += 1;
+      offlineStreakRef.current = 0;
+      if (stableStatus !== "online" && onlineStreakRef.current >= 1) {
+        setStableStatus("online");
+      }
+    } else {
+      offlineStreakRef.current += 1;
+      onlineStreakRef.current = 0;
+      if (stableStatus !== "offline" && offlineStreakRef.current >= 3) {
+        setStableStatus("offline");
+      }
+    }
+  }, [rawStatus, stableStatus]);
+
+  // ✅ Bootstrap countdown instantly from cache (before API calls finish)
+  useEffect(() => {
+    try {
+      const cached = loadCachedNextLive();
+      if (!cached) return;
+
+      const diffSec = Math.floor((cached.getTime() - Date.now()) / 1000);
+
+      // Use cache if it's still in the future, or within a small grace window
+      if (diffSec > -120) {
+        setMode("countdown");
+        setForceShowPlayer(false);
+        setNextLiveAt(cached);
+
+        if (diffSec > 0) setCountdown(formatDuration(diffSec));
+        else setCountdown("Starting...");
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const applyCountdownSchedule = useCallback(
+    (dateObj) => {
+      if (!dateObj || !isMountedRef.current) return;
+
+      const nextMs = dateObj.getTime();
+      const prevMs = lastNextLiveMsRef.current;
+      if (prevMs !== nextMs) {
+        lastNextLiveMsRef.current = nextMs;
+        setCountdown("");
+      }
+
+      setMode("countdown");
+      setForceShowPlayer(false);
+      setNextLiveAt(dateObj);
+
+      // ✅ cache for instant render on next refresh
+      saveCachedNextLive(dateObj);
+
+      computeAndSetCountdownNow(dateObj);
+    },
+    [computeAndSetCountdownNow]
+  );
+
+  const applyLiveWindow = useCallback(() => {
+    if (!isMountedRef.current) return;
+
+    lastNextLiveMsRef.current = null;
+    setMode("live_window");
+    setForceShowPlayer(true);
+    setNextLiveAt(null);
+    setCountdown("");
+  }, []);
+
+  const fetchNextLiveFromStreamControl = useCallback(async () => {
+    const id = providerChannelId;
+    if (!id) return { ok: false };
+
+    try {
+      const res = await api.get(
+        `/streamcontrol/${encodeURIComponent(id)}/next-live?_=${Date.now()}`
+      );
+
+      const data = res.data || {};
+      const state = data.state || "none";
+
+      if (state === "live_window") {
+        applyLiveWindow();
+        return { ok: true };
+      }
+
+      const next =
+        data.next_live_at ||
+        data.next_event?.start_at ||
+        data.event?.start_at ||
+        null;
+
+      const parsed = safeDate(next);
+      if (!parsed) return { ok: false };
+
+      applyCountdownSchedule(parsed);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false };
+    }
+  }, [providerChannelId, applyCountdownSchedule, applyLiveWindow]);
+
+  const fetchNextLiveFromCalendar = useCallback(async () => {
+    try {
+      const from = new Date();
+      const to = new Date();
+      to.setDate(to.getDate() + 60);
+
+      const res = await api.get(
+        `/admin/calendar/events?from=${encodeURIComponent(
+          ymd(from)
+        )}&to=${encodeURIComponent(ymd(to))}&_=${Date.now()}`
+      );
+
+      const items = Array.isArray(res.data?.events)
+        ? res.data.events
+        : Array.isArray(res.data)
+        ? res.data
+        : [];
+
+      const now = Date.now();
+
+      const upcoming = items
+        .filter((e) => String(e.type || "").toLowerCase() === "live")
+        .map((e) => {
+          const start = safeDate(e.start_at);
+          const end = e.end_at ? safeDate(e.end_at) : null;
+          return { ...e, _start: start, _end: end };
+        })
+        .filter((e) => e._start)
+        .sort((a, b) => a._start.getTime() - b._start.getTime());
+
+      const current = upcoming.find(
+        (e) => e._start.getTime() <= now && e._end && e._end.getTime() >= now
+      );
+
+      if (current) {
+        applyLiveWindow();
+        return { ok: true };
+      }
+
+      const next = upcoming.find((e) => e._start.getTime() > now);
+      if (!next) return { ok: false };
+
+      applyCountdownSchedule(next._start);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false };
+    }
+  }, [applyCountdownSchedule, applyLiveWindow]);
+
+  const refreshSchedule = useCallback(async () => {
+    const a = await fetchNextLiveFromStreamControl();
+    if (a.ok) return;
+
+    const b = await fetchNextLiveFromCalendar();
+    if (b.ok) return;
+
+    if (!isMountedRef.current) return;
+    lastNextLiveMsRef.current = null;
+    setMode("none");
+    setNextLiveAt(null);
+    setCountdown("");
+    setForceShowPlayer(false);
+  }, [fetchNextLiveFromStreamControl, fetchNextLiveFromCalendar]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    loadChannel();
+
+    // schedule first, then status
+    refreshSchedule();
+    loadStatus();
+
+    const statusInt = setInterval(loadStatus, 10000);
+    const schedInt = setInterval(refreshSchedule, 15000);
+
+    const onVis = () => {
+      if (document.visibilityState === "visible") {
+        refreshSchedule();
+        loadStatus();
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+
+    return () => {
+      isMountedRef.current = false;
+      clearInterval(statusInt);
+      clearInterval(schedInt);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [loadChannel, loadStatus, refreshSchedule]);
+
+  useEffect(() => {
+    if (mode !== "countdown" || !nextLiveAt) return;
+
+    let cancelled = false;
+
+    const tick = async () => {
+      if (cancelled) return;
+
+      const now = Date.now();
+      const diffSec = Math.floor((nextLiveAt.getTime() - now) / 1000);
+
+      if (diffSec <= 0) {
+        if (!isMountedRef.current) return;
+        setCountdown("");
+        setForceShowPlayer(true);
+
+        await refreshSchedule();
+        await loadStatus();
+        return;
+      }
+
+      if (isMountedRef.current) setCountdown(formatDuration(diffSec));
+    };
+
+    tick();
+    const intv = setInterval(tick, 1000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intv);
+    };
+  }, [mode, nextLiveAt, refreshSchedule, loadStatus]);
+
+  const isOnline = stableStatus === "online";
+  const shouldShowPlayer =
+    isOnline || mode === "live_window" || forceShowPlayer;
+
+  // keep latest values for analytics loops
+  useEffect(() => {
+    latestRef.current = {
+      ...latestRef.current,
+      isAuthed,
+      channelUuid,
+      providerChannelId,
+      stableStatus,
+      rawStatus,
+      mode,
+      shouldShowPlayer,
+      isOnline,
+    };
+  }, [
+    isAuthed,
+    channelUuid,
+    providerChannelId,
+    stableStatus,
+    rawStatus,
+    mode,
+    shouldShowPlayer,
+    isOnline,
+  ]);
+
+  // Countdown shows immediately as soon as we have nextLiveAt (cached or fetched)
+  const showCountdown =
+    !shouldShowPlayer && mode === "countdown" && !!nextLiveAt;
+
+  // ✅ Set player src ONE TIME when we actually need to show the player
+  useEffect(() => {
+    if (!shouldShowPlayer) return;
+    if (playerSrc) return;
+
+    const url = buildStreamControlEmbedUrl(providerChannelId);
+    if (url) setPlayerSrc(url);
+  }, [shouldShowPlayer, playerSrc, providerChannelId]);
+
+  // ✅ Analytics: fire live_open once per page visit (members only)
+  useEffect(() => {
+    if (!isAuthed) return;
+    if (liveSessionStartedRef.current) return;
+
+    liveSessionStartedRef.current = true;
+    didLeaveRef.current = false;
+
+    sendLiveAnalytics("live_open", {
+      visible: document.visibilityState === "visible",
+    });
+
+    return () => {
+      // on unmount (best effort) — prevent double leave
+      if (liveSessionStartedRef.current && !didLeaveRef.current) {
+        didLeaveRef.current = true;
+        sendLiveAnalytics("live_leave", { reason: "unmount" });
+      }
+      liveSessionStartedRef.current = false;
+    };
+  }, [isAuthed, sendLiveAnalytics]);
+
+  // ✅ Analytics: progress pings only while the player is showing + tab visible
+  useEffect(() => {
+    if (!isAuthed) return;
+    if (!shouldShowPlayer) return;
+
+    let cancelled = false;
+
+    const ping = async () => {
+      if (cancelled) return;
+
+      // Only count watch-time while tab is visible
+      if (document.visibilityState !== "visible") return;
+
+      const now = Date.now();
+      if (now - lastPingAtRef.current < LIVE_PING_SECONDS * 1000 - 250) return;
+
+      lastPingAtRef.current = now;
+
+      await sendLiveAnalytics("live_progress", {
+        online: stableStatus === "online",
+      });
+    };
+
+    // Immediate ping when player appears
+    ping();
+
+    const intv = setInterval(ping, LIVE_PING_SECONDS * 1000);
+
+    const onVis = () => {
+      if (document.visibilityState === "visible") {
+        ping();
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+
+    const onBeforeUnload = () => {
+      // best-effort leave signal (prevent double)
+      if (!didLeaveRef.current) {
+        didLeaveRef.current = true;
+        sendLiveAnalytics("live_leave", { reason: "beforeunload" });
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intv);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [isAuthed, shouldShowPlayer, sendLiveAnalytics, stableStatus]);
+
+  return (
+    <div className="live-wrapper">
+      <h1 className="live-title">Bishop Robertson Live Stream</h1>
+
+      <div className={`live-status ${isOnline ? "online" : "offline"}`}>
+        {isOnline ? "🔴 LIVE NOW" : "⚪ Offline"}
+      </div>
+
+      <div className="live-player-shell">
+        {/* PLAYER (only mounts/loads when live window starts) */}
+        {shouldShowPlayer ? (
+          <div
+            style={{
+              position: "relative",
+              width: "100%",
+              overflow: "hidden",
+              paddingTop: "56.25%",
+            }}
+          >
+            {playerSrc ? (
+              <iframe
+                src={playerSrc}
+                width="1920"
+                height="1080"
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  bottom: 0,
+                  right: 0,
+                  width: "100%",
+                  height: "100%",
+                  border: "none",
+                }}
+                scrolling="no"
+                frameBorder="0"
+                allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                allowFullScreen
+                title="Bishop Robertson Live Player"
+              />
+            ) : (
+              <div className="live-player live-player-offline">
+                <div className="live-offline-box">
+                  <p>Loading player…</p>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="live-player live-player-offline">
+            {showCountdown ? (
+              <div className="live-countdown">
+                <div className="live-countdown-label">
+                  Next Live Stream Starts In
+                </div>
+                <div className="live-countdown-time">
+                  {countdown || "Loading..."}
+                </div>
+              </div>
+            ) : (
+              <div className="live-offline-box">
+                <p>The livestream is currently offline.</p>
+                <p>Please check back soon.</p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {DEBUG ? (
+        <pre style={{ color: "#9ca3af", marginTop: 20 }}>
+          {JSON.stringify(
+            {
+              channelUuid,
+              providerChannelId,
+              rawStatus,
+              stableStatus,
+              mode,
+              nextLiveAt: nextLiveAt ? nextLiveAt.toISOString() : null,
+              countdown,
+              forceShowPlayer,
+              playerSrc,
+              offlineStreak: offlineStreakRef.current,
+              onlineStreak: onlineStreakRef.current,
+              loading,
+              isAuthed,
+              LIVE_PING_SECONDS,
+            },
+            null,
+            2
+          )}
+        </pre>
+      ) : null}
+    </div>
+  );
+}

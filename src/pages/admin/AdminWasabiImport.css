@@ -1,0 +1,492 @@
+/* src/pages/admin/AdminWasabiImport.css */
+
+.wasabi-page {
+  padding: 18px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.wasabi-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.wasabi-kicker {
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  opacity: 0.7;
+  margin-bottom: 6px;
+}
+
+.wasabi-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 800;
+}
+
+.wasabi-sub {
+  margin-top: 6px;
+  opacity: 0.7;
+  max-width: 900px;
+}
+
+.wasabi-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 14px;
+}
+
+.wasabi-row {
+  display: grid;
+  grid-template-columns: 1.1fr 1.1fr 1.3fr;
+  gap: 14px;
+}
+
+@media (max-width: 1100px) {
+  .wasabi-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.wasabi-field label {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 8px;
+  opacity: 0.9;
+}
+
+.wasabi-field input,
+.wasabi-field select {
+  width: 100%;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.25);
+  color: rgba(255, 255, 255, 0.92);
+  padding: 0 12px;
+  outline: none;
+}
+
+.wasabi-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0.65;
+}
+
+.wasabi-miniRow {
+  display: flex;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.wasabi-miniLabel {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-bottom: 6px;
+}
+
+.wasabi-pillRow {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.wasabi-pill {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 8px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.wasabi-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.wasabi-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0.9;
+}
+
+.wasabi-toolbarRight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.wasabi-selected {
+  opacity: 0.8;
+}
+
+.wasabi-btn {
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+}
+
+.wasabi-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.wasabi-btn--primary {
+  border: none;
+  background: linear-gradient(
+    90deg,
+    rgba(154, 92, 255, 0.95),
+    rgba(102, 43, 255, 0.95)
+  );
+}
+
+.wasabi-btn--ghost {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.wasabi-error {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 70, 70, 0.35);
+  background: rgba(255, 70, 70, 0.1);
+}
+
+.wasabi-tableWrap {
+  margin-top: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.wasabi-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.wasabi-table thead th {
+  text-align: left;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 12px;
+  opacity: 0.7;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.wasabi-table td {
+  padding: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  vertical-align: top;
+}
+
+.wasabi-table tr.is-selected {
+  background: rgba(154, 92, 255, 0.1);
+}
+
+.wasabi-fileName {
+  font-weight: 700;
+}
+
+.wasabi-fileKey {
+  margin-top: 4px;
+  font-size: 12px;
+  opacity: 0.65;
+  word-break: break-all;
+}
+
+.wasabi-footer {
+  margin-top: 14px;
+  display: flex;
+  justify-content: center;
+}
+
+.wasabi-result {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.wasabi-resultTitle {
+  font-weight: 800;
+}
+
+.wasabi-resultText {
+  margin-top: 6px;
+  opacity: 0.8;
+}
+
+/* -----------------------------
+   Toast (no deps)
+------------------------------ */
+.wasabi-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(520px, calc(100vw - 36px));
+  padding: 12px 12px;
+  border-radius: 12px;
+  background: rgba(18, 18, 18, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #fff;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+
+.wasabi-toast__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex: 0 0 10px;
+  background: #7c3aed; /* default */
+}
+
+.wasabi-toast.success .wasabi-toast__dot {
+  background: #22c55e;
+}
+
+.wasabi-toast.error .wasabi-toast__dot {
+  background: #ef4444;
+}
+
+.wasabi-toast.info .wasabi-toast__dot {
+  background: #60a5fa;
+}
+
+.wasabi-toast__msg {
+  font-size: 13px;
+  line-height: 1.3;
+  opacity: 0.98;
+  flex: 1;
+  word-break: break-word;
+}
+
+.wasabi-toast__close {
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.wasabi-toast__close:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* --------------------------------
+   Toast (responsive + actions + progress)
+----------------------------------- */
+.wasabi-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 9999;
+  width: min(560px, calc(100vw - 36px));
+  padding: 12px 12px;
+  border-radius: 12px;
+  background: rgba(18, 18, 18, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #fff;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(8px);
+}
+
+.wasabi-toast__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.wasabi-toast__left {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.wasabi-toast__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex: 0 0 10px;
+  margin-top: 5px;
+  background: #7c3aed;
+}
+
+.wasabi-toast.success .wasabi-toast__dot {
+  background: #22c55e;
+}
+.wasabi-toast.error .wasabi-toast__dot {
+  background: #ef4444;
+}
+.wasabi-toast.info .wasabi-toast__dot {
+  background: #60a5fa;
+}
+
+.wasabi-toast__msg {
+  font-size: 13px;
+  line-height: 1.35;
+  opacity: 0.98;
+  word-break: break-word;
+  min-width: 0;
+}
+
+.wasabi-toast__close {
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.wasabi-toast__close:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.wasabi-toast__progress {
+  margin-top: 10px;
+}
+
+.wasabi-toast__progressLabel {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  opacity: 0.9;
+  margin-bottom: 6px;
+}
+
+.wasabi-toast__bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.wasabi-toast__barFill {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.55);
+  transition: width 300ms ease;
+}
+
+.wasabi-toast__actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.wasabi-toastBtn {
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+
+.wasabi-toastBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.wasabi-toastBtn--primary {
+  border: 1px solid rgba(124, 58, 237, 0.5);
+  background: rgba(124, 58, 237, 0.45);
+}
+
+.wasabi-toastBtn--primary:hover {
+  background: rgba(124, 58, 237, 0.6);
+}
+
+/* --------------------------------
+   Page responsiveness
+----------------------------------- */
+.wasabi-actionsRow {
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Make the grid stack nicely on smaller screens.
+   If your existing CSS already handles this, this will just reinforce it. */
+@media (max-width: 980px) {
+  .wasabi-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .wasabi-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .wasabi-toolbarRight {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+}
+
+/* Table: hide less-important columns on mobile */
+@media (max-width: 720px) {
+  .wasabi-tableWrap {
+    overflow-x: auto;
+  }
+
+  .wasabi-table .col-modified,
+  .wasabi-table th.col-modified {
+    display: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .wasabi-table .col-size,
+  .wasabi-table th.col-size {
+    display: none;
+  }
+
+  .wasabi-toast {
+    right: 12px;
+    bottom: 12px;
+    width: calc(100vw - 24px);
+  }
+}

@@ -1,23 +1,11 @@
 // src/pages/content/VideoDetails.js
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
 import api from "../../api";
 import "./VideoDetails.css";
 import PlaylistPicker from "../../components/modals/PlaylistPicker";
 
 /* -------------------- utils -------------------- */
-function fmtDate(d) {
-  if (!d) return "—";
-  const x = new Date(d);
-  return x.toLocaleDateString(undefined, {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-function currencyList() {
-  return ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "PHP"];
-}
 function absUrl(u) {
   if (!u) return "";
   if (/^https?:\/\//i.test(u)) return u;
@@ -27,184 +15,146 @@ function absUrl(u) {
 function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
+function withTimeout(promise, ms = 15000) {
+  let t;
+  const timeout = new Promise((_, rej) => {
+    t = setTimeout(() => rej(new Error("Request timed out")), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
+}
 
-/* ---------------- Pricing editor ---------------- */
-const PricingEditor = React.memo(function PricingEditor({ value, onChange }) {
-  const normalized = useMemo(
-    () => ({
-      upsell_text: value?.upsell_text || "",
-      rental: value?.rental
-        ? {
-            currency: value.rental.currency || "USD",
-            price:
-              value.rental.price === 0 || value.rental.price
-                ? String(value.rental.price)
-                : "",
-            duration_days:
-              value.rental.duration_days === 0 || value.rental.duration_days
-                ? String(value.rental.duration_days)
-                : "",
-          }
-        : null,
-      purchase: value?.purchase
-        ? {
-            currency: value.purchase.currency || "USD",
-            price:
-              value.purchase.price === 0 || value.purchase.price
-                ? String(value.purchase.price)
-                : "",
-          }
-        : null,
-    }),
-    [value]
-  );
+/**
+ * Publish date input helpers (TEXT INPUT)
+ * - UI expects: "MM/DD/YYYY" (no native date picker to avoid reset while typing)
+ * - we store ISO in state at local midnight
+ */
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+// Display ISO -> "MM/DD/YYYY"
+function toUsDateInput(isoOrDate) {
+  if (!isoOrDate) return "";
+  const d = new Date(isoOrDate);
+  if (Number.isNaN(d.getTime())) return "";
+  const mm = pad2(d.getMonth() + 1);
+  const dd = pad2(d.getDate());
+  const yyyy = String(d.getFullYear());
+  return `${mm}/${dd}/${yyyy}`;
+}
+// Parse "MM/DD/YYYY" -> ISO at local midnight
+function fromUsDateInput(v) {
+  if (!v) return null;
+  const s = String(v).trim();
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
 
-  const [local, setLocal] = useState(normalized);
+  const mm = Number(m[1]);
+  const dd = Number(m[2]);
+  const yyyy = Number(m[3]);
 
-  useEffect(() => {
-    if (JSON.stringify(local) !== JSON.stringify(normalized)) {
-      setLocal(normalized);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [normalized]);
+  if (!Number.isFinite(mm) || !Number.isFinite(dd) || !Number.isFinite(yyyy))
+    return null;
+  if (yyyy < 1000 || yyyy > 9999) return null;
+  if (mm < 1 || mm > 12) return null;
 
-  useEffect(() => {
-    if (!onChange) return;
-    if (JSON.stringify(local) !== JSON.stringify(value || {})) {
-      onChange(local);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [local]);
+  const daysInMonth = new Date(yyyy, mm, 0).getDate(); // month is 1-based here
+  if (dd < 1 || dd > daysInMonth) return null;
 
-  const setL = (patch) => setLocal((prev) => ({ ...prev, ...patch }));
+  // local midnight
+  const d = new Date(yyyy, mm - 1, dd, 0, 0, 0, 0);
+  if (Number.isNaN(d.getTime())) return null;
 
-  const rental = local.rental ?? {
-    currency: "USD",
-    price: "",
-    duration_days: "",
-  };
-  const purchase = local.purchase ?? { currency: "USD", price: "" };
+  return d.toISOString();
+}
+function isValidUsDateInput(v) {
+  return !!fromUsDateInput(v);
+}
+
+/* -----------------------------------------
+   Modern Loading Spinner (same as Community.js)
+----------------------------------------- */
+function CircularSpinner({ size = 40, label = "Loading…" }) {
+  const ring = Math.max(4, Math.round(size / 10));
 
   return (
-    <>
-      <div className="vd-label">Additional pricing options (rental)</div>
-      <div className="vd-row">
-        <select
-          className="search"
-          style={{ maxWidth: 110 }}
-          value={rental.currency}
-          onChange={(e) =>
-            setL({ rental: { ...rental, currency: e.target.value } })
-          }
+    <div
+      style={{
+        display: "grid",
+        placeItems: "center",
+        gap: 10,
+        padding: "14px 0",
+      }}
+    >
+      <style>{`
+        @keyframes brtv-spin { to { transform: rotate(360deg); } }
+        @keyframes brtv-dash {
+          0%   { stroke-dasharray: 1, 200; stroke-dashoffset: 0; }
+          50%  { stroke-dasharray: 90, 200; stroke-dashoffset: -35; }
+          100% { stroke-dasharray: 90, 200; stroke-dashoffset: -125; }
+        }
+      `}</style>
+
+      <div
+        aria-label={label}
+        role="status"
+        style={{
+          width: size,
+          height: size,
+          display: "grid",
+          placeItems: "center",
+        }}
+      >
+        <svg
+          width={size}
+          height={size}
+          viewBox="0 0 50 50"
+          style={{
+            animation: "brtv-spin 1.2s linear infinite",
+            filter: "drop-shadow(0 6px 18px rgba(0,0,0,0.35))",
+          }}
         >
-          {currencyList().map((c) => (
-            <option key={`currency-${c}`}>{c}</option>
-          ))}
-        </select>
-        <input
-          className="search"
-          type="text"
-          inputMode="decimal"
-          style={{ maxWidth: 120 }}
-          value={rental.price}
-          onChange={(e) =>
-            setL({ rental: { ...rental, price: e.target.value } })
-          }
-          placeholder="0.00"
-        />
-        <input
-          className="search"
-          type="text"
-          inputMode="numeric"
-          style={{ maxWidth: 160 }}
-          value={rental.duration_days}
-          onChange={(e) =>
-            setL({ rental: { ...rental, duration_days: e.target.value } })
-          }
-          placeholder="days"
-        />
-        <button className="btn ghost" onClick={() => setL({ rental: null })}>
-          Remove
-        </button>
+          <circle
+            cx="25"
+            cy="25"
+            r="20"
+            fill="none"
+            stroke="rgba(255,255,255,0.10)"
+            strokeWidth={ring}
+          />
+          <circle
+            cx="25"
+            cy="25"
+            r="20"
+            fill="none"
+            stroke="rgba(154, 92, 255, 0.95)"
+            strokeLinecap="round"
+            strokeWidth={ring}
+            style={{ animation: "brtv-dash 1.4s ease-in-out infinite" }}
+          />
+        </svg>
       </div>
 
-      <div className="vd-gap" />
-      <div className="vd-label">One-time purchase price</div>
-      <div className="vd-row">
-        <select
-          className="search"
-          style={{ maxWidth: 110 }}
-          value={purchase.currency}
-          onChange={(e) =>
-            setL({ purchase: { ...purchase, currency: e.target.value } })
-          }
-        >
-          {currencyList().map((c) => (
-            <option key={`purchase-currency-${c}`}>{c}</option>
-          ))}
-        </select>
-        <input
-          className="search"
-          type="text"
-          inputMode="decimal"
-          style={{ maxWidth: 160 }}
-          value={purchase.price}
-          onChange={(e) =>
-            setL({ purchase: { ...purchase, price: e.target.value } })
-          }
-          placeholder="0.00"
-        />
-        <button className="btn ghost" onClick={() => setL({ purchase: null })}>
-          Remove
-        </button>
-      </div>
-
-      <div className="vd-gap" />
-      <div className="vd-label">Why should customers buy this?</div>
-      <textarea
-        className="search"
-        rows={3}
-        value={local.upsell_text || ""}
-        onChange={(e) => setL({ upsell_text: e.target.value })}
-      />
-      <div className="vd-small right">
-        Characters left: {Math.max(0, 140 - (local.upsell_text?.length || 0))}
-      </div>
-
-      {!local.rental && (
-        <button
-          className="btn ghost"
-          style={{ marginTop: 8 }}
-          onClick={() =>
-            setL({ rental: { currency: "USD", price: "", duration_days: "" } })
-          }
-        >
-          + Add rental option
-        </button>
+      {!!label && (
+        <div style={{ color: "rgba(255,255,255,0.78)", fontSize: 13 }}>
+          {label}
+        </div>
       )}
-      {!local.purchase && (
-        <button
-          className="btn ghost"
-          style={{ marginTop: 8, marginLeft: 8 }}
-          onClick={() => setL({ purchase: { currency: "USD", price: "" } })}
-        >
-          + Add purchase option
-        </button>
-      )}
-    </>
+    </div>
   );
-});
+}
 
 /* ------------- Geo-blocking Modal ------------- */
 function GeoModal({ open, onClose, value, onSave }) {
   const [allow, setAllow] = useState("");
   const [block, setBlock] = useState("");
+
   useEffect(() => {
     if (open) {
       setAllow((value?.geo_allow || []).join(", "));
       setBlock((value?.geo_block || []).join(", "));
     }
   }, [open, value]);
+
   if (!open) return null;
 
   const toArr = (s) =>
@@ -218,35 +168,38 @@ function GeoModal({ open, onClose, value, onSave }) {
       <div className="vd-modal" onClick={(e) => e.stopPropagation()}>
         <h3 className="vd-h">Geo-blocking</h3>
         <div className="vd-muted vd-small" style={{ marginTop: -6 }}>
-          Use ISO 3166-1 alpha-2 country codes (e.g. <code>US, CA, GB</code>).
+          Use ISO country codes (US, CA, GB, etc.)
         </div>
 
         <div className="vd-gap" />
-        <label className="vd-label">Allow only these countries</label>
+
+        <label className="vd-label">Allow</label>
         <input
           className="search"
-          placeholder="e.g. US, CA"
           value={allow}
           onChange={(e) => setAllow(e.target.value)}
         />
 
         <div className="vd-gap" />
-        <label className="vd-label">Block these countries</label>
+
+        <label className="vd-label">Block</label>
         <input
           className="search"
-          placeholder="e.g. RU, CN"
           value={block}
           onChange={(e) => setBlock(e.target.value)}
         />
 
-        <div className="vd-row right" style={{ marginTop: 14 }}>
+        <div className="vd-row right" style={{ marginTop: 16 }}>
           <button className="btn ghost" onClick={onClose}>
             Cancel
           </button>
           <button
             className="btn"
             onClick={() => {
-              onSave?.({ geo_allow: toArr(allow), geo_block: toArr(block) });
+              onSave({
+                geo_allow: toArr(allow),
+                geo_block: toArr(block),
+              });
               onClose();
             }}
           >
@@ -263,8 +216,8 @@ function normalizeCategories(raw) {
   const list = Array.isArray(raw?.items)
     ? raw.items
     : Array.isArray(raw)
-    ? raw
-    : [];
+      ? raw
+      : [];
   return list
     .map((c) => ({
       id:
@@ -294,7 +247,7 @@ function scopeToMe(categories, me) {
   return categories.filter((c) => String(c.ownerId) === String(me.id));
 }
 
-/* ---------------- Main Page ---------------- */
+/* ---------------- Main ---------------- */
 export default function VideoDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -305,17 +258,40 @@ export default function VideoDetails() {
 
   const videoRef = useRef(null);
   const thumbHRef = useRef(null);
-  const pricingCardRef = useRef(null);
-
-  const [pricingPulse, setPricingPulse] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
-  const [geoOpen, setGeoOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [pubBusy, setPubBusy] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  // ✅ single primary action busy (Save & Publish / Save changes)
+  const [primaryBusy, setPrimaryBusy] = useState(false);
+
   const [cats, setCats] = useState([]);
   const [catModalOpen, setCatModalOpen] = useState(false);
+
+  const [geoOpen, setGeoOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const [videoReloadKey, setVideoReloadKey] = useState(0);
+  const [assignedPlaylists, setAssignedPlaylists] = useState([]);
+
+  const [seoTitle, setSeoTitle] = useState("");
+  const [seoDescription, setSeoDescription] = useState("");
+
+  const [tags, setTags] = useState([]);
+  const [tagInput, setTagInput] = useState("");
+
+  const [authors, setAuthors] = useState([]);
+  const [authorInput, setAuthorInput] = useState("");
+
+  const [resources, setResources] = useState([]);
+  const [subtitles, setSubtitles] = useState([]);
+  const [audioTrack, setAudioTrack] = useState(null);
+  const [trailer, setTrailer] = useState(null);
+  const [customFilters, setCustomFilters] = useState([]);
+
+  const [geo, setGeo] = useState({ geo_allow: [], geo_block: [] });
 
   const [form, setForm] = useState({
     title: "",
@@ -329,70 +305,61 @@ export default function VideoDetails() {
     is_premium: true,
     created_at: null,
     free_preview_seconds: 0,
-    duration_seconds: null, // for clamping preview
-    // publish fields (separate from visibility)
+    duration_seconds: null,
     is_published: false,
     published_at: null,
   });
-  const [pubBusy, setPubBusy] = useState(false);
 
-  // remembers last non-public preview value
+  // ✅ raw string state for the publish date input (MM/DD/YYYY)
+  const [publishDateStr, setPublishDateStr] = useState("");
+
+  const [loadErr, setLoadErr] = useState("");
   const previewMemoryRef = useRef(0);
 
-  const [videoReloadKey, setVideoReloadKey] = useState(0);
-
-  // Kept (visible)
-  const [tags, setTags] = useState([]);
-  const [tagInput, setTagInput] = useState("");
-
-  // Hidden containers (round-trip)
-  const [seoTitle, setSeoTitle] = useState("");
-  const [seoDescription, setSeoDescription] = useState("");
-  const [resources, setResources] = useState([]);
-  const [subtitles, setSubtitles] = useState([]);
-  const [audioTrack, setAudioTrack] = useState(null);
-  const [trailer, setTrailer] = useState(null);
-  const [customFilters, setCustomFilters] = useState([]);
-
-  // Pricing lives in parent
-  const [pricing, setPricing] = useState({
-    rental: null,
-    purchase: null,
-    upsell_text: "",
-  });
-
-  const [authors, setAuthors] = useState([]);
-  const [authorInput, setAuthorInput] = useState("");
-
-  const [geo, setGeo] = useState({ geo_allow: [], geo_block: [] });
-
-  const [hoverH, setHoverH] = useState(false);
-  const [replaceState, setReplaceState] = useState({
-    working: false,
-    progress: 0,
-    error: "",
-  });
-
-  // Playlists UI
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [assignedPlaylists, setAssignedPlaylists] = useState([]);
+  // ✅ Keep the input string in sync when data loads / changes
+  useEffect(() => {
+    setPublishDateStr(toUsDateInput(form.published_at));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.published_at]);
 
   /* ---------------- Load ---------------- */
-  async function load() {
+  async function loadAssigned(aliveRef) {
     try {
-      setLoading(true);
-      const [meRes, vRes, cRes] = await Promise.all([
-        api.get("/auth/me"),
-        api.get(`/videos/${id}`),
-        api.get("/categories?mine=1"),
+      const [idsRes, listRes] = await Promise.all([
+        withTimeout(api.get(`playlists/videos/${id}`), 15000),
+        withTimeout(api.get("playlists"), 15000),
       ]);
 
-      const me = meRes.data || null;
-      const vd = vRes.data || {};
+      const ids = new Set((idsRes.data?.playlist_ids || []).map(String));
+      const items = (listRes.data?.items || []).filter((p) =>
+        ids.has(String(p.id)),
+      );
+
+      if (aliveRef.current) setAssignedPlaylists(items);
+    } catch (e) {
+      if (aliveRef.current) setAssignedPlaylists([]);
+    }
+  }
+
+  async function loadAll(aliveRef) {
+    try {
+      setLoadErr("");
+      setLoading(true);
+
+      const [meRes, vRes, cRes] = await Promise.all([
+        withTimeout(api.get("auth/me"), 15000),
+        withTimeout(api.get(`videos/${id}`), 15000),
+        withTimeout(api.get("categories?mine=1"), 15000),
+      ]);
+
+      if (!aliveRef.current) return;
+
+      const me = meRes.data;
+      const vd = vRes.data;
       const md = vd.metadata || {};
 
-      setForm((prev) => ({
-        ...prev,
+      setForm((f) => ({
+        ...f,
         title: vd.title || "",
         description: vd.description || "",
         short_description: vd.short_description || "",
@@ -402,179 +369,113 @@ export default function VideoDetails() {
         video_url: vd.video_url || "",
         visibility: vd.visibility || "private",
         is_premium: vd.is_premium ?? true,
-        created_at: vd.created_at || vd.created || null,
-        duration_seconds:
-          Number.isFinite(vd.duration_seconds) && vd.duration_seconds > 0
-            ? vd.duration_seconds
-            : null,
-        free_preview_seconds: Number.isFinite(vd.free_preview_seconds)
-          ? vd.free_preview_seconds
-          : Number(md.free_preview_seconds ?? md.preview_seconds ?? 0) || 0,
-        // NEW: publish state
+        created_at: vd.created_at || null,
+        duration_seconds: vd.duration_seconds || null,
+        free_preview_seconds:
+          vd.free_preview_seconds ??
+          md.free_preview_seconds ??
+          md.preview_seconds ??
+          0,
         is_published: !!vd.is_published,
-        published_at: vd.published_at || vd.publishedAt || null,
+        published_at: vd.published_at || null,
       }));
 
-      // seed memory for preview if not public
-      if ((vd.visibility || "private") !== "public") {
-        previewMemoryRef.current =
-          Number.isFinite(vd.free_preview_seconds) &&
-          vd.free_preview_seconds > 0
-            ? vd.free_preview_seconds
-            : Number(md.free_preview_seconds ?? md.preview_seconds ?? 0) || 0;
-      }
+      previewMemoryRef.current =
+        vd.free_preview_seconds ??
+        md.free_preview_seconds ??
+        md.preview_seconds ??
+        0;
 
-      const mineOnly = scopeToMe(normalizeCategories(cRes.data), me);
-      const uniqueCats = Array.from(
-        new Map(mineOnly.map((c) => [String(c.id), c])).values()
-      );
-      setCats(uniqueCats);
+      const mineCats = scopeToMe(normalizeCategories(cRes.data), me);
+      setCats(mineCats);
 
-      // hidden containers – keep values for round-trip
       setSeoTitle(md.seo_title || "");
       setSeoDescription(md.seo_description || "");
+
       setTags(md.tags || []);
+
       setResources(md.resources || []);
       setSubtitles(md.subtitles || []);
       setAudioTrack(md.audio_track || null);
       setTrailer(md.trailer || null);
-
-      setPricing({
-        rental: md.pricing?.rental
-          ? {
-              currency: md.pricing.rental.currency || "USD",
-              price:
-                md.pricing.rental.price === 0 || md.pricing.rental.price
-                  ? String(md.pricing.rental.price)
-                  : "",
-              duration_days:
-                md.pricing.rental.duration_days === 0 ||
-                md.pricing.rental.duration_days
-                  ? String(md.pricing.rental.duration_days)
-                  : "",
-            }
-          : null,
-        purchase: md.pricing?.purchase
-          ? {
-              currency: md.pricing.purchase.currency || "USD",
-              price:
-                md.pricing.purchase.price === 0 || md.pricing.purchase.price
-                  ? String(md.pricing.purchase.price)
-                  : "",
-            }
-          : null,
-        upsell_text: md.pricing?.upsell_text || "",
-      });
+      setCustomFilters(md.custom_filters || []);
 
       setAuthors(md.authors || []);
-      setCustomFilters(md.custom_filters || []);
+
       setGeo({
-        geo_allow: Array.isArray(md.geo_allow) ? md.geo_allow : [],
-        geo_block: Array.isArray(md.geo_block) ? md.geo_block : [],
+        geo_allow: md.geo_allow || [],
+        geo_block: md.geo_block || [],
       });
 
+      loadAssigned(aliveRef);
       setVideoReloadKey((k) => k + 1);
-
-      // Load assigned playlists (names for display)
-      await loadAssigned();
     } catch (e) {
-      console.error("load video error:", e);
-      alert("Video not found");
-      navigate(LIST_HREF, { replace: true });
+      console.error(e);
+      if (!aliveRef.current) return;
+
+      const msg =
+        e?.response?.status === 401
+          ? "Session expired. Please login again."
+          : e?.response?.status === 404
+            ? "Video not found."
+            : e?.message === "Request timed out"
+              ? "Request timed out. Please try again."
+              : "Failed to load video. Please try again.";
+
+      setLoadErr(msg);
     } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadAssigned() {
-    try {
-      const [idsRes, listRes] = await Promise.all([
-        api.get(`/playlists/videos/${id}`),
-        api.get("/playlists"),
-      ]);
-      const idSet = new Set((idsRes.data?.playlist_ids || []).map(String));
-      const items = (listRes.data?.items || []).filter((p) =>
-        idSet.has(String(p.id))
-      );
-      setAssignedPlaylists(items);
-    } catch (e) {
-      // non-fatal
+      if (aliveRef.current) setLoading(false);
     }
   }
 
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, location.pathname]);
-
-  // Robust video player init
-  useEffect(() => {
-    const url = absUrl(form.video_url || "");
-    const el = videoRef.current;
-    if (!url || !el) return;
-
-    let hls = null;
-    const setSrcAndLoad = (u) => {
-      el.src = u;
-      try {
-        el.load();
-      } catch {}
-    };
-
-    const ext = url.split("?")[0].split("#")[0].split(".").pop()?.toLowerCase();
-    const isHLS = url.includes(".m3u8") || ext === "m3u8";
-
-    if (!isHLS) {
-      setSrcAndLoad(url);
-      return () => {
-        if (hls) {
-          try {
-            hls.destroy();
-          } catch {}
-          hls = null;
-        }
-      };
-    }
-
-    if (el.canPlayType("application/vnd.apple.mpegURL")) {
-      setSrcAndLoad(url);
-      return () => {
-        if (hls) {
-          try {
-            hls.destroy();
-          } catch {}
-          hls = null;
-        }
-      };
-    }
-
-    let cancelled = false;
-    import("hls.js")
-      .then(({ default: Hls }) => {
-        if (cancelled) return;
-        if (Hls.isSupported()) {
-          hls = new Hls({ enableWorker: true });
-          hls.loadSource(url);
-          hls.attachMedia(el);
-        } else {
-          setSrcAndLoad(url);
-        }
-      })
-      .catch(() => setSrcAndLoad(url));
-
+    const aliveRef = { current: true };
+    loadAll(aliveRef);
     return () => {
-      cancelled = true;
-      if (hls) {
-        try {
-          hls.destroy();
-        } catch {}
-        hls = null;
-      }
+      aliveRef.current = false;
     };
-  }, [form.video_url, videoReloadKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
-  function setF(k, v) {
-    setForm((f) => ({ ...f, [k]: v }));
+  /* ---------------- Payload builder (used by Save + Save&Publish) ---------------- */
+  function buildSavePayload() {
+    const effectivePreview =
+      form.is_premium === true
+        ? clamp(Number(form.free_preview_seconds), 0, 7200)
+        : 0;
+
+    return {
+      // base columns
+      title: form.title,
+      description: form.description,
+      short_description: form.short_description,
+      category_id: form.category_id || null,
+      thumbnail_url: form.thumbnail_url || null,
+      video_url: form.video_url || null,
+      visibility: form.visibility,
+      is_premium: !!form.is_premium,
+      free_preview_seconds: effectivePreview,
+      preview_seconds: effectivePreview,
+
+      // ✅ publish date editor
+      published_at: form.published_at || null,
+
+      // metadata
+      seo_title: seoTitle,
+      seo_description: seoDescription,
+      tags,
+      authors,
+      resources,
+      subtitles,
+      audio_track: audioTrack,
+      trailer,
+      custom_filters: customFilters,
+
+      geo_allow: geo.geo_allow,
+      geo_block: geo.geo_block,
+
+      thumbnail_vertical_url: form.thumbnail_vertical_url || "",
+    };
   }
 
   /* ---------------- Save ---------------- */
@@ -582,873 +483,722 @@ export default function VideoDetails() {
     try {
       setSaving(true);
 
-      // If public, force preview to 0 (no-op for guests)
-      const effectivePreview =
-        form.visibility === "public"
-          ? 0
-          : clamp(Number(form.free_preview_seconds || 0), 0, 7200);
+      await withTimeout(api.put(`videos/${id}`, buildSavePayload()), 20000);
 
-      const pricingPayload = {
-        upsell_text: pricing.upsell_text || "",
-        rental: pricing.rental
-          ? {
-              currency: pricing.rental.currency || "USD",
-              price: Number.parseFloat(pricing.rental.price ?? "") || 0,
-              duration_days:
-                Number.parseInt(pricing.rental.duration_days ?? "", 10) || 1,
-            }
-          : null,
-        purchase: pricing.purchase
-          ? {
-              currency: pricing.purchase.currency || "USD",
-              price: Number.parseFloat(pricing.purchase.price ?? "") || 0,
-            }
-          : null,
-      };
-
-      await api.put(`/videos/${id}`, {
-        title: form.title,
-        description: form.description || null,
-        short_description: form.short_description || null,
-        category_id: form.category_id || null,
-        thumbnail_url: form.thumbnail_url || null,
-        video_url: form.video_url || null,
-        visibility: form.visibility || "private",
-        is_premium: !!form.is_premium,
-
-        // canonical preview
-        free_preview_seconds: effectivePreview,
-        // legacy alias some backends accept
-        preview_seconds: effectivePreview,
-
-        // metadata passthrough
-        seo_title: seoTitle,
-        seo_description: seoDescription,
-        thumbnail_vertical_url: form.thumbnail_vertical_url || null,
-        tags,
-        resources,
-        subtitles,
-        audio_track: audioTrack,
-        trailer,
-        pricing: pricingPayload,
-        authors,
-        custom_filters: customFilters,
-        geo_allow: geo.geo_allow,
-        geo_block: geo.geo_block,
-
-        // also place preview values into metadata-style keys
-        free_preview_seconds_meta: effectivePreview,
-        preview_seconds_meta: effectivePreview,
-      });
-
-      setVideoReloadKey((k) => k + 1);
-      await load();
+      const aliveRef = { current: true };
+      await loadAll(aliveRef);
     } catch (e) {
-      console.error("save error:", e);
-      alert(e?.response?.data?.message || "Failed to save");
+      alert("Failed to save");
+      console.error(e);
     } finally {
       setSaving(false);
     }
   }
 
-  /* ---------------- Publish / Unpublish ---------------- */
-  async function publishVideo(nextState) {
+  // ✅ internal save that can skip reload (keeps your existing saveAll intact)
+  async function saveAllInternal({ reload = true } = {}) {
+    await withTimeout(api.put(`videos/${id}`, buildSavePayload()), 20000);
+    if (reload) {
+      const aliveRef = { current: true };
+      await loadAll(aliveRef);
+    }
+  }
+
+  /* ---------------- Publish ---------------- */
+  async function publishVideo(state) {
     try {
       setPubBusy(true);
-      // Optimistic UI
-      setForm((f) => ({
-        ...f,
-        is_published: !!nextState,
-        published_at: nextState
-          ? f.published_at || new Date().toISOString()
-          : f.published_at,
-      }));
 
-      if (nextState) {
-        await api.post(`/videos/${id}/publish`);
-      } else {
-        await api.post(`/videos/${id}/unpublish`);
-      }
+      if (state) await withTimeout(api.post(`videos/${id}/publish`), 20000);
+      else await withTimeout(api.post(`videos/${id}/unpublish`), 20000);
 
-      await load();
+      const aliveRef = { current: true };
+      await loadAll(aliveRef);
     } catch (e) {
-      console.error("publish toggle failed:", e);
-      alert(e?.response?.data?.message || "Failed to update publish status");
-      // rollback state by reloading
-      await load();
+      alert("Failed");
     } finally {
       setPubBusy(false);
     }
   }
 
-  /* ---------------- Upload helpers ---------------- */
-  async function uploadToStorage(file) {
+  /* ---------------- PRIMARY ACTION: Save & Publish / Save changes ---------------- */
+  async function primaryAction() {
+    // published -> just save changes
+    if (form.is_published) {
+      await saveAll();
+      return;
+    }
+
+    // unpublished -> Save & Publish (single button flow)
+    try {
+      setPrimaryBusy(true);
+
+      // Make sure publish date typed is committed into form before saving
+      if (publishDateStr && isValidUsDateInput(publishDateStr)) {
+        const iso = fromUsDateInput(publishDateStr);
+        if (iso && iso !== form.published_at) {
+          setForm((f) => ({ ...f, published_at: iso }));
+        }
+      } else if (publishDateStr === "") {
+        // allow clearing date
+        // (form already set in onChange/onBlur, but keep safe)
+      }
+
+      // ✅ Save everything FIRST, so /publish won't replace published_at with NOW()
+      await saveAllInternal({ reload: false });
+
+      // ✅ Then publish
+      await withTimeout(api.post(`videos/${id}/publish`), 20000);
+
+      const aliveRef = { current: true };
+      await loadAll(aliveRef);
+    } catch (e) {
+      console.error(e);
+      alert("Failed");
+    } finally {
+      setPrimaryBusy(false);
+    }
+  }
+
+  /* ---------------- Uploads ---------------- */
+  async function uploadStorage(file) {
     const fd = new FormData();
     fd.append("file", file);
-    const up = await api.post("/uploads/video", fd);
-    return up?.data?.url;
+    const res = await withTimeout(api.post("uploads/video", fd), 120000);
+    return res.data?.url;
   }
 
-  async function replaceVideo(file) {
-    if (!file) return;
-    try {
-      setReplaceState({ working: true, progress: 0, error: "" });
-      const fd = new FormData();
-      fd.append("file", file);
-      const up = await api.post("/uploads/video", fd, {
-        onUploadProgress: (e) => {
-          if (e.total) {
-            const pct = Math.round((e.loaded / e.total) * 100);
-            setReplaceState((s) => ({ ...s, progress: pct }));
-          }
-        },
-      });
-      const url = up?.data?.url;
-      if (!url) throw new Error("Upload succeeded but URL missing");
-      await api.put(`/videos/${id}`, { video_url: url });
-      setF("video_url", url);
-      setVideoReloadKey((k) => k + 1);
-      setReplaceState({ working: false, progress: 100, error: "" });
-    } catch (e) {
-      setReplaceState({
-        working: false,
-        progress: 0,
-        error: e?.response?.data?.message || e?.message || "Replace failed",
-      });
-    }
-  }
-
-  async function uploadThumb(file, kind) {
-    if (!file) return;
-    try {
-      const url = await uploadToStorage(file);
-      if (!url) throw new Error("Upload succeeded but URL missing");
-      if (kind === "h") {
-        await api.put(`/videos/${id}`, { thumbnail_url: url });
-        setF("thumbnail_url", url);
-      }
-    } catch (e) {
-      alert(e?.response?.data?.message || "Thumbnail upload failed");
-    }
-  }
-
-  /* ---------------- Actions menu ---------------- */
-  function gotoEcommerce() {
-    try {
-      pricingCardRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
-      setPricingPulse(true);
-      window.setTimeout(() => setPricingPulse(false), 1200);
-    } catch {}
-  }
-
+  /* ---------------- Delete ---------------- */
   async function doDelete() {
-    if (!window.confirm("Delete this video? This cannot be undone.")) return;
+    if (!window.confirm("Delete this video?")) return;
     try {
       setDeleting(true);
-      await api.delete(`/videos/${id}`);
+      await withTimeout(api.delete(`videos/${id}`), 20000);
       navigate(LIST_HREF);
     } catch (e) {
-      console.error("delete error:", e);
-      alert(e?.response?.data?.message || "Delete failed");
+      alert("Failed");
     } finally {
       setDeleting(false);
     }
   }
 
-  /* ---------------- Preview helpers ---------------- */
+  /* ---------------- Free Preview ---------------- */
   const previewM = Math.floor((form.free_preview_seconds || 0) / 60);
   const previewS = (form.free_preview_seconds || 0) % 60;
-  const maxPreview =
-    Number.isFinite(form.duration_seconds) && form.duration_seconds > 0
-      ? form.duration_seconds
-      : 7200; // 2h upper guard
 
-  const setPreviewFromParts = (mins, secs) => {
-    const total = clamp(mins * 60 + secs, 0, maxPreview);
-    setF("free_preview_seconds", total);
-    previewMemoryRef.current = total;
+  const setPreview = (m, s) => {
+    const tot = clamp(m * 60 + s, 0, 7200);
+    setForm((f) => ({ ...f, free_preview_seconds: tot }));
+    previewMemoryRef.current = tot;
   };
 
-  const applyPreset = (seconds) => {
-    const total = clamp(seconds, 0, maxPreview);
-    setF("free_preview_seconds", total);
-    previewMemoryRef.current = total;
-  };
+  const anyBusy = loading || saving || pubBusy || deleting || primaryBusy;
 
-  // When visibility switches to public, freeze preview at 0 and remember previous
-  useEffect(() => {
-    if (form.visibility === "public") {
-      previewMemoryRef.current = form.free_preview_seconds || 0;
-      if (form.free_preview_seconds !== 0) setF("free_preview_seconds", 0);
-    } else {
-      const restored = clamp(previewMemoryRef.current || 0, 0, maxPreview);
-      if (form.free_preview_seconds !== restored)
-        setF("free_preview_seconds", restored);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.visibility, maxPreview]);
-
-  if (loading) {
+  if (loadErr) {
     return (
       <div className="card">
-        <div>Loading video…</div>
+        <div style={{ fontWeight: 800, marginBottom: 8 }}>Couldn’t load</div>
+        <div style={{ color: "#6b7280", marginBottom: 12 }}>{loadErr}</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn" onClick={() => navigate(LIST_HREF)}>
+            Back to videos
+          </button>
+          <button
+            className="btn ghost"
+            onClick={() => {
+              const aliveRef = { current: true };
+              loadAll(aliveRef);
+            }}
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
     <>
-      {/* Geo modal */}
+      {loading && (
+        <div style={{ margin: "8px 0 14px" }}>
+          <CircularSpinner label="Loading video details…" />
+        </div>
+      )}
+
       <GeoModal
         open={geoOpen}
         onClose={() => setGeoOpen(false)}
         value={geo}
-        onSave={(v) => setGeo(v)}
+        onSave={setGeo}
       />
 
-      {/* Playlist picker modal */}
       <PlaylistPicker
         videoId={id}
         open={pickerOpen}
-        onClose={(updated) => {
+        onClose={(changed) => {
           setPickerOpen(false);
-          if (updated) loadAssigned();
+          if (changed) {
+            const aliveRef = { current: true };
+            loadAssigned(aliveRef);
+          }
         }}
       />
 
-      {/* New Category modal */}
       <NewCategoryModal
         open={catModalOpen}
         onClose={() => setCatModalOpen(false)}
         onCreate={(cat) => {
-          const created = {
-            id: cat.id,
-            name: cat.name || cat.title || "",
-            ownerId:
-              cat.created_by ??
-              cat.user_id ??
-              cat.owner_id ??
-              cat.account_id ??
-              null,
-          };
-          setCats((prev) => {
-            const map = new Map(prev.map((c) => [String(c.id), c]));
-            map.set(String(created.id), created);
-            return Array.from(map.values());
-          });
-          setF("category_id", created.id);
+          setCats((c) => [...c, cat]);
+          setForm((f) => ({ ...f, category_id: cat.id }));
         }}
       />
 
-      <div className="vd-grid">
-        {/* LEFT */}
-        <div className="vd-col">
-          <div className="vd-header">
-            <div className="vd-breadcrumbs">
-              <Link to={LIST_HREF} className="vd-link">
-                All videos
-              </Link>
-              <span>›</span>
-              <span className="vd-crumb">{form.title || "Untitled"}</span>
-            </div>
-            <div className="vd-actions" style={{ position: "relative" }}>
-              <button
-                className="btn ghost"
-                onClick={() => setMoreOpen((s) => !s)}
-              >
-                More actions ▾
-              </button>
-              {moreOpen && (
-                <div
-                  className="menu"
-                  onMouseLeave={() => setMoreOpen(false)}
-                  style={{ minWidth: 220, right: 0 }}
-                >
-                  <button
-                    className="menu-item"
-                    onClick={() => {
-                      setMoreOpen(false);
-                      gotoEcommerce();
-                    }}
-                  >
-                    eCommerce
-                  </button>
-                  <button
-                    className="menu-item"
-                    onClick={() => {
-                      setMoreOpen(false);
-                      setGeoOpen(true);
-                    }}
-                  >
-                    Geo-blocking
-                  </button>
-                  <button
-                    className="menu-item"
-                    onClick={() => {
-                      setMoreOpen(false);
-                      setPickerOpen(true);
-                    }}
-                  >
-                    Add to playlist
-                  </button>
-                  <div className="menu-sep" />
-                  <button
-                    className="menu-item danger"
-                    onClick={() => {
-                      setMoreOpen(false);
-                      doDelete();
-                    }}
-                    disabled={deleting}
-                  >
-                    {deleting ? "Deleting…" : "Delete video"}
-                  </button>
-                </div>
-              )}
-              <button className="btn" onClick={saveAll} disabled={saving}>
-                {saving ? "Saving…" : "Save changes"}
-              </button>
-            </div>
-          </div>
-
-          {/* About */}
-          <section className="card">
-            <h3 className="vd-h">About</h3>
-            <label className="vd-label">Title</label>
-            <input
-              className="search"
-              value={form.title}
-              onChange={(e) => setF("title", e.target.value)}
-            />
-
-            <div className="vd-gap" />
-            <label className="vd-label">Description</label>
-            <textarea
-              className="search"
-              rows={5}
-              value={form.description}
-              onChange={(e) => setF("description", e.target.value)}
-              placeholder="Explain to the viewer what to expect from your video…"
-            />
-
-            <div className="vd-gap" />
-            <label className="vd-label">Short description</label>
-            <textarea
-              className="search"
-              rows={3}
-              maxLength={140}
-              value={form.short_description}
-              onChange={(e) => setF("short_description", e.target.value)}
-              placeholder="Appears in playlists or tight spaces."
-            />
-            <div className="vd-small right">
-              {140 - (form.short_description?.length || 0)} characters left
-            </div>
-          </section>
-
-          {/* Organize */}
-          <section className="card">
-            <h3 className="vd-h">Organize</h3>
-            <label className="vd-label">Categories</label>
-            <div className="vd-row">
-              <select
-                className="search"
-                style={{ minWidth: 220 }}
-                value={form.category_id || ""}
-                onChange={(e) => setF("category_id", e.target.value)}
-              >
-                <option value="">— No category —</option>
-                {cats.map((c, i) => (
-                  <option key={`cat-${c.id}-${i}`} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-              <button
-                className="btn ghost"
-                onClick={() => setCatModalOpen(true)}
-              >
-                + Add new category
-              </button>
-              {!isStudio && (
-                <Link to="/admin/content/categories" className="btn ghost">
-                  Manage categories
+      <div
+        style={{
+          opacity: loading ? 0.6 : 1,
+          pointerEvents: loading ? "none" : "auto",
+          transition: "opacity 160ms ease",
+        }}
+      >
+        <div className="vd-grid">
+          {/* ---------- LEFT ---------- */}
+          <div className="vd-col">
+            <div className="vd-header">
+              <div className="vd-breadcrumbs">
+                <Link to={LIST_HREF} className="vd-link">
+                  All videos
                 </Link>
-              )}
+                <span>›</span>
+                <span>{form.title || "Untitled"}</span>
+              </div>
+
+              {/* ✅ Primary action: Save&Publish (if unpublished) / Save changes (if published) */}
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                {/* Secondary: Save draft (only when unpublished) */}
+                {!form.is_published && (
+                  <button
+                    className="btn ghost"
+                    onClick={saveAll}
+                    disabled={anyBusy}
+                    title="Save without publishing"
+                  >
+                    {saving ? "Saving…" : "Save draft"}
+                  </button>
+                )}
+
+                <button
+                  className="btn"
+                  onClick={primaryAction}
+                  disabled={anyBusy}
+                >
+                  {primaryBusy
+                    ? "Working…"
+                    : form.is_published
+                      ? saving
+                        ? "Saving…"
+                        : "Save changes"
+                      : "Save & Publish"}
+                </button>
+              </div>
             </div>
 
-            {/* Authors */}
-            <div className="vd-gap" />
-            <b>Authors</b>
-            <div className="vd-row">
+            {/* About */}
+            <section className="card">
+              <h3 className="vd-h">About</h3>
+              <label className="vd-label">Title</label>
               <input
                 className="search"
-                placeholder="Add author and press Enter"
-                value={authorInput}
-                onChange={(e) => setAuthorInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && authorInput.trim()) {
-                    setAuthors((a) => [...a, authorInput.trim()]);
-                    setAuthorInput("");
-                  }
-                }}
+                value={form.title}
+                onChange={(e) => setForm({ ...form, title: e.target.value })}
               />
-            </div>
-            <div className="vd-token-wrap">
-              {authors.map((a, i) => (
-                <span
-                  key={`author-${i}-${a}`}
-                  className="badge badge-green"
-                  onClick={() => setAuthors(authors.filter((x) => x !== a))}
-                >
-                  {a} ✕
-                </span>
-              ))}
-            </div>
 
-            {/* Playlists */}
-            <div className="vd-gap" />
-            <h3 className="vd-h" style={{ marginTop: 12 }}>
-              Playlists
-            </h3>
-            {assignedPlaylists.length ? (
-              <div className="vd-token-wrap" style={{ marginBottom: 8 }}>
-                {assignedPlaylists.map((p) => (
-                  <span key={p.id} className="badge badge-green">
-                    {p.title}
+              <div className="vd-gap" />
+
+              <label className="vd-label">Description</label>
+              <textarea
+                className="search"
+                rows={5}
+                value={form.description}
+                onChange={(e) =>
+                  setForm({ ...form, description: e.target.value })
+                }
+              />
+
+              <div className="vd-gap" />
+
+              <label className="vd-label">Short description</label>
+              <textarea
+                className="search"
+                maxLength={140}
+                rows={3}
+                value={form.short_description}
+                onChange={(e) =>
+                  setForm({ ...form, short_description: e.target.value })
+                }
+              />
+              <div className="vd-small right">
+                {140 - (form.short_description?.length || 0)} chars left
+              </div>
+            </section>
+
+            {/* Organize */}
+            <section className="card">
+              <h3 className="vd-h">Organize</h3>
+
+              <label className="vd-label">Categories</label>
+              <div className="vd-row">
+                <select
+                  className="search"
+                  value={form.category_id}
+                  onChange={(e) =>
+                    setForm({ ...form, category_id: e.target.value })
+                  }
+                >
+                  <option value="">— No category —</option>
+                  {cats.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  className="btn ghost"
+                  onClick={() => setCatModalOpen(true)}
+                >
+                  + Add new category
+                </button>
+              </div>
+
+              <div className="vd-gap" />
+
+              <b>Authors</b>
+              <div className="vd-row">
+                <input
+                  className="search"
+                  placeholder="Add author and press Enter"
+                  value={authorInput}
+                  onChange={(e) => setAuthorInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && authorInput.trim()) {
+                      const next = authorInput.trim();
+                      setAuthors((a) => (a.includes(next) ? a : [...a, next]));
+                      setAuthorInput("");
+                    }
+                  }}
+                />
+              </div>
+              <div className="vd-token-wrap">
+                {authors.map((a, i) => (
+                  <span
+                    key={`${a}-${i}`}
+                    className="badge badge-green"
+                    onClick={() => setAuthors(authors.filter((x) => x !== a))}
+                    title="Remove"
+                  >
+                    {a} ✕
                   </span>
                 ))}
               </div>
-            ) : (
-              <div className="vd-muted" style={{ marginBottom: 8 }}>
-                No playlists yet
+
+              <div className="vd-gap" />
+
+              <h3 className="vd-h">Playlists</h3>
+              {assignedPlaylists.length ? (
+                <div className="vd-token-wrap">
+                  {assignedPlaylists.map((p) => (
+                    <span key={p.id} className="badge badge-green">
+                      {p.title}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div className="vd-muted">No playlists yet</div>
+              )}
+
+              <div className="vd-row" style={{ marginTop: 6 }}>
+                <button className="btn" onClick={() => setPickerOpen(true)}>
+                  Add to playlist
+                </button>
               </div>
-            )}
-            <div className="vd-row">
-              <button className="btn" onClick={() => setPickerOpen(true)}>
-                Add to playlist
-              </button>
-              <Link to="/admin/content/playlists" className="btn ghost">
-                Manage playlists
-              </Link>
-            </div>
-          </section>
+            </section>
 
-          {/* Thumbnails */}
-          <section className="card">
-            <h3 className="vd-h">Thumbnails</h3>
-            <div className="vd-thumbs">
-              {/* Horizontal only */}
-              <div className="vd-thumb-block">
-                <div className="vd-thumb-title">
-                  Horizontal thumbnail (1480×840px)
-                </div>
-                <div
-                  className="vd-thumb"
-                  onMouseEnter={() => setHoverH(true)}
-                  onMouseLeave={() => setHoverH(false)}
-                  onClick={() => thumbHRef.current?.click()}
-                  title="Change image"
-                >
-                  {form.thumbnail_url ? (
-                    <img src={absUrl(form.thumbnail_url)} alt="" />
-                  ) : (
-                    <div className="vd-thumb-fallback">CHANGE IMAGE</div>
-                  )}
-                  {hoverH && (
-                    <div className="vd-thumb-overlay">Change image</div>
-                  )}
-                </div>
-                <div className="vd-muted">
-                  Appears as a thumbnail on your catalog page
-                </div>
+            {/* Thumbnails */}
+            <section className="card">
+              <h3 className="vd-h">Thumbnails</h3>
 
-                <input
-                  type="file"
-                  accept="image/*"
-                  ref={thumbHRef}
-                  style={{ display: "none" }}
-                  onChange={(e) => uploadThumb(e.target.files?.[0], "h")}
-                />
-
-                <div className="vd-gap" />
-                <label className="vd-label">Horizontal Thumbnail URL</label>
-                <input
-                  className="search"
-                  placeholder="https://…"
-                  value={form.thumbnail_url || ""}
-                  onChange={(e) => setF("thumbnail_url", e.target.value)}
-                  onBlur={saveAll}
-                />
+              <div
+                className="vd-thumb"
+                onClick={() => thumbHRef.current?.click()}
+              >
+                {form.thumbnail_url ? (
+                  <img src={absUrl(form.thumbnail_url)} alt="" />
+                ) : (
+                  <div className="vd-thumb-fallback">CHANGE IMAGE</div>
+                )}
               </div>
-            </div>
-          </section>
 
-          {/* Search tags */}
-          <section className="card">
-            <h3 className="vd-h">Search tags</h3>
-            <div className="vd-row">
+              <input
+                type="file"
+                accept="image/*"
+                ref={thumbHRef}
+                style={{ display: "none" }}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  try {
+                    const url = await uploadStorage(file);
+                    await api.put(`videos/${id}`, { thumbnail_url: url });
+                    setForm((f) => ({ ...f, thumbnail_url: url }));
+                  } catch {
+                    alert("Failed");
+                  }
+                }}
+              />
+
+              <div className="vd-gap" />
+              <label className="vd-label">Thumbnail URL</label>
               <input
                 className="search"
-                placeholder="Type a tag and press Enter"
+                value={form.thumbnail_url || ""}
+                onChange={(e) =>
+                  setForm({ ...form, thumbnail_url: e.target.value })
+                }
+              />
+            </section>
+
+            {/* Tags */}
+            <section className="card">
+              <h3 className="vd-h">Search tags</h3>
+
+              <input
+                className="search"
+                placeholder="Type tag and press Enter"
                 value={tagInput}
                 onChange={(e) => setTagInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && tagInput.trim()) {
-                    setTags((t) => [...t, tagInput.trim()]);
+                    const next = tagInput.trim();
+                    setTags((t) => (t.includes(next) ? t : [...t, next]));
                     setTagInput("");
                   }
                 }}
               />
-            </div>
-            <div className="vd-token-wrap">
-              {tags.map((t, i) => (
-                <span
-                  key={`tag-${i}-${t}`}
-                  className="badge badge-green"
-                  title="Click to remove"
-                  onClick={() => setTags(tags.filter((x) => x !== t))}
-                >
-                  {t} ✕
-                </span>
-              ))}
-            </div>
-          </section>
-        </div>
 
-        {/* RIGHT */}
-        <aside className="vd-col">
-          {/* Video preview / Replace */}
-          <section className="card">
-            <h3 className="vd-h">Video</h3>
-            <div className="vd-video">
-              {form.video_url ? (
-                <video
-                  key={videoReloadKey}
-                  ref={videoRef}
-                  controls
-                  preload="metadata"
-                  playsInline
-                  crossOrigin="anonymous"
-                  style={{ width: "100%", display: "block" }}
-                />
-              ) : (
-                <div className="vd-video-fallback">No video</div>
-              )}
-            </div>
-
-            <div className="vd-row" style={{ marginTop: 8, flexWrap: "wrap" }}>
-              {form.video_url ? (
-                <a
-                  className="btn ghost"
-                  href={absUrl(form.video_url)}
-                  download
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  ⬇ Download
-                </a>
-              ) : (
-                <button className="btn ghost" disabled>
-                  ⬇ Download
-                </button>
-              )}
-
-              <label className="btn ghost">
-                ⤴ Replace
-                <input
-                  type="file"
-                  accept="video/*"
-                  onChange={(e) => replaceVideo(e.target.files?.[0])}
-                  style={{ display: "none" }}
-                />
-              </label>
-            </div>
-
-            {replaceState.working && (
-              <div className="vd-progress">
-                <div
-                  className="vd-progress-bar"
-                  style={{ width: `${replaceState.progress}%` }}
-                />
-              </div>
-            )}
-            {replaceState.error && (
-              <div className="vd-error">{replaceState.error}</div>
-            )}
-          </section>
-
-          {/* Visibility */}
-          <section className="card">
-            <h3 className="vd-h">Visibility</h3>
-
-            <label className="radio">
-              <input
-                type="radio"
-                name="vis"
-                checked={form.visibility === "public"}
-                onChange={() => setF("visibility", "public")}
-              />
-              Public (anyone can watch)
-            </label>
-
-            <label className="radio">
-              <input
-                type="radio"
-                name="vis"
-                checked={form.visibility === "private"}
-                onChange={() => setF("visibility", "private")}
-              />
-              Members-only (requires login)
-            </label>
-
-            <label className="radio">
-              <input
-                type="radio"
-                name="vis"
-                checked={form.visibility === "unlisted"}
-                onChange={() => setF("visibility", "unlisted")}
-              />
-              Unlisted (link-only)
-            </label>
-
-            {form.visibility !== "public" && (
-              <>
-                <div className="vd-gap" />
-                <label className="vd-label">Free preview</label>
-
-                {/* responsive row of inputs + presets */}
-                <div
-                  className="vd-row"
-                  style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}
-                >
-                  <div
-                    style={{ display: "flex", gap: 6, alignItems: "center" }}
+              <div className="vd-token-wrap">
+                {tags.map((t, i) => (
+                  <span
+                    key={`${t}-${i}`}
+                    className="badge badge-green"
+                    onClick={() => setTags(tags.filter((x) => x !== t))}
+                    title="Remove"
                   >
-                    <input
-                      className="search"
-                      type="number"
-                      min={0}
-                      max={Math.floor(maxPreview / 60)}
-                      step={1}
-                      style={{ width: 90 }}
-                      value={previewM}
-                      onChange={(e) => {
-                        const m = clamp(
-                          parseInt(e.target.value || "0", 10) || 0,
-                          0,
-                          9999
-                        );
-                        setPreviewFromParts(m, previewS);
-                      }}
-                      aria-label="Preview minutes"
-                    />
-                    <span className="vd-muted">min</span>
-                    <input
-                      className="search"
-                      type="number"
-                      min={0}
-                      max={59}
-                      step={1}
-                      style={{ width: 90 }}
-                      value={previewS}
-                      onChange={(e) => {
-                        const s = clamp(
-                          parseInt(e.target.value || "0", 10) || 0,
-                          0,
-                          59
-                        );
-                        setPreviewFromParts(previewM, s);
-                      }}
-                      aria-label="Preview seconds"
-                    />
-                    <span className="vd-muted">sec</span>
-                  </div>
-
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    {[30, 60, 120, 300].map((p) => (
-                      <button
-                        key={`preset-${p}`}
-                        type="button"
-                        className="btn ghost"
-                        onClick={() => applyPreset(p)}
-                      >
-                        {p < 60 ? `${p}s` : `${Math.round(p / 60)}m`}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="vd-small vd-muted" style={{ marginTop: 6 }}>
-                  Guests can watch up to this point before logging in.
-                  {form.duration_seconds ? (
-                    <>
-                      {" "}
-                      Max {Math.floor(maxPreview / 60)}m {maxPreview % 60}s
-                      (video length).
-                    </>
-                  ) : null}
-                </div>
-              </>
-            )}
-
-            <div className="vd-small vd-muted" style={{ marginTop: 8 }}>
-              Uploaded on {fmtDate(form.created_at)}
-            </div>
-            <button className="btn ghost" style={{ marginTop: 8 }}>
-              + Add expiration date
-            </button>
-          </section>
-
-          {/* Publish (separate from Visibility) */}
-          <section className="card">
-            <h3 className="vd-h">Publish</h3>
-
-            <div
-              className="vd-row"
-              style={{ alignItems: "center", justifyContent: "space-between" }}
-            >
-              <div>
-                {form.is_published ? (
-                  <span className="badge badge-green">
-                    Published
-                    {form.published_at
-                      ? ` · ${fmtDate(form.published_at)}`
-                      : ""}
+                    {t} ✕
                   </span>
+                ))}
+              </div>
+            </section>
+
+            {/* Danger zone */}
+            <section className="card">
+              <h3 className="vd-h" style={{ color: "rgba(255,255,255,0.9)" }}>
+                Danger zone
+              </h3>
+              <div className="vd-row">
+                <button
+                  className="btn ghost"
+                  onClick={doDelete}
+                  disabled={deleting || anyBusy}
+                >
+                  {deleting ? "Deleting…" : "Delete video"}
+                </button>
+              </div>
+            </section>
+          </div>
+
+          {/* ---------- RIGHT ---------- */}
+          <aside className="vd-col">
+            {/* Video */}
+            <section className="card">
+              <h3 className="vd-h">Video</h3>
+
+              <div className="vd-video">
+                {form.video_url ? (
+                  <video
+                    key={videoReloadKey}
+                    ref={videoRef}
+                    controls
+                    style={{ width: "100%" }}
+                    src={absUrl(form.video_url)}
+                  />
                 ) : (
-                  <span className="badge">Unpublished</span>
+                  <div className="vd-video-fallback">No video uploaded</div>
                 )}
               </div>
+            </section>
 
+            {/* Visibility */}
+            <section className="card">
+              <h3 className="vd-h">Visibility</h3>
+
+              <label className="radio">
+                <input
+                  type="radio"
+                  checked={form.visibility === "public"}
+                  onChange={() => setForm({ ...form, visibility: "public" })}
+                />
+                Public
+              </label>
+
+              <label className="radio">
+                <input
+                  type="radio"
+                  checked={form.visibility === "private"}
+                  onChange={() => setForm({ ...form, visibility: "private" })}
+                />
+                Members-only
+              </label>
+
+              <label className="radio">
+                <input
+                  type="radio"
+                  checked={form.visibility === "unlisted"}
+                  onChange={() => setForm({ ...form, visibility: "unlisted" })}
+                />
+                Unlisted
+              </label>
+            </section>
+
+            {/* Publish */}
+            <section className="card" style={{ overflow: "visible" }}>
+              <h3 className="vd-h">Publish</h3>
+
+              <div style={{ display: "grid", gap: 8, marginTop: 6 }}>
+                <label className="vd-label" style={{ marginBottom: -2 }}>
+                  Publish date
+                </label>
+
+                {/* ✅ Text input avoids native date field caret/reset issues */}
+                <input
+                  className="search"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="MM/DD/YYYY"
+                  value={publishDateStr}
+                  onChange={(e) => {
+                    let v = e.target.value.replace(/[^\d/]/g, "");
+                    v = v.replace(/\/+/g, "/");
+
+                    const digits = v.replace(/\//g, "");
+                    if (digits.length <= 2) v = digits;
+                    else if (digits.length <= 4)
+                      v = `${digits.slice(0, 2)}/${digits.slice(2)}`;
+                    else
+                      v = `${digits.slice(0, 2)}/${digits.slice(
+                        2,
+                        4,
+                      )}/${digits.slice(4, 8)}`;
+
+                    setPublishDateStr(v);
+
+                    if (isValidUsDateInput(v)) {
+                      setForm((f) => ({
+                        ...f,
+                        published_at: fromUsDateInput(v),
+                      }));
+                    } else if (v === "") {
+                      setForm((f) => ({ ...f, published_at: null }));
+                    }
+                  }}
+                  onBlur={() => {
+                    if (!publishDateStr) {
+                      setForm((f) => ({ ...f, published_at: null }));
+                      setPublishDateStr("");
+                      return;
+                    }
+
+                    if (isValidUsDateInput(publishDateStr)) {
+                      const iso = fromUsDateInput(publishDateStr);
+                      setForm((f) => ({ ...f, published_at: iso }));
+                      setPublishDateStr(toUsDateInput(iso));
+                      return;
+                    }
+
+                    // invalid partial -> revert to last committed value
+                    setPublishDateStr(toUsDateInput(form.published_at));
+                  }}
+                  style={{ width: "100%" }}
+                />
+
+                <div className="vd-muted vd-small" style={{ marginTop: -2 }}>
+                  Used for sorting videos. Newer dates appear first.
+                </div>
+
+                <button
+                  className="btn ghost"
+                  onClick={() => {
+                    setForm((f) => ({ ...f, published_at: null }));
+                    setPublishDateStr("");
+                  }}
+                  disabled={anyBusy}
+                  style={{ justifySelf: "start" }}
+                  title="Clears published_at (saved on Save draft / Save & Publish / Save changes)"
+                >
+                  Clear date
+                </button>
+              </div>
+
+              <div className="vd-gap" />
+
+              {/* ✅ Publishing is now handled by the primary button when unpublished */}
               {form.is_published ? (
                 <button
                   className="btn ghost"
                   onClick={() => publishVideo(false)}
-                  disabled={pubBusy}
-                  title="Remove from catalog"
+                  disabled={anyBusy}
                 >
                   {pubBusy ? "Working…" : "Unpublish"}
                 </button>
               ) : (
                 <button
                   className="btn"
-                  onClick={() => publishVideo(true)}
-                  disabled={pubBusy}
-                  title="Make visible in catalog"
+                  onClick={primaryAction}
+                  disabled={anyBusy}
+                  title="Saves everything and publishes in one step"
                 >
-                  {pubBusy ? "Working…" : "Publish"}
+                  {primaryBusy ? "Working…" : "Save & Publish"}
                 </button>
               )}
-            </div>
 
-            <div className="vd-small vd-muted" style={{ marginTop: 8 }}>
-              Publishing controls whether this video appears in the public
-              catalog. Visibility controls who can watch it once opened.
-            </div>
-          </section>
+              <div className="vd-muted" style={{ marginTop: 6 }}>
+                Publishing controls visibility.
+              </div>
+            </section>
 
-          {/* Access */}
-          <section className="card">
-            <h3 className="vd-h">Access</h3>
-            <label className="radio">
-              <input
-                type="radio"
-                name="acc"
-                checked={!!form.is_premium}
-                onChange={() => setF("is_premium", true)}
-              />
-              Gated
-            </label>
-            <div className="vd-muted">
-              Only users with access will be able to watch this content
-            </div>
+            {/* Access */}
+            <section className="card">
+              <h3 className="vd-h">Access</h3>
 
-            <label className="radio" style={{ marginTop: 8 }}>
-              <input
-                type="radio"
-                name="acc"
-                checked={!form.is_premium}
-                onChange={() => setF("is_premium", false)}
-              />
-              Free for all users
-            </label>
-            <div className="vd-muted">
-              All users will be able to watch this content, including logged-out
-              users
-            </div>
+              <label className="radio">
+                <input
+                  type="radio"
+                  checked={form.is_premium === true}
+                  onChange={() => setForm({ ...form, is_premium: true })}
+                />
+                Gated
+              </label>
+              <div className="vd-muted">
+                Only users with access may watch this content.
+              </div>
 
-            <button className="btn ghost" style={{ marginTop: 8 }}>
-              ▸ Advanced settings
-            </button>
-          </section>
+              {form.is_premium && (
+                <>
+                  <div className="vd-gap" />
+                  <label className="vd-label">Free preview</label>
 
-          {/* Subscription / Pricing */}
-          <section
-            className={`card ${pricingPulse ? "pulse" : ""}`}
-            ref={pricingCardRef}
-          >
-            <h3 className="vd-h">Subscription</h3>
-            <div className="vd-muted" style={{ marginBottom: 6 }}>
-              Manage rental/purchase pricing options.
-            </div>
-            <PricingEditor value={pricing} onChange={setPricing} />
-          </section>
-        </aside>
+                  <div className="vd-row" style={{ gap: 6 }}>
+                    <input
+                      className="search"
+                      type="number"
+                      value={previewM}
+                      onChange={(e) =>
+                        setPreview(Number(e.target.value), previewS)
+                      }
+                      style={{ width: 70 }}
+                    />
+                    <span className="vd-muted">min</span>
+
+                    <input
+                      className="search"
+                      type="number"
+                      value={previewS}
+                      onChange={(e) =>
+                        setPreview(previewM, Number(e.target.value))
+                      }
+                      style={{ width: 70 }}
+                    />
+                    <span className="vd-muted">sec</span>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                    {[30, 60, 120, 300].map((sec) => (
+                      <button
+                        key={sec}
+                        className="btn ghost"
+                        onClick={() => setPreview(0, sec)}
+                        disabled={anyBusy}
+                      >
+                        {sec < 60 ? `${sec}s` : `${sec / 60}m`}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="vd-muted vd-small" style={{ marginTop: 4 }}>
+                    Guests can watch up to this point.
+                  </div>
+                </>
+              )}
+
+              <div style={{ marginTop: 12 }}>
+                <label className="radio">
+                  <input
+                    type="radio"
+                    checked={form.is_premium === false}
+                    onChange={() => setForm({ ...form, is_premium: false })}
+                  />
+                  Free for all users
+                </label>
+              </div>
+            </section>
+          </aside>
+        </div>
       </div>
     </>
   );
 }
 
-/* ---------------- Modal: New Category ---------------- */
+/* ---------------- New Category Modal ---------------- */
 function NewCategoryModal({ open, onClose, onCreate }) {
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
+
   useEffect(() => {
     if (open) setName("");
   }, [open]);
+
   if (!open) return null;
 
-  const submit = async () => {
+  async function submit() {
     if (!name.trim()) return;
     try {
       setSaving(true);
-      const { data } = await api.post("/categories", { name: name.trim() });
-      onCreate?.(data);
+      const { data } = await api.post("categories", { name: name.trim() });
+      onCreate(data);
       onClose();
     } catch (e) {
-      alert(e?.response?.data?.message || "Failed to create category");
+      alert("Failed");
     } finally {
       setSaving(false);
     }
-  };
+  }
 
   return (
     <div className="vd-overlay" onClick={onClose}>
       <div className="vd-modal" onClick={(e) => e.stopPropagation()}>
         <h3 className="vd-h">New Category</h3>
-        <div className="vd-label">Category Title</div>
+
+        <label className="vd-label">Category Title</label>
         <input
           className="search"
-          autoFocus
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-        <div className="vd-muted" style={{ marginTop: 6 }}>
-          This is the category title that will appear in the catalog and will be
-          visible to your customers.
-        </div>
+
         <div className="vd-row right" style={{ marginTop: 16 }}>
           <button className="btn ghost" onClick={onClose}>
             Cancel
           </button>
-          <button
-            className="btn"
-            onClick={submit}
-            disabled={saving || !name.trim()}
-          >
+          <button className="btn" disabled={saving} onClick={submit}>
             {saving ? "Creating…" : "Create"}
           </button>
         </div>

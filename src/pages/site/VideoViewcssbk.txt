@@ -1,0 +1,140 @@
+/* src/pages/site/VideoView.css */
+.comments-section {
+  margin-top: 1.5rem;
+  background: #0f172a; /* your dark bg */
+  border-radius: 0.75rem;
+  padding: 1.25rem 1.25rem 1rem;
+}
+
+.comments-title {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.comment-input-row {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.comment-input {
+  flex: 1;
+  background: rgba(15, 23, 42, 0.3);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 0.5rem;
+  color: #fff;
+  padding: 0.5rem 0.75rem;
+  resize: vertical;
+}
+
+.comment-post-btn {
+  background: #2563eb;
+  border: none;
+  color: #fff;
+  border-radius: 0.5rem;
+  padding: 0 1.25rem;
+  font-weight: 600;
+  cursor: pointer;
+  height: 40px;
+  align-self: flex-end;
+}
+
+.comment-list-wrapper {
+  /* this is the box that won't grow forever */
+  max-height: 240px; /* adjust if you want */
+  overflow-y: auto;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  padding-top: 0.75rem;
+  position: relative;
+}
+
+.comment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding-bottom: 2.5rem; /* space for the 'see more' button */
+}
+
+.comment-item {
+  background: rgba(15, 23, 42, 0.2);
+  border: 1px solid rgba(148, 163, 184, 0.05);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem 0.4rem;
+}
+
+.comment-meta {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+
+.comment-author {
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.comment-date {
+  font-size: 0.7rem;
+  color: #94a3b8;
+}
+
+.comment-body {
+  color: #cbd5f5;
+  font-size: 0.88rem;
+  line-height: 1.3;
+}
+
+.see-more-btn {
+  position: sticky;
+  bottom: 0;
+  width: 100%;
+  background: linear-gradient(
+    180deg,
+    rgba(15, 23, 42, 0) 0%,
+    rgba(15, 23, 42, 1) 40%
+  );
+  border: none;
+  padding: 0.5rem 0 0.25rem;
+  text-align: center;
+  color: #60a5fa;
+  font-weight: 500;
+  cursor: pointer;
+  margin-top: 0.25rem;
+}
+.no-comments {
+  color: #94a3b8;
+  font-size: 0.85rem;
+}
+
+.vv-byline {
+  color: #fff !important;
+}
+
+.vv-card div {
+  color: #fff !important;
+}
+
+/*  */
+.vv-side-card div {
+  color: #fff !important;
+}
+
+.vv-side-title {
+  color: #fff !important;
+}
+
+.vv-rel-item {
+  color: #fff !important;
+  font-size: 14px !important;
+}
+
+.vv-rel {
+  margin-top: 10px !important;
+  color: #fff !important;
+}
+
+.vv-grid {
+  color: #fff !important;
+}

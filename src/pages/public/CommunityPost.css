@@ -1,0 +1,378 @@
+/* src/pages/public/CommunityPost.css
+   Bishop Robertson TV — Community Post (scoped + modern)
+*/
+
+:root {
+  --bg: #000;
+  --text: #fff;
+  --accent: #7312ad;
+  --accent-glow: 0 0 22px rgba(115, 18, 173, 0.65);
+  --line: rgba(255, 255, 255, 0.1);
+  --muted: #b2b2b2;
+
+  --panel: rgba(255, 255, 255, 0.06);
+  --panel-2: rgba(255, 255, 255, 0.04);
+  --panel-hover: rgba(255, 255, 255, 0.08);
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+}
+
+/* page shell */
+.cp-root {
+  background: var(--bg);
+  color: var(--text);
+  min-height: calc(100vh - 60px);
+  padding: 20px 14px 60px;
+}
+
+.cp-root * {
+  box-sizing: border-box;
+}
+
+.cp-container {
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+/* top bar */
+.cp-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.cp-topmeta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cp-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.9) !important;
+}
+
+/* cards */
+.cp-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+}
+
+.cp-post {
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.cp-comments {
+  padding: 16px;
+}
+
+/* loading / empty */
+.cp-loading {
+  padding: 40px 0;
+  text-align: center;
+  color: var(--muted);
+}
+
+.cp-empty {
+  padding: 14px 0 6px;
+  color: #b2b2b2 !important;
+}
+
+/* buttons (scoped) */
+.cp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  padding: 9px 14px;
+  border-radius: 999px;
+  font-size: 14px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: transform 0.12s ease, background 0.12s ease,
+    border-color 0.12s ease, box-shadow 0.12s ease;
+  white-space: nowrap;
+}
+
+.cp-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.cp-btn:focus {
+  outline: none;
+  border-color: rgba(115, 18, 173, 0.75);
+  box-shadow: var(--accent-glow);
+}
+
+.cp-btn[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.cp-btn--primary {
+  background: rgba(115, 18, 173, 0.95);
+  border-color: rgba(115, 18, 173, 0.95);
+  box-shadow: var(--accent-glow);
+}
+
+.cp-btn--ghost {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--line);
+}
+
+/* post header */
+.cp-posthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.cp-author {
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.95) !important;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cp-dot {
+  opacity: 0.4;
+}
+
+.cp-date {
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* optional channel chip */
+.cp-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(115, 18, 173, 0.35);
+  background: rgba(115, 18, 173, 0.14);
+  color: rgba(255, 255, 255, 0.95);
+  font-size: 12px;
+}
+
+/* media */
+.cp-media {
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.35);
+  margin-bottom: 14px;
+}
+
+.cp-media img {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: cover;
+}
+
+/* title & body */
+.cp-title {
+  margin: 0 0 10px 0;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 0.2px;
+  color: var(--text);
+}
+
+.cp-body {
+  color: rgba(255, 255, 255, 0.92) !important;
+  line-height: 1.65;
+  font-size: 15px;
+}
+
+/* markdown inside body */
+.cp-body a {
+  color: #d8b4fe;
+  text-decoration: underline;
+}
+.cp-body code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 6px;
+  border-radius: 8px;
+}
+.cp-body pre {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  overflow: auto;
+}
+
+/* comments header */
+.cp-comments-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.cp-comments-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  color: #fff !important;
+}
+
+/* form */
+.cp-form {
+  margin-bottom: 14px;
+}
+
+.cp-textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  outline: none;
+  resize: vertical;
+  min-height: 110px;
+}
+
+.cp-textarea::placeholder {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.cp-textarea:focus {
+  border-color: rgba(115, 18, 173, 0.75);
+  box-shadow: var(--accent-glow);
+}
+
+.cp-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.cp-hint {
+  color: #fff !important;
+  font-size: 12px;
+}
+
+/* login box */
+.cp-loginbox {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  margin-bottom: 14px;
+}
+
+.cp-logintext {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* comments list */
+.cp-list {
+  border-top: 1px solid var(--line);
+  margin-top: 10px;
+  padding-top: 6px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.cp-ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cp-li {
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.cp-li-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.cp-li-author {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.cp-li-date {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.cp-li-body {
+  color: rgba(255, 255, 255, 0.88) !important;
+  white-space: pre-wrap;
+  line-height: 1.55;
+}
+
+/* not found */
+.cp-notfound-title {
+  margin: 0 0 6px 0;
+  font-weight: 900;
+}
+.cp-muted {
+  color: var(--muted);
+  margin: 0;
+}
+
+/* responsive */
+@media (max-width: 680px) {
+  .cp-root {
+    padding: 16px 12px 56px;
+  }
+  .cp-post {
+    padding: 14px;
+  }
+  .cp-comments {
+    padding: 14px;
+  }
+  .cp-title {
+    font-size: 20px;
+  }
+  .cp-loginbox {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .cp-btn--primary {
+    width: 100%;
+  }
+}

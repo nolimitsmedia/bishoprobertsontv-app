@@ -3,14 +3,14 @@
    + Mobile off-canvas sidebar
    ========================= */
 :root {
-  --bg: #f6f8fb;
+  --bg: #030104;
   --ink: #0f172a;
   --muted: #64748b;
   --border: #e6e9ef;
   --surface: #ffffff;
   --accent: #1677ff;
 
-  --side-bg: #ffffff;
+  --side-bg: #030104;
   --side-ink: #334155;
   --side-muted: #94a3b8;
   --side-hover: #f3f6fb;
@@ -103,12 +103,12 @@ body {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--side-muted);
-  padding: 0 8px;
+  padding: 15px 0;
 }
 .us-groupList {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 15px;
 }
 .us-itemBlock {
   margin-bottom: 2px;
@@ -118,17 +118,26 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 10px;
+  /* padding: 10px 10px; */
   margin: 0 2px;
-  border-radius: 10px;
-  color: var(--side-ink);
+  /* border-radius: 10px; */
+  color: #fff;
   text-decoration: none;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
   background: transparent;
+  font-size: 17px;
+  padding-top: 10px;
 }
-.us-link:hover {
+
+.us-linkText:hover {
+  color: #7312ad;
+  margin: 0 !important;
+}
+/* .us-link:hover {
   background: var(--side-hover);
-}
+} */
 .us-link.is-active {
   background: transparent;
   color: var(--accent);
@@ -164,15 +173,17 @@ body {
   gap: 8px;
   padding: 6px 8px;
   border-radius: 8px;
-  color: var(--side-ink);
+  color: #fff;
   text-decoration: none;
 }
 .us-sublink:hover {
-  background: var(--side-hover);
+  background: #fff;
+  color: var(--accent);
 }
 .us-sublink.is-active {
   color: var(--accent);
   font-weight: 600;
+  background: #fff;
 }
 
 .us-sideFoot {
@@ -198,6 +209,7 @@ body {
   position: sticky;
   top: 0;
   z-index: 10;
+  height: 64px;
 }
 .us-burger {
   display: none; /* mobile only */
@@ -337,6 +349,7 @@ body {
   }
   .us-burger {
     display: inline-flex;
+    margin-left: 120px;
   }
   .us-search {
     width: 240px;
@@ -361,4 +374,248 @@ body {
 .us-content::-webkit-scrollbar-thumb {
   background: #dfe3ea;
   border-radius: 20px;
+}
+
+/* -----------------------------
+   Uscreen-like drawer submenus
+------------------------------ */
+
+.us-linkRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+
+.us-linkRow .us-link {
+  flex: 1;
+  min-width: 0;
+  color: #fff !important;
+  padding: 0;
+}
+
+.us-linkRow .us-link:hover {
+  color: #7312ad !important;
+}
+
+/* If parent is a button (no "to") */
+.us-link.btnlike {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* Chevron toggle button */
+.us-chevronBtn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0.85;
+  color: #fff !important;
+}
+
+.us-chevronBtn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.us-chevronBtn svg {
+  transition: transform 0.18s ease;
+}
+
+.us-chevronBtn.is-open svg {
+  transform: rotate(90deg);
+}
+
+/* Drawer container */
+.us-subnavDrawer {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition:
+    max-height 0.22s ease,
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+
+/* Open state */
+.us-subnavDrawer.open {
+  max-height: 420px; /* enough for most menus */
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Inner padding + “drawer” feel */
+.us-subnavInner {
+  padding: 6px 0 8px 20px; /* indent like Uscreen */
+}
+
+/* Optional: make sublinks look more like a nested list */
+.us-sublink {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+
+/* Optional: subtle left guide line (comment out if you don't want it) */
+/*
+.us-subnavInner{
+  border-left:1px solid rgba(255,255,255,.08);
+  margin-left:16px;
+  padding-left:18px;
+}
+*/
+
+/* Mobile top bar */
+.us-mtop {
+  display: none; /* enabled on mobile via media query */
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  height: 56px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  align-items: center;
+  gap: 10px;
+}
+
+.us-mbrand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+  max-width: 240px;
+}
+
+.us-mbrand img {
+  height: 50px;
+  width: auto;
+  max-width: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+.us-mright {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+/* Burger */
+.us-burger {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  cursor: pointer;
+}
+
+.us-burger:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* Dimmer overlay */
+.us-dim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.55);
+  border: 0;
+  padding: 0;
+}
+
+/* Sidebar mobile header inside drawer */
+.us-sideTop {
+  display: none; /* enabled on mobile */
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.us-sideTop .pl-logo img {
+  height: 50px;
+  width: auto;
+  display: block;
+}
+
+.us-x {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  cursor: pointer;
+}
+
+.us-x:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* Desktop brand block hidden on mobile */
+.us-brandDesktop {
+  display: block;
+}
+
+/* Mobile behavior */
+@media (max-width: 900px) {
+  .us-mtop {
+    display: flex;
+  }
+
+  /* Main content should take full width on mobile */
+  .us-main {
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
+
+  /* Hide desktop brand block; show mobile drawer header */
+  .us-brandDesktop {
+    display: none;
+  }
+  .us-sideTop {
+    display: flex;
+  }
+
+  /* Off-canvas sidebar */
+  .us-side {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: 300px;
+    max-width: 86vw;
+    z-index: 70;
+    transform: translateX(-105%);
+    transition: transform 0.22s ease;
+    overflow: auto;
+  }
+
+  /* When open */
+  .us-shell.side-open .us-side {
+    transform: translateX(0);
+  }
 }

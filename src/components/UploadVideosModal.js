@@ -7,10 +7,16 @@ import React, {
   useState,
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import api, { uploadApi } from "../api"; // <- use uploadApi for files (no timeout)
+import axios from "axios";
+import api, { uploadApi } from "../api";
 import "./UploadVideosModal.css";
 
-const CREATE_TIMEOUT_MS = 20000; // only for the post-/videos step
+const CREATE_TIMEOUT_MS = 20000;
+const POLL_MS = 2500;
+const DIRECT_UPLOAD_MIN_BYTES = 50 * 1024 * 1024; // 50MB
+
+// UI update throttling (4/sec)
+const PROGRESS_THROTTLE_MS = 250;
 
 function baseTitle(filename = "") {
   const dot = filename.lastIndexOf(".");
@@ -23,6 +29,29 @@ function slugFromName(name = "") {
     .trim()
     .replace(/[^\w\d]+/g, "-")
     .replace(/(^-|-$)/g, "");
+}
+
+function fmtBytes(bytes = 0) {
+  const b = Number(bytes) || 0;
+  if (b < 1024) return `${b} B`;
+  const kb = b / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  if (mb < 1024) return `${mb.toFixed(1)} MB`;
+  const gb = mb / 1024;
+  return `${gb.toFixed(2)} GB`;
+}
+
+function fmtEta(seconds) {
+  const s = Math.max(0, Math.floor(seconds || 0));
+  if (!s) return "";
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  if (m <= 0) return `${r}s`;
+  if (m < 60) return `${m}m ${r}s`;
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return `${h}h ${mm}m`;
 }
 
 function CloudIcon({ size = 26 }) {
@@ -55,7 +84,18 @@ function CloudIcon({ size = 26 }) {
   );
 }
 
-// Optional: parent can pass categorySlug if opening from a specific category view
+function shallowEqual(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const ak = Object.keys(a);
+  const bk = Object.keys(b);
+  if (ak.length !== bk.length) return false;
+  for (const k of ak) {
+    if (a[k] !== b[k]) return false;
+  }
+  return true;
+}
+
 export default function UploadVideosModal({
   open,
   onClose,
@@ -69,6 +109,10 @@ export default function UploadVideosModal({
   const editHrefFor = (id) =>
     inStudio ? `/studio/videos/${id}` : `/admin/content/videos/${id}`;
 
+  // Per-upload tracking to throttle progress updates
+  // tracker[id] = { lastUiTs, lastPct, lastEta, lastSpeed, lastLoaded, lastT }
+  const progressTrackerRef = useRef(Object.create(null));
+
   // -------- Category state --------
   const [categories, setCategories] = useState([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
@@ -77,8 +121,14 @@ export default function UploadVideosModal({
   const [selectedCategorySlug, setSelectedCategorySlug] = useState("");
   const [newCategoryName, setNewCategoryName] = useState("");
   const [creatingCategory, setCreatingCategory] = useState(false);
+  const [categoryInlineError, setCategoryInlineError] = useState("");
 
-  // Derive a default category slug from URL if provided (?category=...)
+  // ✅ Hide "new category" UI by default; toggle with +/-.
+  const [showNewCategory, setShowNewCategory] = useState(false);
+
+  // -------- Defaults --------
+  const [defaultVisibility, setDefaultVisibility] = useState("private"); // private | public
+
   const urlCategorySlug = useMemo(() => {
     const search = new URLSearchParams(location.search || "");
     const fromQuery =
@@ -89,6 +139,21 @@ export default function UploadVideosModal({
     return fromQuery.trim() || "";
   }, [location.search]);
 
+  // Utility: patch a single item efficiently (no full-array map unless needed)
+  const patchItem = useCallback((id, updater) => {
+    setItems((prev) => {
+      const idx = prev.findIndex((x) => x.id === id);
+      if (idx < 0) return prev;
+      const cur = prev[idx];
+      const next =
+        typeof updater === "function" ? updater(cur) : { ...cur, ...updater };
+      if (shallowEqual(cur, next)) return prev;
+      const copy = prev.slice();
+      copy[idx] = next;
+      return copy;
+    });
+  }, []);
+
   // Load categories when modal opens
   useEffect(() => {
     if (!open) return;
@@ -98,6 +163,8 @@ export default function UploadVideosModal({
     async function loadCategories() {
       setCategoriesLoading(true);
       setCategoriesError("");
+      setCategoryInlineError("");
+
       try {
         const res = await api.get("/categories");
         const list = Array.isArray(res?.data) ? res.data : [];
@@ -105,35 +172,53 @@ export default function UploadVideosModal({
 
         setCategories(list);
 
-        // NEW: do NOT auto-select the first category.
-        // Only preselect if a specific slug was provided.
+        // reset selection
         setSelectedCategoryId(null);
         setSelectedCategorySlug("");
 
-        const desiredSlug = initialCategorySlug || urlCategorySlug || "";
+        // ✅ Priority for auto-select:
+        // 1) initialCategorySlug prop
+        // 2) URL query (?category=)
+        // 3) default to "Archives" if present
+        const desiredSlug = (
+          initialCategorySlug ||
+          urlCategorySlug ||
+          ""
+        ).trim();
+
+        let match = null;
 
         if (desiredSlug && list.length) {
-          const match =
+          match =
             list.find(
               (c) =>
                 c.slug === desiredSlug ||
                 slugFromName(c.name) === desiredSlug ||
-                String(c.id) === String(desiredSlug)
+                String(c.id) === String(desiredSlug),
             ) || null;
+        }
 
-          if (match) {
-            setSelectedCategoryId(match.id ?? null);
-            setSelectedCategorySlug(
-              match.slug || slugFromName(match.name || "")
-            );
-          }
+        if (!match && list.length) {
+          // ✅ Default category: Archives
+          match =
+            list.find(
+              (c) =>
+                String(c?.name || "")
+                  .trim()
+                  .toLowerCase() === "archives",
+            ) || null;
+        }
+
+        if (match) {
+          setSelectedCategoryId(match.id ?? null);
+          setSelectedCategorySlug(match.slug || slugFromName(match.name || ""));
         }
       } catch (err) {
         if (!cancelled) {
           setCategoriesError(
             err?.response?.data?.message ||
               err?.message ||
-              "Failed to load categories"
+              "Failed to load categories",
           );
         }
       } finally {
@@ -147,9 +232,9 @@ export default function UploadVideosModal({
     };
   }, [open, initialCategorySlug, urlCategorySlug]);
 
-  // Handle category dropdown change
   const handleCategoryChange = (e) => {
     const value = e.target.value;
+    setCategoryInlineError("");
     if (!value) {
       setSelectedCategoryId(null);
       setSelectedCategorySlug("");
@@ -160,7 +245,6 @@ export default function UploadVideosModal({
     setSelectedCategorySlug(cat?.slug || slugFromName(cat?.name || ""));
   };
 
-  // Create a new category
   const handleCreateCategory = async (e) => {
     e?.preventDefault?.();
     const name = newCategoryName.trim();
@@ -168,6 +252,8 @@ export default function UploadVideosModal({
 
     setCreatingCategory(true);
     setCategoriesError("");
+    setCategoryInlineError("");
+
     try {
       const res = await api.post("/categories", { name });
       const cat = res?.data || {};
@@ -177,45 +263,82 @@ export default function UploadVideosModal({
       setSelectedCategoryId(cat.id ?? null);
       setSelectedCategorySlug(slug);
       setNewCategoryName("");
+
+      // optional: collapse after success
+      setShowNewCategory(false);
     } catch (err) {
       setCategoriesError(
         err?.response?.data?.message ||
           err?.message ||
-          "Failed to create category"
+          "Failed to create category",
       );
     } finally {
       setCreatingCategory(false);
     }
   };
 
+  const categoryIsValid = !!(selectedCategoryId || selectedCategorySlug);
+
   // -------- Upload state --------
-  // items: [{id,file,progress,status,error,controller,url,videoId,title,durationSec,categoryId,categorySlug}]
   const [items, setItems] = useState([]);
   const [dragOver, setDragOver] = useState(false);
 
+  // Cleanup controllers + tracking when modal closes/unmounts
   useEffect(() => {
-    if (!open) {
-      setItems([]);
-      setDragOver(false);
-    }
+    if (open) return;
+
+    // Abort any in-flight uploads if modal is closed
+    items.forEach((it) => {
+      if (
+        it?.controller &&
+        (it.status === "uploading" || it.status === "creating")
+      ) {
+        try {
+          it.controller.abort();
+        } catch {}
+      }
+    });
+
+    // Clear tracking
+    progressTrackerRef.current = Object.create(null);
+
+    // Reset state
+    setItems([]);
+    setDragOver(false);
+    setCategoryInlineError("");
+    setDefaultVisibility("private");
+    setShowNewCategory(false);
+    setNewCategoryName("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const pickFiles = () => inputRef.current?.click();
+  const pickFiles = () => {
+    if (!categoryIsValid) {
+      setCategoryInlineError(
+        "Please select or create a category before uploading.",
+      );
+      return;
+    }
+    inputRef.current?.click();
+  };
 
   const addFiles = useCallback(
     (fileList) => {
       const files = Array.from(fileList || []);
       if (!files.length) return;
 
-      // Require a category before uploading
-      if (!selectedCategoryId && !selectedCategorySlug) {
-        alert("Please select or create a category before uploading videos.");
+      if (!categoryIsValid) {
+        setCategoryInlineError(
+          "Please select or create a category before uploading.",
+        );
         return;
       }
 
+      const now = Date.now();
       const entries = files.map((f) => ({
-        id: `${f.name}-${f.size}-${Date.now()}-${Math.random()}`,
+        id: `${f.name}-${f.size}-${now}-${Math.random()}`,
         file: f,
+        sizeBytes: f.size || 0,
         progress: 0,
         status: "queued", // queued | uploading | creating | done | error | canceled
         error: "",
@@ -224,91 +347,382 @@ export default function UploadVideosModal({
         videoId: null,
         title: baseTitle(f.name || "Untitled"),
         durationSec: null,
-        // capture category at the moment of adding files
         categoryId: selectedCategoryId ?? null,
         categorySlug: selectedCategorySlug || "uncategorized",
+        createdAtMs: now,
+        speedBps: 0,
+        etaSec: null,
+        processingStatus: null,
+        visibility: defaultVisibility,
       }));
 
       setItems((prev) => [...prev, ...entries]);
       entries.forEach((entry) => startUpload(entry));
     },
-    [selectedCategoryId, selectedCategorySlug]
+    [
+      categoryIsValid,
+      selectedCategoryId,
+      selectedCategorySlug,
+      defaultVisibility,
+    ],
   );
 
-  async function startUpload(entry) {
-    const { id, file, categorySlug } = entry;
+  function removeItem(id) {
+    delete progressTrackerRef.current[id];
+    setItems((prev) => prev.filter((x) => x.id !== id));
+  }
 
-    // 1) upload (use uploadApi: no timeout)
-    setItems((prev) =>
-      prev.map((it) => (it.id === id ? { ...it, status: "uploading" } : it))
-    );
+  function cancelUpload(id) {
+    const tracker = progressTrackerRef.current[id];
+    if (tracker?.timer) {
+      clearTimeout(tracker.timer);
+      tracker.timer = null;
+    }
+
+    setItems((prev) => {
+      const it = prev.find((x) => x.id === id);
+      if (it?.controller) {
+        try {
+          it.controller.abort();
+        } catch {}
+      }
+      const idx = prev.findIndex((x) => x.id === id);
+      if (idx < 0) return prev;
+      const cur = prev[idx];
+      const next = { ...cur, status: "canceled", controller: null };
+      if (shallowEqual(cur, next)) return prev;
+      const copy = prev.slice();
+      copy[idx] = next;
+      return copy;
+    });
+
+    delete progressTrackerRef.current[id];
+  }
+
+  async function initDirectUpload({ file, kind, category }) {
+    const payload = {
+      filename: file?.name || "upload.bin",
+      contentType: file?.type || "application/octet-stream",
+      sizeBytes: file?.size || 0,
+      kind: kind || "videos",
+      category: category || "uncategorized",
+    };
+
+    const res = await api.post("/uploads/bunny/direct-init", payload);
+    const d = res?.data || {};
+
+    const uploadUrl = d.uploadUrl || d.upload_url || "";
+    const publicUrl = d.publicUrl || d.public_url || "";
+    const key = d.key || "";
+    const ticket = d.ticket || "";
+    const contentType = d.contentType || d.content_type || payload.contentType;
+
+    if (!uploadUrl || !publicUrl || !ticket) {
+      throw new Error("Direct init failed: missing uploadUrl/publicUrl/ticket");
+    }
+
+    return { uploadUrl, publicUrl, key, ticket, contentType };
+  }
+
+  async function mintDirectAccessKey({ ticket }) {
+    const res = await api.post("/uploads/bunny/direct-auth", { ticket });
+    const d = res?.data || {};
+    const accessKey = d.accessKey || d.access_key || "";
+    if (!accessKey) throw new Error("Direct auth failed: missing accessKey");
+    return accessKey;
+  }
+
+  async function uploadDirectToBunny({
+    uploadUrl,
+    file,
+    signal,
+    onProgress,
+    accessKey,
+    contentType,
+  }) {
+    const headers = {
+      "Content-Type": contentType || file?.type || "application/octet-stream",
+      AccessKey: accessKey,
+    };
+
+    return axios.put(uploadUrl, file, {
+      headers,
+      signal,
+      onUploadProgress: onProgress,
+      timeout: 0,
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+    });
+  }
+
+  async function uploadViaServer({ file, categorySlug, signal, onProgress }) {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("kind", "videos");
+    if (categorySlug) fd.append("category", categorySlug);
+
+    return uploadApi.post("/uploads/video", fd, {
+      signal,
+      onUploadProgress: onProgress,
+      timeout: 0,
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+    });
+  }
+
+  function ensureTracker(id) {
+    if (!progressTrackerRef.current[id]) {
+      progressTrackerRef.current[id] = {
+        lastUiTs: 0,
+        lastPct: -1,
+        lastEta: null,
+        lastSpeed: 0,
+        lastLoaded: 0,
+        lastT: Date.now(),
+        timer: null,
+      };
+    }
+    return progressTrackerRef.current[id];
+  }
+
+  function cleanupTracker(id) {
+    const t = progressTrackerRef.current[id];
+    if (t?.timer) {
+      clearTimeout(t.timer);
+      t.timer = null;
+    }
+    delete progressTrackerRef.current[id];
+  }
+
+  function safeSetProgress(id, patch) {
+    patchItem(id, (cur) => {
+      if (!cur) return cur;
+      return { ...cur, ...patch };
+    });
+  }
+
+  async function startUpload(entry) {
+    const { id, file, categorySlug, visibility } = entry;
+
+    ensureTracker(id);
+    safeSetProgress(id, { status: "uploading", error: "" });
+
     const uploadCtl = new AbortController();
-    setItems((prev) =>
-      prev.map((it) => (it.id === id ? { ...it, controller: uploadCtl } : it))
-    );
+    safeSetProgress(id, { controller: uploadCtl });
 
     let fileUrl = "";
     let durationSec = null;
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("kind", "videos"); // ensure backend treats it as video
 
-      // Send category to backend so Bunny folder = category
-      if (categorySlug) {
-        fd.append("category", categorySlug);
+    const tracker = ensureTracker(id);
+
+    const flushProgress = (patch) => {
+      patchItem(id, (cur) => {
+        if (!cur) return cur;
+
+        const next = { ...cur, ...patch };
+
+        if (["done", "error", "canceled"].includes(next.status)) {
+          next.controller = null;
+        }
+
+        return next;
+      });
+    };
+
+    const onProgress = (e) => {
+      const total = Number(e?.total || file?.size || 0);
+      const loaded = Number(e?.loaded || 0);
+      if (!total) return;
+
+      const pct = Math.max(
+        0,
+        Math.min(100, Math.round((loaded / total) * 100)),
+      );
+
+      const now = Date.now();
+      const dt = Math.max(1, now - tracker.lastT);
+      const dLoaded = Math.max(0, loaded - tracker.lastLoaded);
+      const speed = Math.floor((dLoaded * 1000) / dt);
+      const remain = Math.max(0, total - loaded);
+      const eta = speed > 0 ? Math.round(remain / speed) : null;
+
+      tracker.lastLoaded = loaded;
+      tracker.lastT = now;
+
+      const due = now - tracker.lastUiTs >= PROGRESS_THROTTLE_MS || pct >= 100;
+
+      const pctChanged = pct !== tracker.lastPct;
+      const etaChanged =
+        (eta == null && tracker.lastEta != null) ||
+        (eta != null && tracker.lastEta == null) ||
+        (eta != null &&
+          tracker.lastEta != null &&
+          Math.abs(eta - tracker.lastEta) >= 1);
+
+      const speedChanged = Math.abs(speed - (tracker.lastSpeed || 0)) >= 1024;
+
+      if (!due || (!pctChanged && !etaChanged && !speedChanged && pct < 100))
+        return;
+
+      tracker.lastUiTs = now;
+      tracker.lastPct = pct;
+      tracker.lastEta = eta;
+      tracker.lastSpeed = speed;
+
+      flushProgress({
+        progress: pct,
+        status: pct >= 100 ? "creating" : "uploading",
+        speedBps: speed,
+        etaSec: eta,
+      });
+    };
+
+    const shouldTryDirect = (file?.size || 0) >= DIRECT_UPLOAD_MIN_BYTES;
+
+    try {
+      if (shouldTryDirect) {
+        const init = await initDirectUpload({
+          file,
+          kind: "videos",
+          category: categorySlug || "uncategorized",
+        });
+
+        const accessKey = await mintDirectAccessKey({ ticket: init.ticket });
+
+        await uploadDirectToBunny({
+          uploadUrl: init.uploadUrl,
+          file,
+          signal: uploadCtl.signal,
+          onProgress,
+          accessKey,
+          contentType: init.contentType,
+        });
+
+        fileUrl = init.publicUrl;
+        if (!fileUrl)
+          throw new Error("Direct upload succeeded but missing publicUrl");
+
+        flushProgress({
+          url: fileUrl,
+          durationSec: null,
+          progress: 100,
+          status: "creating",
+          etaSec: null,
+          speedBps: 0,
+        });
+      } else {
+        const up = await uploadViaServer({
+          file,
+          categorySlug,
+          signal: uploadCtl.signal,
+          onProgress,
+        });
+
+        const data = up?.data || {};
+        fileUrl = data.url;
+        durationSec = data.duration_sec ?? data.duration_seconds ?? null;
+        if (!fileUrl) throw new Error("Upload succeeded but missing URL");
+
+        flushProgress({
+          url: fileUrl,
+          durationSec,
+          progress: 100,
+          status: "creating",
+          etaSec: null,
+          speedBps: 0,
+        });
+      }
+    } catch (err) {
+      const isCanceled =
+        err?.name === "CanceledError" || err?.code === "ERR_CANCELED";
+      if (isCanceled) {
+        flushProgress({
+          status: "canceled",
+          error: "",
+          controller: null,
+          etaSec: null,
+          speedBps: 0,
+        });
+        cleanupTracker(id);
+        return;
       }
 
-      const up = await uploadApi.post("/uploads/video", fd, {
-        signal: uploadCtl.signal,
-        onUploadProgress: (e) => {
-          const total = e.total ?? e?.progressTotal ?? 0;
-          const loaded = e.loaded ?? e?.progress ?? 0;
-          if (!total) return;
-          const pct = Math.round((loaded / total) * 100);
-          setItems((prev) =>
-            prev.map((it) =>
-              it.id === id
-                ? {
-                    ...it,
-                    progress: pct,
-                    status: pct >= 100 ? "creating" : "uploading",
-                  }
-                : it
-            )
-          );
-        },
-      });
+      if (shouldTryDirect) {
+        try {
+          const t = ensureTracker(id);
+          t.lastLoaded = 0;
+          t.lastT = Date.now();
+          t.lastUiTs = 0;
+          t.lastPct = -1;
+          t.lastEta = null;
+          t.lastSpeed = 0;
 
-      const data = up?.data || {};
-      fileUrl = data.url;
-      durationSec = data.duration_sec ?? data.duration_seconds ?? null;
-      if (!fileUrl) throw new Error("Upload succeeded but missing URL");
+          const up = await uploadViaServer({
+            file,
+            categorySlug,
+            signal: uploadCtl.signal,
+            onProgress,
+          });
 
-      setItems((prev) =>
-        prev.map((it) =>
-          it.id === id ? { ...it, url: fileUrl, durationSec } : it
-        )
-      );
-    } catch (err) {
-      const msg =
-        err?.response?.data?.message || err?.message || "Upload failed";
-      setItems((prev) =>
-        prev.map((it) =>
-          it.id === id ? { ...it, status: "error", error: msg } : it
-        )
-      );
-      return;
+          const data = up?.data || {};
+          fileUrl = data.url;
+          durationSec = data.duration_sec ?? data.duration_seconds ?? null;
+          if (!fileUrl) throw new Error("Upload succeeded but missing URL");
+
+          flushProgress({
+            url: fileUrl,
+            durationSec,
+            progress: 100,
+            status: "creating",
+            etaSec: null,
+            speedBps: 0,
+          });
+        } catch (err2) {
+          const msg =
+            err2?.response?.data?.message ||
+            err2?.response?.data?.detail ||
+            err2?.message ||
+            "Upload failed";
+
+          flushProgress({
+            status: "error",
+            error: msg,
+            controller: null,
+            etaSec: null,
+            speedBps: 0,
+          });
+          cleanupTracker(id);
+          return;
+        }
+      } else {
+        const msg =
+          err?.response?.data?.message ||
+          err?.response?.data?.detail ||
+          err?.message ||
+          "Upload failed";
+
+        flushProgress({
+          status: "error",
+          error: msg,
+          controller: null,
+          etaSec: null,
+          speedBps: 0,
+        });
+        cleanupTracker(id);
+        return;
+      }
     }
 
-    // 2) create video (with short timeout; avoids “stuck in Processing…”)
     await createVideoWithTimeout(
       id,
       fileUrl,
       entry.title,
       durationSec,
-      entry.categoryId
+      entry.categoryId,
+      visibility,
     );
+
+    cleanupTracker(id);
   }
 
   async function createVideoWithTimeout(
@@ -316,7 +730,8 @@ export default function UploadVideosModal({
     fileUrl,
     title,
     durationSec,
-    categoryId
+    categoryId,
+    visibility,
   ) {
     const ctl = new AbortController();
     const to = setTimeout(() => ctl.abort(), CREATE_TIMEOUT_MS);
@@ -330,23 +745,31 @@ export default function UploadVideosModal({
           video_url: fileUrl,
           thumbnail_url: null,
           category_id: categoryId ?? null,
-          // DEFAULTS: Unpublished + Gated
-          visibility: "private",
+          visibility: (visibility || "private").toLowerCase(),
           is_premium: true,
-          duration_seconds: durationSec ?? undefined, // server can calculate if null
+          duration_seconds: durationSec ?? undefined,
         },
-        { signal: ctl.signal }
+        { signal: ctl.signal },
       );
 
       clearTimeout(to);
+
       const vid = created?.data?.id ?? null;
-      setItems((prev) =>
-        prev.map((it) =>
-          it.id === id
-            ? { ...it, progress: 100, status: "done", videoId: vid }
-            : it
-        )
-      );
+      const processingStatus = created?.data?.processing_status ?? null;
+
+      patchItem(id, (cur) => {
+        if (!cur) return cur;
+        return {
+          ...cur,
+          progress: 100,
+          status: "done",
+          videoId: vid,
+          processingStatus,
+          controller: null,
+          etaSec: null,
+          speedBps: 0,
+        };
+      });
     } catch (err) {
       clearTimeout(to);
       const msg =
@@ -355,54 +778,97 @@ export default function UploadVideosModal({
           : err?.response?.data?.message ||
             err?.message ||
             "Failed to create video";
-      setItems((prev) =>
-        prev.map((it) =>
-          it.id === id
-            ? { ...it, progress: 100, status: "error", error: msg }
-            : it
-        )
-      );
+
+      patchItem(id, (cur) => {
+        if (!cur) return cur;
+        return {
+          ...cur,
+          progress: 100,
+          status: "error",
+          error: msg,
+          controller: null,
+          etaSec: null,
+          speedBps: 0,
+        };
+      });
     }
   }
 
-  // Retry the create step (no re-upload)
   async function retryCreate(id) {
     const it = items.find((x) => x.id === id);
     if (!it?.url) return;
-    setItems((prev) =>
-      prev.map((x) =>
-        x.id === id ? { ...x, status: "creating", error: "" } : x
-      )
-    );
+
+    patchItem(id, (cur) => {
+      if (!cur) return cur;
+      return { ...cur, status: "creating", error: "" };
+    });
+
     await createVideoWithTimeout(
       id,
       it.url,
       it.title,
       it.durationSec,
-      it.categoryId
+      it.categoryId,
+      it.visibility,
     );
   }
 
-  function cancelUpload(id) {
-    setItems((prev) => {
-      const it = prev.find((x) => x.id === id);
-      if (it?.controller) it.controller.abort();
-      return prev.map((x) => (x.id === id ? { ...x, status: "canceled" } : x));
-    });
-  }
+  // Poll processing status (queued → processing → ready)
+  useEffect(() => {
+    if (!open) return;
 
-  const allFinished = useMemo(
-    () =>
+    const idsToPoll = items
+      .filter((i) => i.status === "done" && i.videoId)
+      .map((i) => i.videoId);
+    if (!idsToPoll.length) return;
+
+    let cancelled = false;
+
+    const tick = async () => {
+      try {
+        await Promise.all(
+          idsToPoll.map(async (vid) => {
+            try {
+              const res = await api.get(`/videos/${vid}/status`);
+              const s = res?.data?.processing_status || null;
+              if (!cancelled && s) {
+                setItems((prev) => {
+                  let changed = false;
+                  const next = prev.map((it) => {
+                    if (it.videoId === vid && it.processingStatus !== s) {
+                      changed = true;
+                      return { ...it, processingStatus: s };
+                    }
+                    return it;
+                  });
+                  return changed ? next : prev;
+                });
+              }
+            } catch {}
+          }),
+        );
+      } catch {}
+    };
+
+    tick();
+    const t = setInterval(tick, POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [open, items]);
+
+  const allFinished = useMemo(() => {
+    return (
       items.length > 0 &&
-      items.every((i) => ["done", "error", "canceled"].includes(i.status)),
-    [items]
-  );
-  const allSucceeded = useMemo(
-    () => items.length > 0 && items.every((i) => i.status === "done"),
-    [items]
-  );
+      items.every((i) => ["done", "error", "canceled"].includes(i.status))
+    );
+  }, [items]);
 
-  // ---- refresh helpers (for list page to show new uploads) ----
+  const allSucceeded = useMemo(() => {
+    return items.length > 0 && items.every((i) => i.status === "done");
+  }, [items]);
+
   const refreshRoute = () => {
     try {
       navigate(0);
@@ -410,11 +876,13 @@ export default function UploadVideosModal({
       window.location.reload();
     }
   };
+
   const handleClose = () => {
     onClose?.();
     const shouldRefresh = items.some((i) => i.status === "done");
     if (shouldRefresh) setTimeout(refreshRoute, 0);
   };
+
   const handleDone = () => {
     try {
       onDone?.(items.filter((i) => i.videoId).map((i) => i.videoId));
@@ -464,31 +932,89 @@ export default function UploadVideosModal({
                 ))}
               </select>
             </label>
+
+            <label className="uvm-category-label">
+              Visibility
+              <select
+                className="uvm-category-select"
+                value={defaultVisibility}
+                onChange={(e) => setDefaultVisibility(e.target.value)}
+              >
+                <option value="private">Private</option>
+                <option value="public">Public</option>
+              </select>
+            </label>
+
             {categoriesLoading && (
               <div className="uvm-category-hint">Loading categories…</div>
             )}
           </div>
 
-          <form
-            className="uvm-category-new"
-            onSubmit={handleCreateCategory}
-            autoComplete="off"
+          {categoryInlineError && (
+            <div className="uvm-error uvm-error-small">
+              {categoryInlineError}
+            </div>
+          )}
+
+          {/* ✅ Toggle + / - for new category form */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              marginTop: 10,
+            }}
           >
-            <input
-              type="text"
-              className="uvm-category-input"
-              placeholder="New category name"
-              value={newCategoryName}
-              onChange={(e) => setNewCategoryName(e.target.value)}
-            />
             <button
-              type="submit"
-              className="uvm-btn small"
-              disabled={creatingCategory || !newCategoryName.trim()}
+              type="button"
+              className="uvm-btn ghost"
+              onClick={() => setShowNewCategory((s) => !s)}
+              style={{
+                width: 38,
+                height: 38,
+                padding: 0,
+                display: "grid",
+                placeItems: "center",
+                fontSize: 18,
+                fontWeight: 900,
+                lineHeight: 1,
+              }}
+              aria-label={
+                showNewCategory ? "Hide add category" : "Show add category"
+              }
+              title={showNewCategory ? "Hide add category" : "Add new category"}
             >
-              {creatingCategory ? "Adding…" : "Add category"}
+              {showNewCategory ? "−" : "+"}
             </button>
-          </form>
+
+            <div style={{ opacity: 0.85, fontSize: 13 }}>
+              {showNewCategory ? "Add a new category" : "Need a new category?"}
+            </div>
+          </div>
+
+          {showNewCategory && (
+            <form
+              className="uvm-category-new"
+              onSubmit={handleCreateCategory}
+              autoComplete="off"
+              style={{ marginTop: 10 }}
+            >
+              <input
+                type="text"
+                className="uvm-category-input"
+                placeholder="New category name"
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+              />
+              <button
+                type="submit"
+                className="uvm-btn small"
+                disabled={creatingCategory || !newCategoryName.trim()}
+              >
+                {creatingCategory ? "Adding…" : "Add category"}
+              </button>
+            </form>
+          )}
 
           {categoriesError && (
             <div className="uvm-error uvm-error-small">{categoriesError}</div>
@@ -498,95 +1024,191 @@ export default function UploadVideosModal({
         {allSucceeded && (
           <div className="uvm-alert success">
             <div className="uvm-alert-icon">✔</div>
-            <div>
-              All videos have been successfully uploaded and we are now
-              processing them. You can close this window or upload more.
+            <div className="uvm-message">
+              All videos uploaded. Processing will continue in the background.
+              You can close this window or upload more.
             </div>
           </div>
         )}
 
-        {items.map((it) => (
-          <div className="uvm-file-row" key={it.id}>
-            <div className="uvm-file-main">
-              <div className="uvm-file-name">{it.title}</div>
-              <div className="uvm-file-sub">
-                {it.status === "uploading"
-                  ? "Uploading…"
-                  : it.status === "creating"
-                  ? "Processing…"
-                  : it.status === "done"
-                  ? "Uploaded"
+        {items.map((it) => {
+          const showRemove = ["queued", "error", "canceled", "done"].includes(
+            it.status,
+          );
+
+          const statusLabel =
+            it.status === "uploading"
+              ? "Uploading…"
+              : it.status === "creating"
+                ? "Creating…"
+                : it.status === "done"
+                  ? it.processingStatus === "ready"
+                    ? "Ready"
+                    : it.processingStatus === "processing"
+                      ? "Processing…"
+                      : it.processingStatus === "queued"
+                        ? "Queued for processing…"
+                        : "Uploaded"
                   : it.status === "canceled"
-                  ? "Canceled"
-                  : it.status === "error"
-                  ? "Failed"
-                  : "Queued"}
+                    ? "Canceled"
+                    : it.status === "error"
+                      ? "Failed"
+                      : "Queued";
+
+          const widthPct =
+            it.progress || (["creating", "done"].includes(it.status) ? 100 : 0);
+
+          return (
+            <div className="uvm-file-row" key={it.id}>
+              <div className="uvm-file-main">
+                <div className="uvm-file-name">{it.title}</div>
+                <div className="uvm-file-sub">
+                  {statusLabel} {" • "} {fmtBytes(it.sizeBytes)}
+                  {it.status === "uploading" &&
+                  it.speedBps > 0 &&
+                  it.etaSec != null ? (
+                    <>
+                      {" • "} ETA {fmtEta(it.etaSec)}
+                    </>
+                  ) : null}
+                </div>
               </div>
-            </div>
 
-            <div className="uvm-file-progress">
-              <div
-                className={`uvm-bar ${it.status}`}
-                style={{
-                  width: `${
-                    it.progress ||
-                    (["creating", "done"].includes(it.status) ? 100 : 0)
-                  }%`,
-                }}
-              />
-            </div>
+              <div className="uvm-file-progress">
+                <div
+                  className={`uvm-bar ${it.status}`}
+                  style={{ width: `${widthPct}%` }}
+                />
+              </div>
 
-            <div className="uvm-file-actions">
-              {it.status === "uploading" && (
-                <button
-                  className="uvm-btn ghost"
-                  onClick={() => cancelUpload(it.id)}
-                >
-                  Cancel
-                </button>
-              )}
-              {it.status === "error" && it.url && (
-                <button
-                  className="uvm-btn primary"
-                  onClick={() => retryCreate(it.id)}
-                >
-                  Retry
-                </button>
-              )}
-              {it.status === "done" && it.videoId && (
-                <button
-                  className="uvm-btn primary"
-                  onClick={() => navigate(editHrefFor(it.videoId))}
-                >
-                  Edit video
-                </button>
+              <div className="uvm-file-actions">
+                {it.status === "queued" && (
+                  <button
+                    className="uvm-btn ghost"
+                    onClick={() => removeItem(it.id)}
+                  >
+                    Remove
+                  </button>
+                )}
+
+                {it.status === "uploading" && (
+                  <button
+                    className="uvm-btn ghost"
+                    onClick={() => cancelUpload(it.id)}
+                  >
+                    Cancel
+                  </button>
+                )}
+
+                {it.status === "error" && it.url && (
+                  <>
+                    <button
+                      className="uvm-btn primary"
+                      onClick={() => retryCreate(it.id)}
+                    >
+                      Retry
+                    </button>
+                    <button
+                      className="uvm-btn ghost"
+                      onClick={() => removeItem(it.id)}
+                    >
+                      Remove
+                    </button>
+                  </>
+                )}
+
+                {it.status === "done" && it.videoId && (
+                  <>
+                    <button
+                      className="uvm-btn primary"
+                      onClick={() => navigate(editHrefFor(it.videoId))}
+                    >
+                      Edit video
+                    </button>
+                    {showRemove && (
+                      <button
+                        className="uvm-btn ghost"
+                        onClick={() => removeItem(it.id)}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </>
+                )}
+
+                {it.status === "canceled" && (
+                  <button
+                    className="uvm-btn ghost"
+                    onClick={() => removeItem(it.id)}
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+
+              {it.status === "error" && (
+                <div className="uvm-error">{it.error}</div>
               )}
             </div>
-
-            {it.status === "error" && (
-              <div className="uvm-error">{it.error}</div>
-            )}
-          </div>
-        ))}
+          );
+        })}
 
         <div
-          className={`uvm-drop ${dragOver ? "drag" : ""}`}
+          className={`uvm-drop ${dragOver ? "drag" : ""} ${
+            !categoryIsValid ? "disabled" : ""
+          }`}
           onDragOver={(e) => {
             e.preventDefault();
+            if (!categoryIsValid) return;
             setDragOver(true);
           }}
           onDragLeave={() => setDragOver(false)}
           onDrop={(e) => {
             e.preventDefault();
             setDragOver(false);
+            if (!categoryIsValid) {
+              setCategoryInlineError(
+                "Please select or create a category before uploading.",
+              );
+              return;
+            }
             addFiles(e.dataTransfer.files);
           }}
         >
           <CloudIcon />
-          <div className="uvm-drop-text">Drag and drop files here</div>
-          <button className="uvm-btn" onClick={pickFiles}>
-            Select files
-          </button>
+          <div className="uvm-drop-text">
+            {categoryIsValid
+              ? "Drag and drop files here"
+              : "Select a category to start uploading"}
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+              justifyContent: "center",
+            }}
+          >
+            <button
+              className="uvm-btn"
+              onClick={pickFiles}
+              disabled={!categoryIsValid}
+            >
+              Select files
+            </button>
+
+            {allFinished && (
+              <button
+                className="uvm-btn ghost"
+                onClick={pickFiles}
+                disabled={!categoryIsValid}
+              >
+                Upload more
+              </button>
+            )}
+          </div>
+
           <input
             type="file"
             accept="video/*"
@@ -598,10 +1220,15 @@ export default function UploadVideosModal({
         </div>
 
         <div className="uvm-footer">
-          You can also upload video files via{" "}
-          <a href="#" onClick={(e) => e.preventDefault()}>
-            Dropbox here
-          </a>
+          Import from{" "}
+          <button
+            type="button"
+            className="uvm-link"
+            onClick={() => navigate("/admin/content/integrations")}
+          >
+            Google Drive / Dropbox
+          </button>{" "}
+          (requires connecting your account).
         </div>
 
         <div className="uvm-bottom">

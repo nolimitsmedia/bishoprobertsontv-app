@@ -1,0 +1,768 @@
+// src/pages/site/VideoView.js
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
+import api from "../../api";
+
+const MAX_VISIBLE_COMMENTS = 6;
+
+/* ---------------- utils ---------------- */
+function apiOrigin() {
+  try {
+    const u = new URL(api.defaults.baseURL || "", window.location.href);
+    return u.origin;
+  } catch {
+    return window.location.origin;
+  }
+}
+function absUrl(u) {
+  if (!u) return "";
+  if (/^(https?:|blob:|data:)/i.test(u)) return u;
+  const base = apiOrigin();
+  return u.startsWith("/") ? `${base}${u}` : `${base}/${u}`;
+}
+function isHlsUrl(u) {
+  if (!u) return false;
+  const clean = u.split("?")[0].split("#")[0];
+  return /\.m3u8$/i.test(clean) || clean.includes(".m3u8");
+}
+function secsFromAny(v) {
+  if (v == null) return null;
+  if (typeof v === "number" || /^\d+(\.\d+)?$/.test(String(v))) {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return null;
+    return n > 36000 ? Math.round(n / 1000) : Math.round(n);
+  }
+  const s = String(v).trim();
+  if (/^\d+:\d{2}(:\d{2})?$/.test(s)) {
+    const parts = s.split(":").map(Number);
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+  }
+  return null;
+}
+function formatDuration(secs) {
+  const s = Math.max(0, Number(secs || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = Math.floor(s % 60);
+  const two = (n) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${two(m)}:${two(ss)}` : `${m}:${two(ss)}`;
+}
+function datePretty(iso) {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleDateString(undefined, {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch {
+    return "";
+  }
+}
+
+/** Try a list of endpoints quietly. */
+async function tryGetFirst(urls) {
+  for (const u of urls) {
+    try {
+      const r = await api.get(u);
+      return r.data;
+    } catch (e) {
+      const code = e?.response?.status;
+      if ([401, 403, 404].includes(code)) continue;
+      continue;
+    }
+  }
+  return null;
+}
+
+export default function VideoView() {
+  const { id } = useParams();
+  const nav = useNavigate();
+  const loc = useLocation();
+
+  const search = useMemo(() => new URLSearchParams(loc.search), [loc.search]);
+  const playlistParam = search.get("playlist");
+  const inPlaylistMode = !!playlistParam;
+
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+  const [video, setVideo] = useState(null);
+  const [resources, setResources] = useState([]);
+
+  const [more, setMore] = useState([]);
+
+  const [playlistMeta, setPlaylistMeta] = useState(null);
+  const [playlistRest, setPlaylistRest] = useState([]);
+
+  const [isAuthed, setIsAuthed] = useState(false);
+  const [previewHit, setPreviewHit] = useState(false);
+
+  const [showPL, setShowPL] = useState(false);
+  const [myPlaylists, setMyPlaylists] = useState([]);
+  const [memberOf, setMemberOf] = useState(new Set());
+  const [plLoading, setPlLoading] = useState(false);
+
+  const [comments, setComments] = useState([]);
+  const [cmtTxt, setCmtTxt] = useState("");
+  const [cmtLoading, setCmtLoading] = useState(false);
+  const [cmtErr, setCmtErr] = useState("");
+  const [showAllComments, setShowAllComments] = useState(false);
+
+  const videoRef = useRef(null);
+  const hlsRef = useRef(null);
+
+  const srcUrl = useMemo(() => {
+    if (!video) return "";
+    let u =
+      video.video_url ||
+      video.url ||
+      video.hls_url ||
+      video.streaming_url ||
+      video?.metadata?.hls_url ||
+      "";
+    return absUrl(u);
+  }, [video]);
+
+  const poster = useMemo(
+    () => (video?.thumbnail_url ? absUrl(video.thumbnail_url) : ""),
+    [video?.thumbnail_url]
+  );
+
+  const previewSeconds = useMemo(() => {
+    const candidates = [
+      video?.free_preview_seconds,
+      video?.preview_seconds,
+      video?.metadata?.free_preview_seconds,
+      video?.metadata?.preview_seconds,
+    ];
+    for (const c of candidates) {
+      const n = Number(c);
+      if (Number.isFinite(n) && n > 0) return Math.round(n);
+    }
+    return 0;
+  }, [video]);
+
+  const previewActive = !isAuthed && previewSeconds > 0;
+  /* --------------------------------------
+     AUTH
+  -------------------------------------- */
+  useEffect(() => {
+    const token =
+      localStorage.getItem("token") || sessionStorage.getItem("token");
+    if (!token) {
+      setIsAuthed(false);
+      return;
+    }
+    api
+      .get("/auth/me")
+      .then(() => setIsAuthed(true))
+      .catch(() => setIsAuthed(false));
+  }, []);
+
+  /* --------------------------------------
+     LOAD VIDEO
+  -------------------------------------- */
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setLoading(true);
+      setErr("");
+      try {
+        const data =
+          (await tryGetFirst([`/videos/public/${id}`])) ||
+          (await tryGetFirst([`/videos/${id}`]));
+
+        if (!alive) return;
+        if (!data) {
+          setErr("Video not found.");
+        } else {
+          setVideo(data);
+        }
+      } catch (e) {
+        if (alive) setErr("Video not found.");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [id]);
+
+  /* --------------------------------------
+     LOAD RELATED VIDEOS (CATEGORY-BASED)
+  -------------------------------------- */
+  useEffect(() => {
+    if (!video || !video.category_id) {
+      setMore([]);
+      return;
+    }
+
+    (async () => {
+      try {
+        // Pull all videos in the same category
+        const r =
+          (await tryGetFirst([
+            `/videos/public?category=${video.category_id}&limit=20&sort=created_at:desc`,
+          ])) ||
+          (await tryGetFirst([
+            `/videos?category=${video.category_id}&limit=20&sort=created_at:desc`,
+          ]));
+
+        const items = Array.isArray(r) ? r : r?.items || [];
+
+        // Exclude the current playing video
+        const filtered = items.filter((v) => String(v.id) !== String(id));
+
+        setMore(filtered);
+      } catch (e) {
+        setMore([]);
+      }
+    })();
+  }, [video, id]);
+
+  /* --------------------------------------
+     RESOURCES
+  -------------------------------------- */
+  useEffect(() => {
+    if (!id) return;
+    api
+      .get(`/resources/by-video/${id}`)
+      .then((r) => setResources(r.data?.items || []))
+      .catch(() => setResources([]));
+  }, [id]);
+
+  /* --------------------------------------
+     HLS SETUP
+  -------------------------------------- */
+  useEffect(() => {
+    const el = videoRef.current;
+
+    if (hlsRef.current) {
+      try {
+        hlsRef.current.destroy();
+      } catch {}
+      hlsRef.current = null;
+    }
+
+    if (!el || !srcUrl) return;
+
+    const isHls = isHlsUrl(srcUrl);
+
+    if (isHls && el.canPlayType("application/vnd.apple.mpegURL")) {
+      // Safari native HLS
+      el.src = srcUrl;
+      el.load();
+      return;
+    }
+
+    if (isHls) {
+      // HLS.js path
+      (async () => {
+        try {
+          const HlsMod = await import("hls.js");
+          const Hls = HlsMod.default || HlsMod;
+
+          if (Hls.isSupported()) {
+            const instance = new Hls({ enableWorker: true });
+            instance.loadSource(srcUrl);
+            instance.attachMedia(el);
+            hlsRef.current = instance;
+          } else {
+            el.src = srcUrl;
+            el.load();
+          }
+        } catch {
+          el.src = srcUrl;
+          el.load();
+        }
+      })();
+
+      return () => {
+        if (hlsRef.current) {
+          try {
+            hlsRef.current.destroy();
+          } catch {}
+          hlsRef.current = null;
+        }
+      };
+    }
+
+    // mp4 fallback
+    el.src = srcUrl;
+    el.load();
+  }, [srcUrl]);
+  /* --------------------------------------
+     PREVIEW GATE
+  -------------------------------------- */
+  useEffect(() => {
+    setPreviewHit(false);
+  }, [id, srcUrl]);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+
+    if (!previewActive) {
+      el.controls = true;
+      el.style.pointerEvents = "auto";
+      return;
+    }
+
+    const clamp = () => {
+      const t = Math.max(0, previewSeconds - 0.01);
+      try {
+        el.currentTime = t;
+      } catch {}
+    };
+
+    const stop = () => {
+      try {
+        el.pause();
+      } catch {}
+      clamp();
+      setPreviewHit(true);
+      el.controls = false;
+      el.style.pointerEvents = "none";
+    };
+
+    const onTime = () => {
+      if (el.currentTime >= previewSeconds && !previewHit) stop();
+    };
+    const onPlay = () => previewHit && stop();
+    const onSeek = () => {
+      if (el.currentTime > previewSeconds) clamp();
+    };
+
+    el.addEventListener("timeupdate", onTime);
+    el.addEventListener("play", onPlay);
+    el.addEventListener("seeking", onSeek);
+
+    return () => {
+      el.removeEventListener("timeupdate", onTime);
+      el.removeEventListener("play", onPlay);
+      el.removeEventListener("seeking", onSeek);
+    };
+  }, [previewActive, previewSeconds, previewHit]);
+
+  /* --------------------------------------
+     COMMENTS
+  -------------------------------------- */
+  useEffect(() => {
+    let alive = true;
+    setCmtErr("");
+    setCmtLoading(true);
+
+    api
+      .get(`/comments?video_id=${id}`)
+      .then((r) => {
+        if (!alive) return;
+        const items = r.data?.items || r.data || [];
+        setComments(items);
+        setShowAllComments(false);
+      })
+      .catch(() => alive && setComments([]))
+      .finally(() => alive && setCmtLoading(false));
+
+    return () => {
+      alive = false;
+    };
+  }, [id]);
+
+  async function postComment(e) {
+    e.preventDefault();
+    if (!isAuthed) return nav("/login");
+
+    const body = cmtTxt.trim();
+    if (!body) return;
+
+    setCmtErr("");
+    try {
+      const r = await api.post("/comments", { video_id: id, body });
+      const saved = r?.data?.comment || r?.data?.item || r?.data;
+      setComments((prev) => [saved, ...prev]);
+      setCmtTxt("");
+    } catch {
+      setCmtErr("Failed to post comment.");
+    }
+  }
+
+  /* --------------------------------------
+     SHARE
+  -------------------------------------- */
+  async function share() {
+    try {
+      const shareUrl =
+        window.location.origin +
+        loc.pathname +
+        (inPlaylistMode ? `?playlist=${playlistParam}` : "");
+
+      if (navigator.share) {
+        await navigator.share({
+          title: video?.title,
+          url: shareUrl,
+        });
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+        alert("Link copied!");
+      }
+    } catch {}
+  }
+
+  /* --------------------------------------
+     PLAYLIST MEMBERSHIP
+  -------------------------------------- */
+  async function toggleMembership(pid) {
+    const pidStr = String(pid);
+    const inNow = memberOf.has(pidStr);
+
+    try {
+      if (inNow) {
+        await api.delete(`/playlists/${pid}/videos/${id}`);
+        const next = new Set(memberOf);
+        next.delete(pidStr);
+        setMemberOf(next);
+      } else {
+        await api.post(`/playlists/${pid}/videos`, { video_id: id });
+        const next = new Set(memberOf);
+        next.add(pidStr);
+        setMemberOf(next);
+      }
+    } catch {
+      alert("Unable to update playlist.");
+    }
+  }
+
+  /* --------------------------------------
+     STYLES
+  -------------------------------------- */
+  const styles = `
+  .vv { --bg:#0b0f19; --card:#0f172a; --muted:#9aa4b2; --text:#e5e7eb; --text-strong:#fff; --border:rgba(148,163,184,.18); }
+  .vv { background: var(--bg); color: var(--text); min-height: 100vh; }
+  .vv a { color: #93c5fd; text-decoration: none; }
+  .vv a:hover { text-decoration: underline; }
+
+  .vv-wrap { width: min(1180px, 94vw); margin: 0 auto; padding: 18px 0 40px; }
+  .vv-grid { display:grid; grid-template-columns: minmax(0,1fr) 320px; gap: 18px; align-items:start; }
+  @media (max-width: 1024px) { .vv-grid { grid-template-columns: 1fr; } }
+
+  .vv-card { background: var(--card); border:1px solid var(--border); border-radius:14px; box-shadow: 0 16px 50px rgba(2,6,23,.25); overflow:hidden; }
+  .vv-pad { padding: 14px; }
+  .vv-h1 { font-weight: 800; font-size: 22px; margin: 14px 8px 8px; color: var(--text-strong); }
+  .vv-byline { display:flex; gap:10px; font-size:13px; color:var(--muted); margin: 0 8px 12px; }
+  .vv-badge { padding:6px 10px; font-size:11px; font-weight:800; border-radius:999px; background:#111827; color:#d1d5db; border:1px solid var(--border); }
+
+  .vv-row { display:flex; gap:10px; flex-wrap:wrap; }
+  .vv-btn { height:36px; padding:0 14px; border-radius:10px; border:1px solid var(--border); background:#0b1020; color:#fff; }
+  .vv-btn:hover { background:#0a1328; }
+  .vv-btn.primary { background:#2563eb; border-color:#2563eb; }
+  .vv-btn.primary:hover { background:#1e40af; }
+
+  .vv-side-card { background: var(--card); border:1px solid var(--border); border-radius:12px; padding: 10px; margin-bottom: 14px; }
+  .vv-side-title { font-size:12px; color:#cbd5e1; font-weight:800; margin-bottom:6px; }
+
+  .vv-rel { display:flex; flex-direction:column; gap:8px; }
+  .vv-rel-item { display:flex; gap:10px; text-decoration:none; }
+
+  .vv-thumb { width:120px; height:68px; border-radius:10px; overflow:hidden; background:#101827; border:1px solid var(--border); position:relative; }
+  .vv-thumb img { width:100%; height:100%; object-fit:cover; }
+
+  .vv-dur { position:absolute; right:6px; bottom:6px; font-size:10px; font-weight:700; background:rgba(0,0,0,.7); color:#fff; padding:2px 6px; border-radius:6px; }
+
+  .vv-gate { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.7); }
+  .vv-gate-inner { background:#0b1020; padding:20px; border-radius:12px; border:1px solid var(--border); color:#fff; text-align:center; }
+
+  .vv-muted { color: var(--muted); }
+  .vv-hr { border:0; border-top:1px solid var(--border); margin:12px 0; }
+  `;
+  /* --------------------------------------
+     RENDER
+  -------------------------------------- */
+
+  if (loading)
+    return (
+      <div className="vv">
+        <style dangerouslySetInnerHTML={{ __html: styles }} />
+        <div className="vv-wrap">
+          <div className="vv-card vv-pad">Loading…</div>
+        </div>
+      </div>
+    );
+
+  if (err || !video)
+    return (
+      <div className="vv">
+        <style dangerouslySetInnerHTML={{ __html: styles }} />
+        <div className="vv-wrap">
+          <div className="vv-card vv-pad">{err || "Video not found."}</div>
+        </div>
+      </div>
+    );
+
+  const tags = video?.metadata?.tags || [];
+  const created = video?.created_at || video?.created;
+  const author = video?.metadata?.authors?.[0];
+
+  // Since we sorted newest → oldest, nextVideo is simply the FIRST in the array
+  const [nextVideo, ...related] = more;
+
+  const visibleComments = showAllComments
+    ? comments
+    : comments.slice(0, MAX_VISIBLE_COMMENTS);
+
+  const hasMoreComments = comments.length > MAX_VISIBLE_COMMENTS;
+
+  return (
+    <div className="vv">
+      <style dangerouslySetInnerHTML={{ __html: styles }} />
+
+      <div className="vv-wrap">
+        <div className="vv-grid">
+          {/* LEFT SIDE */}
+          <div>
+            <div className="vv-card">
+              <div style={{ background: "#000", position: "relative" }}>
+                <video
+                  ref={videoRef}
+                  poster={poster || undefined}
+                  style={{
+                    width: "100%",
+                    display: "block",
+                    background: "#000",
+                    pointerEvents:
+                      previewActive && previewHit ? "none" : "auto",
+                  }}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  crossOrigin="anonymous"
+                  controlsList="nodownload"
+                  disablePictureInPicture
+                  onContextMenu={(e) => e.preventDefault()}
+                />
+
+                {previewActive && previewHit && (
+                  <div className="vv-gate">
+                    <div className="vv-gate-inner">
+                      <p>Please log in to watch the full video.</p>
+                      <Link className="vv-btn primary" to="/login">
+                        Log in
+                      </Link>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* --- VIDEO DETAILS --- */}
+              <div className="vv-pad">
+                <div className="vv-row">
+                  <button className="vv-btn" onClick={() => nav(-1)}>
+                    ← Back
+                  </button>
+
+                  {isAuthed ? (
+                    <div className="vv-pop">
+                      <button
+                        className="vv-btn"
+                        onClick={() => setShowPL((s) => !s)}
+                      >
+                        + Add to playlist
+                      </button>
+                      {showPL && (
+                        <div className="vv-popmenu">
+                          {plLoading && (
+                            <div className="vv-muted">Loading…</div>
+                          )}
+                          {!plLoading &&
+                            myPlaylists.map((p) => {
+                              const inList = memberOf.has(String(p.id));
+                              return (
+                                <label
+                                  key={p.id}
+                                  className="vv-poprow"
+                                  onClick={() => toggleMembership(p.id)}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={inList}
+                                    readOnly
+                                  />
+                                  <span>{p.title}</span>
+                                </label>
+                              );
+                            })}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <Link className="vv-btn" to="/login">
+                      + Add to playlist
+                    </Link>
+                  )}
+
+                  <button className="vv-btn" onClick={share}>
+                    📤 Share
+                  </button>
+                </div>
+
+                <h1 className="vv-h1">{video.title}</h1>
+
+                <div className="vv-byline">
+                  {author && <span className="vv-badge">{author}</span>}
+                  {created && <span>{datePretty(created)}</span>}
+                </div>
+
+                {!!tags.length &&
+                  tags.map((t, i) => (
+                    <span key={i} className="vv-badge">
+                      {t}
+                    </span>
+                  ))}
+
+                {!!video.description && (
+                  <>
+                    <hr className="vv-hr" />
+                    <div className="vv-muted">{video.description}</div>
+                  </>
+                )}
+
+                {resources.length > 0 && (
+                  <>
+                    <hr className="vv-hr" />
+                    <div>
+                      <h3>Resources</h3>
+                      <ul>
+                        {resources.map((r, i) => (
+                          <li key={i}>
+                            <a href={absUrl(r.url)} target="_blank">
+                              {r.title}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </>
+                )}
+
+                {/* COMMENTS */}
+                <hr className="vv-hr" />
+                <div>
+                  <strong>Comments</strong>
+
+                  {isAuthed ? (
+                    <form onSubmit={postComment}>
+                      <textarea
+                        rows={3}
+                        value={cmtTxt}
+                        onChange={(e) => setCmtTxt(e.target.value)}
+                        placeholder="Write a comment…"
+                        style={{
+                          width: "100%",
+                          background: "#0b1020",
+                          color: "#e5e7eb",
+                          border: "1px solid var(--border)",
+                          borderRadius: 8,
+                          padding: 8,
+                        }}
+                      />
+                      <button
+                        className="vv-btn primary"
+                        style={{ marginTop: 6 }}
+                      >
+                        Post
+                      </button>
+                      {cmtErr && (
+                        <span style={{ color: "#ef4444" }}>{cmtErr}</span>
+                      )}
+                    </form>
+                  ) : (
+                    <div>
+                      <Link to="/login">Sign in</Link> to comment.
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: 14 }}>
+                    {cmtLoading ? (
+                      <div className="vv-muted">Loading comments…</div>
+                    ) : comments.length === 0 ? (
+                      <div className="vv-muted">No comments yet.</div>
+                    ) : (
+                      <>
+                        {visibleComments.map((c) => (
+                          <div
+                            key={c.id}
+                            style={{
+                              borderBottom: "1px solid var(--border)",
+                              padding: "8px 0",
+                            }}
+                          >
+                            <div style={{ color: "#cbd5e1", fontSize: 13 }}>
+                              {c.user_name || "Member"} •{" "}
+                              {datePretty(c.created_at)}
+                            </div>
+                            <div>{c.body}</div>
+                          </div>
+                        ))}
+
+                        {hasMoreComments && (
+                          <button
+                            className="vv-btn"
+                            onClick={() => setShowAllComments((x) => !x)}
+                            style={{ marginTop: 6 }}
+                          >
+                            {showAllComments
+                              ? "Show less"
+                              : `Show more (${comments.length - MAX_VISIBLE_COMMENTS})`}
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* --- RIGHT SIDEBAR --- */}
+          <aside>
+            {/* NEXT VIDEO */}
+            {nextVideo && (
+              <div className="vv-side-card">
+                <div className="vv-side-title">Next Video</div>
+                <Link to={`/watch/${nextVideo.id}`} className="vv-rel-item">
+                  <div className="vv-thumb">
+                    {nextVideo.thumbnail_url && (
+                      <img src={absUrl(nextVideo.thumbnail_url)} alt="" />
+                    )}
+                  </div>
+                  <div>{nextVideo.title}</div>
+                </Link>
+              </div>
+            )}
+
+            {/* RELATED */}
+            {related.length > 0 && (
+              <div className="vv-side-card">
+                <div className="vv-side-title">Related Videos</div>
+                <div className="vv-rel">
+                  {related.map((v) => (
+                    <Link key={v.id} to={`/watch/${v.id}`} className="vv-rel-item">
+                      <div className="vv-thumb">
+                        {v.thumbnail_url && (
+                          <img src={absUrl(v.thumbnail_url)} alt="" />
+                        )}
+                      </div>
+                      <div>{v.title}</div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
+}

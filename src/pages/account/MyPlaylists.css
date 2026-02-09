@@ -1,0 +1,295 @@
+/* src/pages/account/MyPlaylists.css */
+
+.mpl-page {
+  --bg: #000;
+  --text: #fff;
+  --accent: #7312ad;
+  --accent-glow: 0 0 22px rgba(115, 18, 173, 0.65);
+  --line: rgba(255, 255, 255, 0.1);
+  --muted: #b2b2b2;
+
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 28px 18px 64px;
+  color: var(--text);
+}
+
+.mpl-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.mpl-kicker {
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  color: rgba(115, 18, 173, 0.85);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.mpl-title {
+  margin: 0;
+  font-size: 34px;
+  line-height: 1.12;
+  text-shadow: var(--accent-glow);
+}
+
+.mpl-subtitle {
+  margin-top: 8px;
+  color: var(--muted);
+  line-height: 1.5;
+  max-width: 720px;
+}
+
+.mpl-header-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Cards */
+.mpl-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 18px;
+  box-shadow: inset 0 0 0 1px rgba(115, 18, 173, 0.14);
+  margin-bottom: 14px;
+}
+
+.mpl-card-title {
+  font-weight: 800;
+  margin-bottom: 12px;
+}
+
+/* Form */
+.mpl-form {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.mpl-field {
+  flex: 1;
+  min-width: 260px;
+}
+
+.mpl-label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.mpl-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 12px 14px;
+  outline: none;
+}
+
+.mpl-input:focus {
+  border-color: var(--accent);
+  box-shadow: var(--accent-glow);
+}
+
+.mpl-input::placeholder {
+  color: rgba(178, 178, 178, 0.8);
+}
+
+/* Checkbox */
+.mpl-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+}
+
+.mpl-check input {
+  accent-color: var(--accent);
+}
+
+/* States */
+.mpl-state {
+  margin-top: 10px;
+  color: var(--muted);
+}
+
+.mpl-error {
+  color: #ff6b6b;
+}
+
+.mpl-empty {
+  margin-top: 10px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  padding: 16px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Grid list */
+.mpl-grid {
+  margin-top: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.mpl-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 14px;
+  align-items: start;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(115, 18, 173, 0.12);
+}
+
+.mpl-item-title {
+  font-weight: 900;
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+
+.mpl-item-meta {
+  color: var(--muted);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mpl-dot {
+  opacity: 0.6;
+}
+
+.mpl-pill {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--muted);
+}
+
+.mpl-pill.public {
+  border-color: rgba(115, 18, 173, 0.55);
+  color: rgba(218, 186, 255, 0.95);
+  box-shadow: 0 0 0 1px rgba(115, 18, 173, 0.22) inset;
+}
+
+/* Share row */
+.mpl-share {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.mpl-share-label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.mpl-share-link {
+  color: rgba(218, 186, 255, 0.95);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  word-break: break-all;
+}
+
+.mpl-share-link:hover {
+  text-shadow: var(--accent-glow);
+}
+
+/* Buttons */
+.mpl-btn {
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 800;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: transform 140ms ease, filter 140ms ease, box-shadow 140ms ease;
+}
+
+.mpl-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+}
+
+.mpl-btn-primary {
+  background: var(--accent);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: var(--accent-glow);
+}
+
+.mpl-btn-ghost {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.mpl-btn-danger {
+  border-color: rgba(255, 90, 90, 0.35);
+  color: #ff8a8a;
+  background: rgba(255, 90, 90, 0.08);
+}
+
+.mpl-btn-mini {
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+/* Actions */
+.mpl-item-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .mpl-item {
+    grid-template-columns: 1fr;
+  }
+  .mpl-item-actions {
+    justify-content: flex-start;
+  }
+}
+
+.playlist-head {
+  color: #000 !important;
+}
+
+.ml-top-title {
+  color: #000 !important;
+}
+
+.playlists-title {
+  color: #000 !important;
+}
+
+.playlists-sub {
+  color: #b2b2b2 !important;
+}

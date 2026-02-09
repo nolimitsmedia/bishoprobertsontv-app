@@ -1,0 +1,135 @@
+/* ===============================
+   BRAND VARIABLES
+================================ */
+.partnership-page {
+  --bg: #000;
+  --text: #fff;
+  --accent: #7312ad;
+  --accent-glow: 0 0 22px rgba(115, 18, 173, 0.65);
+  --line: rgba(255, 255, 255, 0.1);
+  --muted: #b2b2b2;
+
+  background: var(--bg);
+  color: var(--text);
+  padding: 60px 20px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+/* ===============================
+   HERO
+================================ */
+.partnership-hero {
+  text-align: center;
+  margin-bottom: 50px;
+}
+
+.partnership-hero h1 {
+  font-size: 2.5rem;
+  margin-bottom: 10px;
+  color: var(--text);
+  text-shadow: var(--accent-glow);
+}
+
+.partnership-subtitle {
+  font-size: 1.1rem;
+  opacity: 0.9;
+  color: var(--muted);
+}
+
+/* ===============================
+   CONTENT
+================================ */
+.partnership-content {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+.partnership-block {
+  padding: 24px 22px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  box-shadow: inset 0 0 0 1px rgba(115, 18, 173, 0.15);
+}
+
+.partnership-block h2 {
+  margin-bottom: 15px;
+  color: var(--text);
+}
+
+.partnership-block p {
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+.partnership-block ul,
+.partnership-block ol {
+  padding-left: 20px;
+  line-height: 1.8;
+  color: var(--muted);
+}
+
+.partnership-block li {
+  margin-bottom: 8px;
+}
+
+/* ===============================
+   CTA
+================================ */
+.partnership-cta {
+  text-align: center;
+  margin-top: 20px;
+}
+
+.join-button {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 34px;
+  background: var(--accent);
+  color: #fff;
+  text-decoration: none;
+  font-weight: 800;
+  border-radius: 14px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  box-shadow: var(--accent-glow);
+  transition: transform 140ms ease, box-shadow 140ms ease, filter 140ms ease;
+}
+
+.join-button:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.08);
+  box-shadow: 0 0 28px rgba(115, 18, 173, 0.85);
+}
+
+.join-button small {
+  font-weight: 500;
+  font-size: 0.85rem;
+  margin-top: 4px;
+  opacity: 0.85;
+}
+
+/* ===============================
+   MOBILE
+================================ */
+@media (max-width: 768px) {
+  .partnership-page {
+    padding: 40px 14px;
+  }
+
+  .partnership-hero h1 {
+    font-size: 2rem;
+  }
+
+  .partnership-block {
+    padding: 20px 16px;
+    border-radius: 14px;
+  }
+}
+
+.pl-main {
+  background-color: #000 !important;
+}

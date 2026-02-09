@@ -1,5 +1,306 @@
-.btn--add {
-  width: 250px !important;
+/* src/pages/admin/Collections.css */
+
+/* playlist title - readable + stable width */
+.collections-row-title {
+  color: #fff !important;
+  display: inline-block;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* unsaved label */
+.collections-unsaved {
+  margin-left: 8px;
+  font-size: 12px;
+  color: #a1a1aa;
+  font-weight: 700;
+}
+
+/* bulk bar */
+.collections-bulkbar {
+  display: flex;
   align-items: center;
-  margin-top: -5px;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.collections-bulkleft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.collections-bulkcount {
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  width: 140px !important;
+}
+
+.collections-bulkselect {
+  min-width: 180px;
+}
+
+.collections-bulkapply {
+  height: 40px;
+  color: #fff !important;
+  border-radius: 50px;
+  padding-left: 10px !important;
+  padding-right: 10px !important;
+  cursor: pointer !important;
+}
+
+.collections-bulkapply:hover {
+  background-color: #7312ad;
+}
+
+.collections-bulktip {
+  color: rgba(255, 255, 255, 0.75) !important;
+  font-size: 12px;
+}
+
+/* force action modal absolute + readable text */
+.collections-menu {
+  position: absolute !important;
+  right: 0;
+  top: 36px;
+  z-index: 999;
+}
+
+.collections-menu .menu-item {
+  color: #000 !important;
+}
+
+.collections-menu .menu-item:hover {
+  color: #7312ad !important;
+}
+
+/* simple toast */
+.collections-toast {
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  min-width: 260px;
+  max-width: 360px;
+  padding: 14px 18px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  z-index: 9999;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  animation: toast-in 0.25s ease-out;
+}
+
+.collections-toast.is-success {
+  background: linear-gradient(135deg, #16a34a, #22c55e);
+  color: #ffffff;
+}
+
+.collections-toast.is-error {
+  background: linear-gradient(135deg, #dc2626, #ef4444);
+  color: #ffffff;
+}
+
+@keyframes toast-in {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.btn--add {
+  color: #fff !important;
+  width: 200px !important;
+  padding: 10px;
+  border-radius: 50px !important;
+  cursor: pointer;
+}
+
+.btn--add:hover {
+  background-color: #7312ad;
+}
+
+.table tr:hover {
+  background-color: #000 !important;
+}
+
+/* ---------------------------
+   NEW: Table base (so mobile styles apply even if .table isn't used)
+---------------------------- */
+.collections-page .table-collection {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+}
+
+/* ✅ Force thead to stay readable (your mobile issue) */
+.collections-page .table-collection thead th {
+  color: #000 !important;
+  background: #ffffff !important;
+}
+
+/* rows */
+.collections-page .table-collection tbody td {
+  vertical-align: middle;
+}
+
+/* cell layout helper */
+.collections-playlistcell {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* ---------------------------
+   NEW: Responsive fixes
+---------------------------- */
+.collections-headerbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.collections-titlewrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.collections-savebar {
+  display: flex;
+  gap: 8px;
+}
+
+.collections-createwrap {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.collections-newtitle {
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  padding: 0 12px;
+  min-width: 240px;
+}
+
+.collections-toolbar-grid {
+  display: grid;
+  grid-template-columns: 1fr 220px 180px;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+}
+
+/* mobile */
+@media (max-width: 900px) {
+  .collections-createwrap {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .collections-newtitle {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .btn--add {
+    width: 100% !important;
+  }
+
+  .collections-toolbar-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .collections-bulkbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .collections-bulkleft {
+    flex-wrap: wrap;
+  }
+
+  .collections-bulkcount {
+    width: auto !important;
+  }
+
+  .collections-bulkselect {
+    min-width: 0;
+    flex: 1 1 220px;
+  }
+
+  .collections-bulkapply {
+    width: 100%;
+  }
+
+  /* make sure table stays usable on mobile */
+  .collections-page .table-collection {
+    min-width: 720px;
+  }
+
+  /* ✅ extra specificity: keep thead black on mobile no matter what */
+  .collections-page .table-collection thead th {
+    color: #000 !important;
+    background: #ffffff !important;
+  }
+}
+
+.cd-field {
+  color: #000 !important;
+}
+
+.cd-textarea {
+  background-color: transparent;
+  color: #000 !important;
+}
+
+.select-caret {
+  color: #000 !important;
+}
+
+.brtv-collection-playlist {
+  color: #000 !important;
+}
+
+.brtv-collection-head {
+  color: #000 !important;
+  padding-top: 15px;
+  padding-left: 15px;
+  font-weight: 700;
+}
+
+.small {
+  color: #000 !important;
+  padding-left: 15px;
+}
+
+.title {
+  color: #000 !important;
+}
+
+.btn-save {
+  color: #000 !important;
+  border-radius: 15px;
+  transition: 0.5s ease;
+  cursor: pointer;
+}
+
+.btn-save:hover {
+  background-color: #7312ad;
+  color: #fff !important;
 }

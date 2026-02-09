@@ -1,18 +1,23 @@
-// src/pages/public/Catalog.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+// src/pages/public/Catalog.js
+import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import api from "../../api";
-import PlaylistCard from "../../components/cards/PlaylistCard";
+import DefaultThumb from "../../assets/BishopRobertsonTVLogo.png";
+import CatalogBanner from "../../assets/brtv-catalog-banner.jpg";
 import "./Catalog.css";
 
-/* utils */
-function absUrl(u) {
-  if (!u) return "";
+/* -----------------------------------------
+   Utilities
+----------------------------------------- */
+const absUrl = (u) => {
+  if (!u) return null;
   if (/^https?:\/\//i.test(u)) return u;
+
   const base = (api?.defaults?.baseURL || "").replace(/\/api\/?$/i, "");
   return u.startsWith("/") ? `${base}${u}` : `${base}/${u}`;
-}
-function fmtDuration(sec) {
+};
+
+const fmtDuration = (sec) => {
   const s = Math.max(0, Number(sec || 0));
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
@@ -20,13 +25,8 @@ function fmtDuration(sec) {
   return h
     ? `${h}:${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}`
     : `${m}:${String(ss).padStart(2, "0")}`;
-}
-function byCreatedDesc(a, b) {
-  return (
-    new Date(b.created_at || b.created || 0) -
-    new Date(a.created_at || a.created || 0)
-  );
-}
+};
+
 const slugify = (s) =>
   String(s || "")
     .toLowerCase()
@@ -34,196 +34,284 @@ const slugify = (s) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)+/g, "");
 
-/* hero slider */
-function HeroSlider({ items, interval = 6000 }) {
-  const [i, setI] = useState(0);
-  const count = items?.length || 0;
-  const timerRef = useRef(null);
-  const hoveringRef = useRef(false);
+/**
+ * Safe GET that never throws. Returns:
+ * { ok: boolean, status: number, data: any }
+ */
+async function safeGet(path, opts = {}) {
+  try {
+    const res = await api.get(path, {
+      ...opts,
+      // prevents axios from throwing on 4xx/5xx
+      validateStatus: () => true,
+    });
+    const status = res?.status ?? 0;
+    const ok = status >= 200 && status < 300;
+    return { ok, status, data: res?.data };
+  } catch (e) {
+    return { ok: false, status: 0, data: null };
+  }
+}
 
-  useEffect(() => {
-    clearInterval(timerRef.current);
-    if (count > 1) {
-      timerRef.current = setInterval(() => {
-        if (!hoveringRef.current) setI((x) => (x + 1) % count);
-      }, interval);
-    }
-    return () => clearInterval(timerRef.current);
-  }, [count, interval]);
+/* -----------------------------------------
+   Publish guard (Collections / Playlists)
+----------------------------------------- */
+function isCollectionPublished(c) {
+  if (!c || typeof c !== "object") return true;
 
-  const startX = useRef(0);
-  const onTouchStart = (e) => (startX.current = e.touches[0].clientX);
-  const onTouchEnd = (e) => {
-    const dx = e.changedTouches[0].clientX - startX.current;
-    if (Math.abs(dx) > 40)
-      setI((x) => (dx > 0 ? (x - 1 + count) % count : (x + 1) % count));
-  };
+  if (
+    c.is_published === false ||
+    c.isPublished === false ||
+    c.published === false
+  )
+    return false;
+  if (c.is_published === true || c.isPublished === true || c.published === true)
+    return true;
 
-  if (!count) return null;
+  if (c.published_at || c.publishedAt) return true;
+  if (c.unpublished_at || c.unpublishedAt) return false;
+
+  const raw =
+    c.status ??
+    c.publish_status ??
+    c.visibility ??
+    c.state ??
+    c.lifecycle ??
+    c.publishState ??
+    null;
+
+  if (raw != null) {
+    const s = String(raw).toLowerCase();
+    if (s.includes("unpublish") || s.includes("draft") || s.includes("private"))
+      return false;
+    if (s.includes("publish") || s.includes("public") || s === "live")
+      return true;
+  }
+
+  return true;
+}
+
+/* -----------------------------------------
+   Modern Loading Spinner (MUI-like, no deps)
+----------------------------------------- */
+function CircularSpinner({ size = 44, label = "Loading…" }) {
+  const ring = Math.max(4, Math.round(size / 10));
 
   return (
-    <section
-      className="hero hero--full theme--dark"
-      onMouseEnter={() => (hoveringRef.current = true)}
-      onMouseLeave={() => (hoveringRef.current = false)}
-      onTouchStart={onTouchStart}
-      onTouchEnd={onTouchEnd}
+    <div
+      style={{
+        display: "grid",
+        placeItems: "center",
+        gap: 10,
+        padding: "18px 0",
+      }}
     >
+      <style>{`
+        @keyframes brtv-spin { to { transform: rotate(360deg); } }
+        @keyframes brtv-dash {
+          0%   { stroke-dasharray: 1, 200; stroke-dashoffset: 0; }
+          50%  { stroke-dasharray: 90, 200; stroke-dashoffset: -35; }
+          100% { stroke-dasharray: 90, 200; stroke-dashoffset: -125; }
+        }
+      `}</style>
+
       <div
-        className="hero__track"
-        style={{ transform: `translateX(-${i * 100}%)` }}
+        aria-label={label}
+        role="status"
+        style={{
+          width: size,
+          height: size,
+          display: "grid",
+          placeItems: "center",
+        }}
       >
-        {items.map((v) => {
-          const thumb =
-            v.thumbnail_url ||
-            v.metadata?.thumbnail_url ||
-            v.metadata?.thumbnail_vertical_url;
-          return (
-            <div key={`slide-${v.id}`} className="hero__slide">
-              {thumb && (
-                <img className="hero__img" src={absUrl(thumb)} alt="" />
-              )}
-              <div className="hero__overlay">
-                <div className="hero__content">
-                  <h2 className="hero__title">{v.title}</h2>
-
-                  {v.short_description && (
-                    <p className="hero__desc">{v.short_description}</p>
-                  )}
-
-                  <div className="hero__ctaRow">
-                    <Link to={`/watch/${v.id}`} className="btn--purple">
-                      ► Watch Here
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <button
-        className="hero__arrow hero__arrow--left"
-        onClick={() => setI((x) => (x - 1 + count) % count)}
-        aria-label="Previous"
-      >
-        ‹
-      </button>
-      <button
-        className="hero__arrow hero__arrow--right"
-        onClick={() => setI((x) => (x + 1) % count)}
-        aria-label="Next"
-      >
-        ›
-      </button>
-
-      <div className="hero__dots">
-        {items.map((_, idx) => (
-          <div
-            key={`dot-${idx}`}
-            className={`hero__dot ${idx === i ? "hero__dot--active" : ""}`}
-            onClick={() => setI(idx)}
-            role="button"
-            aria-label={`Go to slide ${idx + 1}`}
+        <svg
+          width={size}
+          height={size}
+          viewBox="0 0 50 50"
+          style={{
+            animation: "brtv-spin 1.2s linear infinite",
+            filter: "drop-shadow(0 6px 18px rgba(0,0,0,0.35))",
+          }}
+        >
+          <circle
+            cx="25"
+            cy="25"
+            r="20"
+            fill="none"
+            stroke="rgba(255,255,255,0.10)"
+            strokeWidth={ring}
           />
-        ))}
+          <circle
+            cx="25"
+            cy="25"
+            r="20"
+            fill="none"
+            stroke="rgba(154, 92, 255, 0.95)"
+            strokeLinecap="round"
+            strokeWidth={ring}
+            style={{
+              animation: "brtv-dash 1.4s ease-in-out infinite",
+            }}
+          />
+        </svg>
       </div>
-    </section>
+
+      <div style={{ color: "rgba(255,255,255,0.78)", fontSize: 14 }}>
+        {label}
+      </div>
+    </div>
   );
 }
 
-/* cards / rows */
-function VideoCard({ v, playlistKey }) {
-  const href = playlistKey
-    ? `/watch/${v.id}?playlist=${encodeURIComponent(playlistKey)}`
-    : `/watch/${v.id}`;
+/* -----------------------------------------
+   Video Card
+   ✅ FIX: Hide duration badge when duration is 0
+----------------------------------------- */
+function VideoCard({ v }) {
+  const href = `/watch/${v.id}`;
 
   const thumb =
     v.thumbnail_url ||
     v.metadata?.thumbnail_vertical_url ||
     v.metadata?.thumbnail_url;
 
+  const realSrc = absUrl(thumb);
+  const src = realSrc || DefaultThumb;
+  const isDefault = !realSrc;
+
+  const dur = Number(v.duration_seconds || 0);
+  const showDuration = Number.isFinite(dur) && dur > 0;
+
   return (
-    <Link to={href} className="vd-card theme--dark">
-      <div className="vd-thumb">
-        {thumb ? (
-          <img src={absUrl(thumb)} alt="" />
-        ) : (
-          <div className="vd-thumb__placeholder">No Image</div>
-        )}
-        {v.duration_seconds != null && (
-          <div className="vd-pill vd-pill--dur">
-            {fmtDuration(v.duration_seconds)}
-          </div>
-        )}
-        {!v.is_premium && <div className="vd-pill vd-pill--free">Free</div>}
+    <Link to={href} className="nf-card">
+      <div className="nf-thumb">
+        <img
+          src={src}
+          alt={v.title || "Video"}
+          className={
+            isDefault ? "nf-thumb-img nf-thumb-img--default" : "nf-thumb-img"
+          }
+          onError={(e) => {
+            e.currentTarget.onerror = null;
+            e.currentTarget.src = DefaultThumb;
+            e.currentTarget.className = "nf-thumb-img nf-thumb-img--default";
+          }}
+        />
+
+        {showDuration && <div className="nf-duration">{fmtDuration(dur)}</div>}
+
+        <div className="nf-overlay" />
+        <div className="nf-play-btn">▶</div>
       </div>
-      <div className="vd-title">{v.title}</div>
+
+      <div className="nf-title">{v.title}</div>
     </Link>
   );
 }
 
-function CategoryRow({
-  title,
-  href,
-  items,
-  playlistsForThisRow = [],
-  playlistKeyForRow = null,
-}) {
-  const scroller = useRef(null);
-  const scrollBy = (dx) =>
-    scroller.current?.scrollBy({ left: dx, behavior: "smooth" });
-  const hasAny =
-    (Array.isArray(playlistsForThisRow) && playlistsForThisRow.length > 0) ||
-    (Array.isArray(items) && items.length > 0);
-  if (!hasAny) return null;
+/* -----------------------------------------
+   Admin Collection Card (Playlist)
+   ✅ FIX: Hide count badge when count is 0
+----------------------------------------- */
+function CollectionCard({ c, categoryTitle }) {
+  const href = `/admin-collections/${c.id}`;
+
+  const thumb =
+    c.thumbnail_url ||
+    c.cover_url ||
+    c.image_url ||
+    c.poster_url ||
+    c?.metadata?.thumbnail_url ||
+    c?.metadata?.cover_url;
+
+  const realSrc = absUrl(thumb);
+  const src = realSrc || DefaultThumb;
+  const isDefault = !realSrc;
+
+  const title = c.title || c.name || "Playlist";
+  const count =
+    c.item_count ??
+    c.items_count ??
+    c.video_count ??
+    c.videos_count ??
+    c.count ??
+    (Array.isArray(c.items) ? c.items.length : null);
+
+  const showCount = Number(count) > 0;
 
   return (
-    <section className="cat-section">
-      <div className="cat-section__head">
-        <h3 className="cat-section__title">{title}</h3>
-        {href && (
-          <Link to={href} className="btn--white">
-            See All
-          </Link>
-        )}
+    <Link to={href} className="nf-card">
+      <div className="nf-thumb">
+        <img
+          src={src}
+          alt={title}
+          className={
+            isDefault ? "nf-thumb-img nf-thumb-img--default" : "nf-thumb-img"
+          }
+          onError={(e) => {
+            e.currentTarget.onerror = null;
+            e.currentTarget.src = DefaultThumb;
+            e.currentTarget.className = "nf-thumb-img nf-thumb-img--default";
+          }}
+        />
+        <div className="nf-overlay" />
+
+        <div
+          style={{
+            position: "absolute",
+            left: 10,
+            bottom: 10,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            zIndex: 3,
+          }}
+        >
+          <div
+            style={{
+              padding: "6px 10px",
+              borderRadius: 999,
+              fontSize: 12,
+              fontWeight: 800,
+              background: "rgba(0,0,0,0.55)",
+              color: "#fff",
+              letterSpacing: "0.04em",
+            }}
+          >
+            PLAYLIST
+          </div>
+
+          {showCount && (
+            <div
+              style={{
+                padding: "6px 10px",
+                borderRadius: 999,
+                fontSize: 12,
+                fontWeight: 800,
+                background: "rgba(0,0,0,0.55)",
+                color: "#fff",
+              }}
+            >
+              {count}
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="cat-row">
-        <button
-          className="cat-row__btn cat-row__btn--left"
-          onClick={() => scrollBy(-420)}
-          aria-label="scroll left"
-        >
-          ‹
-        </button>
-        <div ref={scroller} className="cat-row__scroller">
-          {playlistsForThisRow.map((p) => (
-            <div key={`pl-inline-${p.id}`} className="cat-row__item">
-              <PlaylistCard p={p} />
-            </div>
-          ))}
-          {items.map((v) => (
-            <div key={`v-${v.id}`} className="cat-row__item">
-              <VideoCard v={v} playlistKey={playlistKeyForRow} />
-            </div>
-          ))}
-        </div>
-        <button
-          className="cat-row__btn cat-row__btn--right"
-          onClick={() => scrollBy(420)}
-          aria-label="scroll right"
-        >
-          ›
-        </button>
+      <div className="nf-title">
+        {categoryTitle
+          ? `${categoryTitle} - (Playlist)`
+          : `${title} - (Playlist)`}
       </div>
-    </section>
+    </Link>
   );
 }
 
-/* category extraction */
-function extractCategoryForVideo(v) {
+/* -----------------------------------------
+   Extract Category (Videos)
+----------------------------------------- */
+function extractCategory(v) {
   let id =
     v.category_id ??
     v.categoryId ??
@@ -239,27 +327,82 @@ function extractCategoryForVideo(v) {
 
   if (!id && !name && Array.isArray(v?.categories) && v.categories.length) {
     const c = v.categories[0];
-    id = c?.id ?? null;
-    name = c?.name ?? null;
+    id = c.id ?? null;
+    name = c.name ?? null;
   }
-  if (id != null && id !== "" && id !== "null") {
-    return { key: String(id), name: name || `Category ${id}` };
-  }
-  if (name) {
-    return { key: `name:${slugify(name)}`, name };
-  }
+
+  if (id) return { key: String(id), name: name || "Untitled Category" };
+  if (name) return { key: `slug:${slugify(name)}`, name };
   return null;
 }
 
-/* main */
+/* -----------------------------------------
+   Extract Category (Collections / Playlists)
+----------------------------------------- */
+function extractCollectionCategory(c) {
+  const id =
+    c.featured_category_id ??
+    c.display_category_id ??
+    c.display_in_category_id ??
+    c.displays_in_category_id ??
+    c.category_id ??
+    c.categoryId ??
+    c?.category?.id ??
+    c?.metadata?.category_id ??
+    null;
+
+  const name =
+    c.featured_category_name ??
+    c.display_category_name ??
+    c.category_name ??
+    c?.category?.name ??
+    (typeof c?.category === "string" ? c.category : undefined) ??
+    c?.metadata?.category_name ??
+    c?.metadata?.category ??
+    null;
+
+  if (id) return { key: String(id), name: name || "Untitled Category" };
+  if (name) return { key: `slug:${slugify(name)}`, name };
+  return null;
+}
+
+/* -----------------------------------------
+   Helper: publish-aware date
+----------------------------------------- */
+function getPublishOrCreateMs(x) {
+  const raw =
+    x?.published_at ??
+    x?.publishedAt ??
+    x?.metadata?.published_at ??
+    x?.metadata?.publishedAt ??
+    x?.created_at ??
+    x?.createdAt ??
+    null;
+
+  const d = raw ? new Date(raw) : null;
+  const ms = d && !Number.isNaN(d.getTime()) ? d.getTime() : 0;
+  return ms;
+}
+
+/* ✅ Publish-date sort for items in a category (publish wins) */
+function sortWithinCategory(a, b) {
+  const da = getPublishOrCreateMs(a);
+  const db = getPublishOrCreateMs(b);
+  return db - da;
+}
+
+/* -----------------------------------------
+   MAIN PAGE
+----------------------------------------- */
 export default function Catalog() {
   const navigate = useNavigate();
   const [sp] = useSearchParams();
 
   const [loading, setLoading] = useState(true);
+
   const [videos, setVideos] = useState([]);
+  const [collections, setCollections] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [playlists, setPlaylists] = useState([]);
 
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [q, setQ] = useState(sp.get("q") || "");
@@ -269,329 +412,373 @@ export default function Catalog() {
 
   useEffect(() => {
     (async () => {
+      setLoading(true);
       try {
-        setLoading(true);
+        // Categories
+        let rawCats = [];
+        {
+          const catsRes = await safeGet("/public/categories");
+          if (catsRes.ok) rawCats = catsRes?.data?.items || catsRes?.data || [];
+        }
 
-        const catsRes = await api
-          .get("/public/categories")
-          .catch(() => ({ data: { items: [] } }));
-        const rawCats = Array.isArray(catsRes.data?.items)
-          ? catsRes.data.items
-          : Array.isArray(catsRes.data)
-          ? catsRes.data
-          : [];
-        setCategories(
-          rawCats
-            .map((c) => ({
-              id:
-                c.id ??
-                c.category_id ??
-                c.value ??
-                c.slug ??
-                (c.name ? slugify(c.name) : undefined),
-              name: c.name ?? c.title ?? c.slug ?? `Category ${c.id ?? ""}`,
-            }))
-            .filter((c) => c.id != null && c.name)
-        );
+        const fromApi = (rawCats || []).map((c) => ({
+          id: c.id ?? c.slug ?? slugify(c.name),
+          name: c.name ?? c.title ?? c.slug ?? "Untitled",
+        }));
 
+        // Videos
         let items = [];
-        try {
-          const r1 = await api.get("/videos/public", {
+        {
+          const r1 = await safeGet("/videos/public", {
             params: { limit: 1000 },
           });
-          items = Array.isArray(r1.data?.items) ? r1.data.items : r1.data || [];
-        } catch {
-          /* ignore */
+          if (r1.ok) items = r1.data?.items || r1.data || [];
         }
-        if (!Array.isArray(items) || items.length === 0) {
-          try {
-            const r2 = await api.get("/public/videos", {
-              params: { limit: 1000 },
-            });
-            items = Array.isArray(r2.data?.items)
-              ? r2.data.items
-              : r2.data || [];
-          } catch {
-            /* ignore */
+
+        if (!items.length) {
+          const r2 = await safeGet("/public/videos");
+          if (r2.ok) items = r2.data?.items || r2.data || [];
+        }
+
+        setVideos(items || []);
+
+        // Collections/Playlists (published only)
+        let cols = [];
+
+        // Prefer collections endpoints first
+        const collectionEndpoints = [
+          ["/public/collections", { limit: 200 }],
+          ["/collections/public", { limit: 200 }],
+        ];
+
+        for (const [path, params] of collectionEndpoints) {
+          const rr = await safeGet(path, { params });
+          if (rr.ok) {
+            const got = rr?.data?.items || rr?.data || [];
+            if (Array.isArray(got) && got.length) {
+              cols = got;
+              break;
+            }
           }
         }
-        setVideos((items || []).sort(byCreatedDesc));
 
-        const plsRes = await api
-          .get("/playlists/public", { params: { limit: 200, nonempty: 1 } })
-          .catch(() => ({ data: { items: [] } }));
-        setPlaylists(
-          Array.isArray(plsRes.data?.items) ? plsRes.data.items : []
+        // If no collections found, try playlists endpoints safely
+        if (!cols.length) {
+          const playlistEndpoints = [
+            ["/public/playlists", null],
+            ["/playlists/public", null],
+            ["/public/playlists", { limit: 200 }],
+            ["/playlists/public", { limit: 200 }],
+          ];
+
+          for (const [path, params] of playlistEndpoints) {
+            const rr = await safeGet(path, params ? { params } : undefined);
+            if (!rr.ok) continue;
+
+            const got = rr?.data?.items || rr?.data || [];
+            if (Array.isArray(got) && got.length) {
+              cols = got;
+              break;
+            }
+          }
+        }
+
+        const publishedCols = (cols || []).filter(isCollectionPublished);
+        setCollections(publishedCols);
+
+        const fromVideos = (items || [])
+          .map((v) => extractCategory(v))
+          .filter(Boolean)
+          .map((c) => ({ id: c.key, name: c.name }));
+
+        const fromCollections = (publishedCols || [])
+          .map((c) => extractCollectionCategory(c))
+          .filter(Boolean)
+          .map((c) => ({ id: c.key, name: c.name }));
+
+        const allCats = [...fromApi, ...fromVideos, ...fromCollections];
+        const deduped = Array.from(
+          new Map(allCats.map((c) => [String(c.id), c])).values(),
         );
+
+        setCategories(deduped);
       } finally {
         setLoading(false);
       }
     })();
   }, []);
 
-  const allCategorized = useMemo(
-    () =>
-      videos
-        .map((v) => ({ v, cat: extractCategoryForVideo(v) }))
-        .filter((x) => x.cat),
-    [videos]
-  );
+  const filteredVideos = useMemo(() => {
+    let out = [...videos];
 
-  const idToName = useMemo(() => {
-    const m = new Map();
-    (categories || []).forEach((c) => {
-      const id = c.id ?? c.category_id ?? c.value ?? c.slug ?? null;
-      const name = c.name ?? c.title ?? c.slug ?? "";
-      if (id != null && String(id).length) m.set(String(id), name);
-    });
-    return m;
-  }, [categories]);
-
-  const categoryOptions = useMemo(() => {
-    const map = new Map();
-    for (const { cat } of allCategorized) {
-      const key = cat.key;
-      const label = key.startsWith("name:")
-        ? cat.name || "Uncategorized"
-        : idToName.get(key) || cat.name || "Uncategorized";
-      if (!map.has(key)) map.set(key, label);
-    }
-    return [{ key: "all", name: "All" }].concat(
-      Array.from(map.entries()).map(([key, name]) => ({ key, name }))
-    );
-  }, [allCategorized, idToName]);
-
-  const yearOptions = useMemo(() => {
-    const set = new Set();
-    for (const { v } of allCategorized) {
-      const y = new Date(v.created_at || v.created || 0).getFullYear();
-      if (Number.isFinite(y) && y > 1900) set.add(String(y));
-    }
-    const years = Array.from(set).sort((a, b) => Number(b) - Number(a));
-    return [{ key: "all", name: "All" }].concat(
-      years.map((y) => ({ key: y, name: y }))
-    );
-  }, [allCategorized]);
-
-  const subjectOptions = useMemo(() => {
-    const set = new Map();
-    for (const { v } of allCategorized) {
-      const tags = Array.isArray(v?.metadata?.tags) ? v.metadata.tags : [];
-      for (const t of tags) {
-        const disp = String(t).trim();
-        const low = disp.toLowerCase();
-        if (disp) set.set(low, disp);
-      }
-    }
-    return [{ key: "all", name: "All" }].concat(
-      Array.from(set.entries())
-        .sort((a, b) => a[1].localeCompare(b[1]))
-        .map(([low, disp]) => ({ key: low, name: disp }))
-    );
-  }, [allCategorized]);
-
-  const filtered = useMemo(() => {
-    let out = videos;
     if (q.trim()) {
       const qq = q.trim().toLowerCase();
       out = out.filter(
         (v) =>
           v.title?.toLowerCase().includes(qq) ||
           v.description?.toLowerCase().includes(qq) ||
-          (Array.isArray(v?.metadata?.tags) &&
-            v.metadata.tags.some((t) => String(t).toLowerCase().includes(qq)))
+          v.metadata?.tags?.some((t) => String(t).toLowerCase().includes(qq)),
       );
     }
+
     if (filterCat !== "all") {
-      out = out.filter((v) => extractCategoryForVideo(v)?.key === filterCat);
+      out = out.filter((v) => extractCategory(v)?.key === filterCat);
     }
+
     if (filterYear !== "all") {
       out = out.filter((v) => {
-        const y = new Date(v.created_at || v.created || 0).getFullYear();
-        return String(y) === String(filterYear);
+        const ms = getPublishOrCreateMs(v);
+        if (!ms) return false;
+        return new Date(ms).getFullYear() == filterYear;
       });
     }
+
     if (filterSubject !== "all") {
-      out = out.filter((v) => {
-        const tags = Array.isArray(v?.metadata?.tags) ? v.metadata.tags : [];
-        return tags.some((t) => String(t).toLowerCase() === filterSubject);
-      });
+      out = out.filter((v) =>
+        v.metadata?.tags?.some(
+          (t) => String(t).toLowerCase() === filterSubject,
+        ),
+      );
     }
+
     return out;
   }, [videos, q, filterCat, filterYear, filterSubject]);
 
-  const withCat = useMemo(
-    () =>
-      filtered
-        .map((v) => ({ v, cat: extractCategoryForVideo(v) }))
-        .filter((x) => x.cat != null),
-    [filtered]
-  );
+  const filteredCollections = useMemo(() => {
+    let out = [...collections].filter(isCollectionPublished);
 
-  const heroItems = useMemo(
-    () => withCat.slice(0, 6).map((x) => x.v),
-    [withCat]
-  );
-
-  const featuredPlaylistByCatId = useMemo(() => {
-    const map = new Map();
-    for (const p of playlists || []) {
-      const cid = p.featured_category_id ?? p.featuredCategoryId ?? null;
-      if (cid == null) continue;
-      const key = String(cid);
-      if (!map.has(key)) map.set(key, p);
+    if (filterCat !== "all") {
+      out = out.filter((c) => extractCollectionCategory(c)?.key === filterCat);
     }
-    return map;
-  }, [playlists]);
+
+    if (q.trim()) {
+      const qq = q.trim().toLowerCase();
+      out = out.filter(
+        (c) =>
+          (c.title || c.name || "").toLowerCase().includes(qq) ||
+          (c.description || "").toLowerCase().includes(qq),
+      );
+    }
+
+    return out;
+  }, [collections, filterCat, q]);
 
   const grouped = useMemo(() => {
     const map = new Map();
-    for (const { v, cat } of withCat) {
-      const key = cat.key;
-      const name = key.startsWith("name:")
-        ? cat.name
-        : idToName.get(key) || cat.name || "Category";
-      if (!map.has(key)) map.set(key, { name, items: [], lastCreated: 0 });
-      const g = map.get(key);
-      g.items.push(v);
-      const ts = new Date(v.created_at || v.created || 0).getTime() || 0;
-      if (ts > g.lastCreated) g.lastCreated = ts;
-    }
-    const rows = Array.from(map.entries()).map(([key, v]) => ({ key, ...v }));
-    rows.sort((a, b) => b.lastCreated - a.lastCreated);
-    return rows;
-  }, [withCat, idToName]);
+
+    filteredVideos.forEach((v) => {
+      const cat = extractCategory(v);
+      if (!cat) return;
+      if (!map.has(cat.key))
+        map.set(cat.key, { name: cat.name, videos: [], collections: [] });
+      map.get(cat.key).videos.push(v);
+    });
+
+    filteredCollections.forEach((c) => {
+      const cat = extractCollectionCategory(c);
+      if (!cat) return;
+      if (!map.has(cat.key))
+        map.set(cat.key, { name: cat.name, videos: [], collections: [] });
+      map.get(cat.key).collections.push(c);
+    });
+
+    return [...map.entries()].map(([key, val]) => ({
+      key,
+      name: val.name,
+      videos: [...val.videos].sort(sortWithinCategory),
+      collections: [...val.collections].sort((a, b) => {
+        const da = getPublishOrCreateMs(a);
+        const db = getPublishOrCreateMs(b);
+        return db - da;
+      }),
+    }));
+  }, [filteredVideos, filteredCollections]);
 
   useEffect(() => {
-    const params = new URLSearchParams();
-    if (q.trim()) params.set("q", q.trim());
-    if (filterCat !== "all") params.set("cat", filterCat);
-    if (filterYear !== "all") params.set("year", filterYear);
-    if (filterSubject !== "all") params.set("subj", filterSubject);
-    navigate({ search: params.toString() }, { replace: true });
+    const p = new URLSearchParams();
+    if (q.trim()) p.set("q", q.trim());
+    if (filterCat !== "all") p.set("cat", filterCat);
+    if (filterYear !== "all") p.set("year", filterYear);
+    if (filterSubject !== "all") p.set("subj", filterSubject);
+
+    navigate({ search: p.toString() }, { replace: true });
   }, [q, filterCat, filterYear, filterSubject, navigate]);
 
   if (loading)
     return (
       <div className="catalog-page theme--dark">
-        <div className="card card--dark">Loading catalog…</div>
+        <div className="card--dark">
+          <CircularSpinner label="Loading catalog…" />
+        </div>
       </div>
     );
 
   return (
     <div className="catalog-page theme--dark">
-      <HeroSlider items={heroItems} />
+      <div
+        className="catalog-hero"
+        style={{ backgroundImage: `url(${CatalogBanner})` }}
+      >
+        <div className="catalog-hero-overlay" />
+        <div className="catalog-hero-inner">
+          <h1 className="catalog-hero-title">Catalog</h1>
+          <div className="catalog-hero-subtitle">
+            Browse by category and watch your favorite messages.
+          </div>
+        </div>
+      </div>
 
-      <div className="card--dark">
+      <div className="catalog-controls">
         <div className="catalog-toolbar">
           <button
-            className="btn--purple"
+            className="filter-btn"
             onClick={() => setFiltersOpen((s) => !s)}
+            type="button"
           >
             ☰ Filters
           </button>
-          <div className="catalog-toolbar__right">
-            <input
-              className="search search--dark"
-              placeholder="Search…"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
-          </div>
+
+          <input
+            className="search search--dark"
+            placeholder="Search…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
         </div>
 
         {filtersOpen && (
           <div className="filters-panel">
-            <div className="filters-grid">
-              <div className="filters-field">
-                <div className="filters-label">Category</div>
-                <select
-                  className="search search--dark"
-                  value={filterCat}
-                  onChange={(e) => setFilterCat(e.target.value)}
-                >
-                  {categoryOptions.map((o) => (
-                    <option key={`catopt-${o.key}`} value={o.key}>
-                      {o.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="filters-field">
-                <div className="filters-label">Year</div>
-                <select
-                  className="search search--dark"
-                  value={filterYear}
-                  onChange={(e) => setFilterYear(e.target.value)}
-                >
-                  {yearOptions.map((o) => (
-                    <option key={`yopt-${o.key}`} value={o.key}>
-                      {o.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="filters-field">
-                <div className="filters-label">Subjects</div>
-                <select
-                  className="search search--dark"
-                  value={filterSubject}
-                  onChange={(e) => setFilterSubject(e.target.value)}
-                >
-                  {subjectOptions.map((o) => (
-                    <option key={`sopt-${o.key}`} value={o.key}>
-                      {o.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div className="filter-block">
+              <label>Category</label>
+              <select
+                value={filterCat}
+                onChange={(e) => setFilterCat(e.target.value)}
+              >
+                <option value="all">All</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={String(c.id)}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
             </div>
-          </div>
-        )}
 
-        {grouped.map((g) => {
-          const inlinePlaylists = g.key.startsWith("name:")
-            ? []
-            : (() => {
-                const pl = featuredPlaylistByCatId.get(g.key);
-                return pl ? [pl] : [];
-              })();
+            <div className="filter-block">
+              <label>Year</label>
+              <select
+                value={filterYear}
+                onChange={(e) => setFilterYear(e.target.value)}
+              >
+                <option value="all">All</option>
+                {Array.from(
+                  new Set(
+                    videos
+                      .map((v) => getPublishOrCreateMs(v))
+                      .filter(Boolean)
+                      .map((ms) => new Date(ms).getFullYear()),
+                  ),
+                )
+                  .sort((a, b) => b - a)
+                  .map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+              </select>
+            </div>
 
-          const playlistKeyForRow =
-            inlinePlaylists.length > 0
-              ? inlinePlaylists[0].slug ||
-                inlinePlaylists[0].id ||
-                inlinePlaylists[0].playlist_id
-              : null;
+            <div className="filter-block">
+              <label>Subject</label>
+              <select
+                value={filterSubject}
+                onChange={(e) => setFilterSubject(e.target.value)}
+              >
+                <option value="all">All</option>
 
-          // NEW: "See All" links to the admin public playlist if available; otherwise fallback
-          const seeAllHref =
-            inlinePlaylists.length > 0
-              ? `/playlist/${encodeURIComponent(
-                  inlinePlaylists[0].slug || inlinePlaylists[0].id
-                )}`
-              : `/p/videos?category=${encodeURIComponent(g.key)}`;
+                {Array.from(
+                  new Set(
+                    videos.flatMap(
+                      (v) =>
+                        v.metadata?.tags?.map((t) => t.toLowerCase()) || [],
+                    ),
+                  ),
+                ).map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          return (
-            <CategoryRow
-              key={`cat-${g.key}`}
-              title={g.name}
-              href={seeAllHref}
-              items={g.items.slice(0, 12)}
-              playlistsForThisRow={inlinePlaylists}
-              playlistKeyForRow={playlistKeyForRow}
-            />
-          );
-        })}
-
-        {!grouped.length && (
-          <div className="empty">
-            Make sure each video has a category set (ID or name).
+            <button
+              className="filter-reset-btn"
+              type="button"
+              onClick={() => {
+                setFilterCat("all");
+                setFilterYear("all");
+                setFilterSubject("all");
+                setQ("");
+              }}
+            >
+              Reset Filters
+            </button>
           </div>
         )}
       </div>
+
+      <div className="catalog-content">
+        {grouped.map((g) => (
+          <CategoryGrid
+            key={g.key}
+            title={g.name}
+            items={g.videos}
+            collections={g.collections}
+          />
+        ))}
+
+        {!grouped.length && <div className="empty">No categories found.</div>}
+      </div>
     </div>
+  );
+}
+
+/* -----------------------------------------
+   CATEGORY GRID
+----------------------------------------- */
+function CategoryGrid({ title, items, collections }) {
+  const [limit, setLimit] = useState(8);
+
+  const hasCollection = Array.isArray(collections) && collections.length > 0;
+  const videoSlots = hasCollection ? Math.max(0, limit - 1) : limit;
+
+  const visibleVideos = items.slice(0, videoSlots);
+  const hasMore = items.length > videoSlots;
+
+  const firstCollection = hasCollection ? collections[0] : null;
+
+  return (
+    <section className="cat-grid-section">
+      <h2 className="section-title">{title}</h2>
+
+      <div className="nf-grid">
+        {firstCollection && (
+          <CollectionCard c={firstCollection} categoryTitle={title} />
+        )}
+
+        {visibleVideos.map((v) => (
+          <VideoCard key={v.id} v={v} />
+        ))}
+      </div>
+
+      {hasMore && (
+        <button
+          className="nf-showmore"
+          type="button"
+          onClick={() => setLimit((l) => l + 8)}
+        >
+          Show More
+        </button>
+      )}
+    </section>
   );
 }

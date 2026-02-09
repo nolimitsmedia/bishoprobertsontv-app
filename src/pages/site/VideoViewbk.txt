@@ -2,10 +2,42 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
 import api from "../../api";
-import "../site/VideoView.css";
+import "./VideoView.css";
 
-/* how many comments to show initially */
 const MAX_VISIBLE_COMMENTS = 6;
+const isLocalhost = ["localhost", "127.0.0.1"].includes(
+  window.location.hostname,
+);
+const log = (...args) => {
+  if (isLocalhost) console.log("[VideoView]", ...args);
+};
+
+/* ---------------- resume / progress helpers ---------------- */
+const PROGRESS_SAVE_MS = 3000;
+
+function progressKey(videoId) {
+  return `vv_progress_${videoId}`;
+}
+function readProgressSeconds(videoId) {
+  try {
+    const raw = localStorage.getItem(progressKey(videoId));
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+function writeProgressSeconds(videoId, seconds) {
+  try {
+    const s = Math.max(0, Math.floor(Number(seconds) || 0));
+    if (s > 0) localStorage.setItem(progressKey(videoId), String(s));
+  } catch {}
+}
+function clamp(n, min, max) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return min;
+  return Math.min(max, Math.max(min, x));
+}
 
 /* ---------------- utils ---------------- */
 function apiOrigin() {
@@ -62,25 +94,94 @@ function datePretty(iso) {
     return "";
   }
 }
-
-/* small helper that tries a list of endpoints until one works */
-async function tryGet(urls) {
+async function tryGetFirst(urls) {
   for (const u of urls) {
     try {
       const r = await api.get(u);
       return r.data;
     } catch (e) {
       const code = e?.response?.status;
-      if (
-        (code === 401 || code === 403 || code === 404) &&
-        u !== urls[urls.length - 1]
-      ) {
-        continue;
-      }
-      throw e;
+      if ([401, 403, 404].includes(code)) continue;
+      continue;
     }
   }
-  throw new Error("Request failed");
+  return null;
+}
+
+/* ---------------- auth helpers ---------------- */
+function getAnyToken() {
+  try {
+    return (
+      localStorage.getItem("token") ||
+      sessionStorage.getItem("token") ||
+      localStorage.getItem("admin_token") ||
+      sessionStorage.getItem("admin_token") ||
+      localStorage.getItem("member_token") ||
+      sessionStorage.getItem("member_token") ||
+      null
+    );
+  } catch {
+    return null;
+  }
+}
+
+/* ---------------- analytics helpers ---------------- */
+function safeInt(n, min = 0, max = 24 * 60 * 60) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return null;
+  const xi = Math.floor(x);
+  return Math.max(min, Math.min(max, xi));
+}
+
+function beaconAnalyticsEvent(url, payload) {
+  try {
+    if (!navigator.sendBeacon) return false;
+    const blob = new Blob([JSON.stringify(payload)], {
+      type: "application/json",
+    });
+    return navigator.sendBeacon(url, blob);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * IMPORTANT FIX:
+ * - Do NOT use axios `api.post` for analytics because any 401 response triggers api.js interceptor
+ *   which clears the token globally.
+ * - Use fetch here (no interceptor), and just swallow 401/timeout.
+ */
+async function sendAnalyticsEventFetch(payload, { timeoutMs = 8000 } = {}) {
+  const url = `${apiOrigin()}/api/analytics/event`;
+  const token = getAnyToken();
+
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+      signal: ctrl.signal,
+      keepalive: true,
+    });
+
+    if (isLocalhost) log("analytics:", payload.event_type, res.status);
+    return res.ok;
+  } catch (e) {
+    if (isLocalhost) {
+      const msg =
+        e?.name === "AbortError" ? `timeout after ${timeoutMs}ms` : e?.message;
+      console.warn("[VideoView] analytics failed:", payload?.event_type, msg);
+    }
+    return false;
+  } finally {
+    clearTimeout(t);
+  }
 }
 
 export default function VideoView() {
@@ -88,25 +189,29 @@ export default function VideoView() {
   const nav = useNavigate();
   const loc = useLocation();
 
+  const search = useMemo(() => new URLSearchParams(loc.search), [loc.search]);
+  const playlistParam = search.get("playlist");
+  const inPlaylistMode = !!playlistParam;
+
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [video, setVideo] = useState(null);
   const [resources, setResources] = useState([]);
-  const [more, setMore] = useState([]); // related / next videos
 
-  // auth state
+  const [categoryVideos, setCategoryVideos] = useState([]);
+  const [moreGlobal, setMoreGlobal] = useState([]);
+
+  const [playlistMeta, setPlaylistMeta] = useState(null);
+  const [playlistRest, setPlaylistRest] = useState([]);
+
   const [isAuthed, setIsAuthed] = useState(false);
-
-  // preview gate
   const [previewHit, setPreviewHit] = useState(false);
 
-  // playlists popover
   const [showPL, setShowPL] = useState(false);
   const [myPlaylists, setMyPlaylists] = useState([]);
-  const [memberOf, setMemberOf] = useState(new Set()); // playlist ids the video is in
+  const [memberOf, setMemberOf] = useState(new Set());
   const [plLoading, setPlLoading] = useState(false);
 
-  // comments
   const [comments, setComments] = useState([]);
   const [cmtTxt, setCmtTxt] = useState("");
   const [cmtLoading, setCmtLoading] = useState(false);
@@ -116,16 +221,44 @@ export default function VideoView() {
   const videoRef = useRef(null);
   const hlsRef = useRef(null);
 
+  // resume/progress refs
+  const lastWatchSecondsRef = useRef(0);
+  const lastSavedAtRef = useRef(0);
+  const restoredRef = useRef(false);
+
+  // build next path (preserves playlist param etc.)
+  const watchPath = useMemo(
+    () => loc.pathname + loc.search,
+    [loc.pathname, loc.search],
+  );
+  const loginBase = useMemo(() => {
+    const next = encodeURIComponent(watchPath || `/watch/${id}`);
+    return `/login?next=${next}`;
+  }, [watchPath, id]);
+
+  function currentSecondsNow() {
+    const el = videoRef.current;
+    if (!el) return Math.floor(lastWatchSecondsRef.current || 0);
+    const cur = Number(el.currentTime || 0);
+    if (Number.isFinite(cur) && cur > 0) return Math.floor(cur);
+    return Math.floor(lastWatchSecondsRef.current || 0);
+  }
+
+  function goLoginWithResume() {
+    const t = currentSecondsNow();
+    writeProgressSeconds(id, t);
+    nav(`${loginBase}${t ? `&t=${t}` : ""}`);
+  }
+
   const srcUrl = useMemo(
     () => (video?.video_url ? absUrl(video.video_url) : ""),
-    [video?.video_url]
+    [video?.video_url],
   );
   const poster = useMemo(
     () => (video?.thumbnail_url ? absUrl(video.thumbnail_url) : ""),
-    [video?.thumbnail_url]
+    [video?.thumbnail_url],
   );
 
-  // read preview from multiple places robustly
   const previewSeconds = useMemo(() => {
     const candidates = [
       video?.free_preview_seconds,
@@ -140,106 +273,70 @@ export default function VideoView() {
     return 0;
   }, [video]);
 
-  // Gate for viewers not logged in when a preview limit exists
   const previewActive = !isAuthed && previewSeconds > 0;
+  const hardLoginGate = !isAuthed && !srcUrl;
 
-  /* ---------------- styles (scoped) ---------------- */
-  const styles = `
-  .vv { --bg:#0b0f19; --card:#0f172a; --muted:#9aa4b2; --text:#e5e7eb; --text-strong:#fff; --border:rgba(148,163,184,.18); }
-  .vv { background: var(--bg); color: var(--text); min-height: 100vh; }
-  .vv a { color: #93c5fd; text-decoration: none; }
-  .vv a:hover { text-decoration: underline; }
+  /* ------------ analytics state (refs) -------------- */
+  const playSentRef = useRef(false);
+  const completeSentRef = useRef(false);
+  const lastPingAtRef = useRef(0);
 
-  .vv-wrap { width: min(1180px, 94vw); margin: 0 auto; padding: 18px 0 40px; }
-  .vv-grid { display:grid; grid-template-columns: minmax(0,1fr) 320px; gap: 18px; align-items:start; }
-  @media (max-width: 1024px) { .vv-grid { grid-template-columns: 1fr; } }
+  const lastPosRef = useRef(null);
+  const analyticsInFlightRef = useRef(false);
+  const endedHandledRef = useRef(false);
 
-  .vv-card { background: var(--card); border:1px solid var(--border); border-radius:14px; box-shadow: 0 16px 50px rgba(2,6,23,.25); overflow:hidden; }
-  .vv-pad { padding: 14px; }
-  .vv-h1 { font-weight: 800; font-size: 22px; line-height: 1.25; margin: 14px 8px 8px; color: var(--text-strong); }
-  .vv-byline { display:flex; align-items:center; gap:10px; font-size:13px; color:var(--muted); margin: 0 8px 12px; }
-  .vv-badge { display:inline-block; padding:6px 10px; font-size:11px; font-weight:800; border-radius:999px; background:#111827; color:#d1d5db; border:1px solid var(--border); margin-right:6px; margin-bottom:6px; white-space:nowrap; }
-  .vv-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-  .vv-btn { display:flex; align-items:center; height:36px; padding:0 14px; border-radius:10px; border:1px solid var(--border); background:#0b1020; color:var(--text); cursor:pointer; }
-  .vv-btn:hover { background:#0a1328; }
-  .vv-btn.primary { background:#2563eb; border-color:#2563eb; color:#fff; }
-  .vv-btn.primary:hover { background:#1e40af; }
-  .vv-btn.block { display:inline-flex; align-items:center; justify-content:center; width:140px; font-weight:700; }
-
-  .vv-side-card { background: var(--card); border:1px solid var(--border); border-radius:12px; padding: 10px; }
-  .vv-side-title { font-size:12px; color:#cbd5e1; letter-spacing:.02em; font-weight:800; margin: 0 0 8px; }
-  .vv-next { display:flex; gap:10px; align-items:center; text-decoration:none; }
-  .vv-thumb { width:120px; height:68px; border-radius:10px; overflow:hidden; background:#101827; border:1px solid var(--border); flex:0 0 auto; position:relative; }
-  .vv-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
-  .vv-dur { position:absolute; right:6px; bottom:6px; font-size:10px; font-weight:800; background:rgba(0,0,0,.7); color:#fff; padding:2px 6px; border-radius:6px; border:1px solid rgba(255,255,255,.18); }
-  .vv-next-title { color:var(--text); font-weight:700; font-size:13px; line-height:1.25; }
-  .vv-next-title:hover { text-decoration:underline; }
-
-  .vv-rel { display:grid; gap:10px; }
-  .vv-rel-item { display:flex; gap:10px; }
-  .vv-muted { color: var(--muted); }
-  .vv-share { margin-left:auto; }
-  .vv-hr { border:0; border-top:1px solid var(--border); margin: 12px 0; }
-  .vv-comment-box { color: var(--muted); font-size: 14px; }
-
-  /* preview gate overlay */
-  .vv-gate {
-    position: absolute; inset: 0;
-    display: grid; place-items: center;
-    background: linear-gradient(180deg, rgba(0,0,0,.15), rgba(0,0,0,.85) 40%, rgba(0,0,0,.95));
-    pointer-events: auto;
-  }
-  .vv-gate-inner {
-    text-align: center;
-    padding: 18px 16px;
-    border-radius: 12px;
-    background: rgba(2,6,23,.86);
-    border: 1px solid var(--border);
-    color: #fff;
-    width: min(420px, 92%);
-    box-shadow: 0 10px 40px rgba(0,0,0,.45);
-  }
-  .vv-gate-text { color: #cbd5e1; margin: 0 0 12px; }
-
-  /* playlists popover */
-  .vv-pop {
-    position: relative;
-  }
-  .vv-popmenu {
-    position:absolute; top:44px; left:0;
-    background:#0b1020; border:1px solid var(--border); border-radius:10px;
-    padding:10px; width:260px; z-index:30; box-shadow:0 14px 40px rgba(0,0,0,.4);
-  }
-  .vv-poprow { display:flex; align-items:center; gap:8px; padding:6px 4px; border-radius:8px; }
-  .vv-poprow:hover { background:#0a1328; }
-  .vv-poplbl { flex:1; font-size:14px; }
-  `;
-
-  /* ---------------- auth + load video data ---------------- */
   useEffect(() => {
-    const token =
-      localStorage.getItem("token") || sessionStorage.getItem("token");
-    if (!token) {
-      setIsAuthed(false);
-      return;
-    }
+    playSentRef.current = false;
+    completeSentRef.current = false;
+    lastPingAtRef.current = 0;
+    lastPosRef.current = null;
+    analyticsInFlightRef.current = false;
+    endedHandledRef.current = false;
+
+    lastWatchSecondsRef.current = 0;
+    lastSavedAtRef.current = 0;
+    restoredRef.current = false;
+  }, [id]);
+
+  /* ------------ AUTH -------------- */
+  useEffect(() => {
+    const token = getAnyToken();
+    const hasToken = !!token;
+    setIsAuthed(hasToken);
+
+    if (isLocalhost) log("auth token present:", hasToken);
+    if (!hasToken) return;
+
     api
       .get("/auth/me")
-      .then(() => setIsAuthed(true))
-      .catch(() => setIsAuthed(false));
+      .then((r) => {
+        if (isLocalhost) log("/auth/me ok:", r?.status);
+        setIsAuthed(true);
+      })
+      .catch((e) => {
+        if (isLocalhost)
+          log("/auth/me failed (keeping authed):", e?.response?.status);
+        setIsAuthed(true);
+      });
   }, []);
 
+  /* ------------ LOAD VIDEO -------------- */
   useEffect(() => {
     let alive = true;
     (async () => {
       setLoading(true);
       setErr("");
       try {
-        const data = await tryGet([`/videos/public/${id}`, `/videos/${id}`]);
+        const data =
+          (await tryGetFirst([`/videos/public/${id}`])) ||
+          (await tryGetFirst([`/videos/${id}`]));
         if (!alive) return;
-        setVideo(data || null);
-      } catch (e) {
-        console.error("GET video failed", e);
+        if (!data) setErr("Video not found.");
+        else {
+          setVideo(data);
+          log("Loaded video:", data);
+        }
+      } catch {
         if (alive) setErr("Video not found.");
       } finally {
         if (alive) setLoading(false);
@@ -250,23 +347,101 @@ export default function VideoView() {
     };
   }, [id]);
 
-  /* load a few more to populate “next/related” */
+  /* ------------ LOAD CATEGORY VIDEOS -------------- */
   useEffect(() => {
+    if (!video?.category_id) return;
+
     (async () => {
       try {
-        const data = await tryGet([
-          "/videos/public?limit=8",
-          "/videos?limit=8",
-        ]);
-        const arr = Array.isArray(data) ? data : data?.items || [];
-        setMore(arr.filter((v) => String(v.id) !== String(id)));
-      } catch {
-        setMore([]);
+        const res =
+          (await tryGetFirst([
+            `/videos/public?category_id=${video.category_id}&limit=200`,
+          ])) ||
+          (await tryGetFirst([
+            `/videos?category_id=${video.category_id}&limit=200`,
+          ]));
+
+        const items = Array.isArray(res?.items) ? res.items : res || [];
+        const sorted = [...items].sort(
+          (a, b) => new Date(b.created_at) - new Date(a.created_at),
+        );
+
+        setCategoryVideos(sorted);
+        log("Category videos:", sorted);
+      } catch (e) {
+        log("Category load failed", e);
+        setCategoryVideos([]);
       }
+    })();
+  }, [video?.category_id]);
+
+  /* ------------ GLOBAL FALLBACK -------------- */
+  useEffect(() => {
+    if (!id) return;
+    (async () => {
+      const data =
+        (await tryGetFirst([`/videos/public?limit=20&sort=created_at:desc`])) ||
+        (await tryGetFirst([`/videos?limit=20&sort=created_at:desc`]));
+      const arr = Array.isArray(data) ? data : data?.items || [];
+      setMoreGlobal(arr.filter((v) => String(v.id) !== String(id)));
+      log("Global fallback list:", arr);
     })();
   }, [id]);
 
-  /* load resources for list under player */
+  /* ------------ LOAD PLAYLIST FOR WATCH -------------- */
+  useEffect(() => {
+    let alive = true;
+
+    if (!playlistParam) {
+      setPlaylistMeta(null);
+      setPlaylistRest([]);
+      return;
+    }
+
+    (async () => {
+      try {
+        setPlaylistMeta(null);
+        setPlaylistRest([]);
+
+        const data = await tryGetFirst([
+          `/playlists/public/${playlistParam}`,
+          `/playlists/${playlistParam}`,
+        ]);
+        if (!alive || !data) return;
+
+        const rawVideos = Array.isArray(data.videos)
+          ? data.videos
+          : data.items || [];
+
+        const ordered = [...rawVideos].sort((a, b) => {
+          const pa = Number.isFinite(+a.position) ? +a.position : 1e9;
+          const pb = Number.isFinite(+b.position) ? +b.position : 1e9;
+          if (pa !== pb) return pa - pb;
+          return new Date(a.created_at || 0) - new Date(b.created_at || 0);
+        });
+
+        const currentIdx = ordered.findIndex(
+          (v) => String(v.id) === String(id),
+        );
+        const rest = currentIdx >= 0 ? ordered.slice(currentIdx + 1) : ordered;
+
+        setPlaylistMeta({ id: data.id, title: data.title });
+        setPlaylistRest(rest);
+        log("Loaded playlist for watch:", data, rest);
+      } catch (e) {
+        if (!alive) return;
+        log("Playlist load failed", e);
+        setPlaylistMeta(null);
+        setPlaylistRest([]);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [playlistParam, id]);
+
+  /* ------------ RESOURCES -------------- */
   useEffect(() => {
     if (!id) return;
     api
@@ -275,7 +450,66 @@ export default function VideoView() {
       .catch(() => setResources([]));
   }, [id]);
 
-  /* attach HLS if needed */
+  /* ------------ PLAYLISTS (for "+ Add to playlist") -------------- */
+  useEffect(() => {
+    let alive = true;
+
+    if (!isAuthed) {
+      setMyPlaylists([]);
+      setMemberOf(new Set());
+      return;
+    }
+
+    (async () => {
+      try {
+        setPlLoading(true);
+
+        const data =
+          (await tryGetFirst([
+            `/playlists/my`,
+            `/playlists/me`,
+            `/playlists`,
+          ])) || [];
+        const items = Array.isArray(data?.items) ? data.items : data || [];
+        if (!alive) return;
+        setMyPlaylists(items);
+
+        const m =
+          (await tryGetFirst([
+            `/playlists/by-video/${id}`,
+            `/playlists/for-video/${id}`,
+            `/playlists/videos/${id}`,
+          ])) || null;
+
+        const raw = Array.isArray(m?.items)
+          ? m.items
+          : Array.isArray(m?.playlist_ids)
+            ? m.playlist_ids
+            : Array.isArray(m)
+              ? m
+              : [];
+
+        const inSet = new Set(
+          raw.map((x) => String(x?.playlist_id ?? x?.id ?? x)),
+        );
+
+        if (!alive) return;
+        setMemberOf(inSet);
+      } catch (e) {
+        if (!alive) return;
+        setMyPlaylists([]);
+        setMemberOf(new Set());
+      } finally {
+        alive && setPlLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [isAuthed, id]);
+
+  /* ------------ HLS SETUP (improved + recovery) -------------- */
   useEffect(() => {
     const el = videoRef.current;
 
@@ -285,39 +519,99 @@ export default function VideoView() {
       } catch {}
       hlsRef.current = null;
     }
-    if (!el || !srcUrl) return;
 
+    if (!el || !srcUrl) return;
     const hls = isHlsUrl(srcUrl);
 
+    // Safari/iOS native HLS
     if (hls && el.canPlayType("application/vnd.apple.mpegURL")) {
       el.src = srcUrl;
-      el.load();
+      try {
+        el.load();
+      } catch {}
       return;
     }
 
     if (hls) {
+      let cancelled = false;
+
       (async () => {
         try {
           const HlsMod = await import("hls.js");
           const Hls = HlsMod.default || HlsMod;
+          if (cancelled) return;
+
           if (Hls.isSupported()) {
+            // These settings help with “stuck loading” and flaky segment fetches
             const instance = new Hls({
               enableWorker: true,
-              liveSyncDuration: 2,
+              lowLatencyMode: false,
+
+              // Buffer tuning (safe defaults)
+              maxBufferLength: 30,
+              maxMaxBufferLength: 60,
+              backBufferLength: 90,
+              maxBufferSize: 30 * 1000 * 1000,
+
+              // Retry tuning
+              fragLoadingTimeOut: 20000,
+              fragLoadingMaxRetry: 6,
+              fragLoadingRetryDelay: 1000,
+              fragLoadingMaxRetryTimeout: 64000,
+              manifestLoadingTimeOut: 20000,
+              manifestLoadingMaxRetry: 4,
+              manifestLoadingRetryDelay: 1000,
+              levelLoadingTimeOut: 20000,
+              levelLoadingMaxRetry: 4,
+              levelLoadingRetryDelay: 1000,
             });
+
             instance.loadSource(srcUrl);
             instance.attachMedia(el);
+
+            // Error recovery: prevents infinite loading spinner on transient issues
+            instance.on(Hls.Events.ERROR, function (_, data) {
+              if (!data?.fatal) return;
+
+              if (isLocalhost) {
+                console.warn("[VideoView] HLS fatal error:", data?.type, data);
+              }
+
+              try {
+                if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                  // Try restarting network load
+                  instance.startLoad();
+                } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                  // Try recovering media error
+                  instance.recoverMediaError();
+                } else {
+                  // Unrecoverable
+                  instance.destroy();
+                }
+              } catch {
+                try {
+                  instance.destroy();
+                } catch {}
+              }
+            });
+
             hlsRef.current = instance;
           } else {
             el.src = srcUrl;
-            el.load();
+            try {
+              el.load();
+            } catch {}
           }
         } catch {
           el.src = srcUrl;
-          el.load();
+          try {
+            el.load();
+          } catch {}
         }
       })();
+
       return () => {
+        cancelled = true;
         if (hlsRef.current) {
           try {
             hlsRef.current.destroy();
@@ -327,16 +621,18 @@ export default function VideoView() {
       };
     }
 
+    // MP4 / non-HLS
     el.src = srcUrl;
-    el.load();
+    try {
+      el.load();
+    } catch {}
   }, [srcUrl]);
 
-  /* reset preview gate when the video changes  */
+  /* ------------ PREVIEW GATE -------------- */
   useEffect(() => {
     setPreviewHit(false);
   }, [id, srcUrl]);
 
-  /* preview gate — block playback and controls after limit for non-logged-in users */
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
@@ -347,76 +643,413 @@ export default function VideoView() {
       return;
     }
 
-    const clampToLimit = () => {
-      const target = Math.max(0, previewSeconds - 0.01);
+    const clampPreview = () => {
+      const t = Math.max(0, previewSeconds - 0.01);
       try {
-        el.currentTime = target;
+        el.currentTime = t;
       } catch {}
     };
 
-    const stopAndGate = () => {
+    const stop = () => {
       try {
         el.pause();
       } catch {}
-      clampToLimit();
+      clampPreview();
       setPreviewHit(true);
       el.controls = false;
       el.style.pointerEvents = "none";
     };
 
     const onTime = () => {
-      if (el.currentTime >= previewSeconds && !previewHit) stopAndGate();
+      if (el.currentTime >= previewSeconds && !previewHit) stop();
     };
-    const onPlayAttempt = () => {
-      if (previewHit) stopAndGate();
-    };
-    const onSeeking = () => {
-      if (el.currentTime > previewSeconds) clampToLimit();
+    const onPlay = () => previewHit && stop();
+    const onSeek = () => {
+      if (el.currentTime > previewSeconds) clampPreview();
     };
 
     el.addEventListener("timeupdate", onTime);
-    el.addEventListener("play", onPlayAttempt);
-    el.addEventListener("seeking", onSeeking);
+    el.addEventListener("play", onPlay);
+    el.addEventListener("seeking", onSeek);
 
     return () => {
       el.removeEventListener("timeupdate", onTime);
-      el.removeEventListener("play", onPlayAttempt);
-      el.removeEventListener("seeking", onSeeking);
+      el.removeEventListener("play", onPlay);
+      el.removeEventListener("seeking", onSeek);
     };
   }, [previewActive, previewSeconds, previewHit]);
 
-  /* playlists: load my playlists + membership for this video (authed only) */
+  /* ------------ SAVE PROGRESS (always) -------------- */
   useEffect(() => {
-    if (!isAuthed || !id) {
-      setMyPlaylists([]);
-      setMemberOf(new Set());
+    const el = videoRef.current;
+    if (!el || !id) return;
+
+    const onTime = () => {
+      const cur = Number(el.currentTime || 0);
+      lastWatchSecondsRef.current = cur;
+
+      const now = Date.now();
+      if (now - lastSavedAtRef.current > PROGRESS_SAVE_MS) {
+        lastSavedAtRef.current = now;
+        writeProgressSeconds(id, cur);
+      }
+    };
+
+    el.addEventListener("timeupdate", onTime);
+    return () => el.removeEventListener("timeupdate", onTime);
+  }, [id]);
+
+  /* ------------ RESTORE PROGRESS (robust for HLS) -------------- */
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || !id || !srcUrl) return;
+    if (restoredRef.current) return;
+
+    const qs = new URLSearchParams(loc.search);
+    const tFromUrl = Number(qs.get("t"));
+    const tFromStorage = readProgressSeconds(id);
+
+    let desired =
+      Number.isFinite(tFromUrl) && tFromUrl > 0 ? tFromUrl : tFromStorage;
+
+    if (!desired || desired <= 0) {
+      restoredRef.current = true;
       return;
     }
-    let alive = true;
-    (async () => {
-      try {
-        setPlLoading(true);
-        const [plRes, memRes] = await Promise.allSettled([
-          api.get("/playlists"),
-          api.get(`/playlists/videos/${id}`),
-        ]);
-        if (!alive) return;
-        if (plRes.status === "fulfilled") {
-          const items = plRes.value?.data?.items || [];
-          setMyPlaylists(items);
-        }
-        if (memRes.status === "fulfilled") {
-          const ids = memRes.value?.data?.playlist_ids || [];
-          setMemberOf(new Set(ids.map(String)));
-        }
-      } finally {
-        if (alive) setPlLoading(false);
+
+    let attempts = 0;
+    const MAX_ATTEMPTS = 8; // ~2 seconds total
+
+    const computeTarget = () => {
+      const dur = Number(el.duration || 0);
+      let safe =
+        dur > 0
+          ? clamp(desired, 0, Math.max(0, dur - 2))
+          : Math.max(0, desired);
+
+      // If preview mode, don't resume past preview limit
+      if (previewActive && previewSeconds) {
+        safe = Math.min(safe, Math.max(0, previewSeconds - 0.25));
       }
-    })();
+
+      return safe;
+    };
+
+    const trySeekOnce = () => {
+      const target = computeTarget();
+      if (!Number.isFinite(target) || target <= 0) return false;
+
+      try {
+        el.currentTime = target;
+      } catch {
+        return false;
+      }
+
+      // Confirm it “stuck” (HLS can reset on attach/buffer)
+      const ok = Math.abs(Number(el.currentTime || 0) - target) < 1;
+      if (ok) {
+        restoredRef.current = true;
+
+        // remove t= only after successful seek
+        if (qs.get("t")) {
+          qs.delete("t");
+          const newSearch = qs.toString();
+          nav(
+            {
+              pathname: loc.pathname,
+              search: newSearch ? `?${newSearch}` : "",
+            },
+            { replace: true },
+          );
+        }
+
+        if (isLocalhost) log("Resume applied at", target);
+        return true;
+      }
+
+      return false;
+    };
+
+    const tick = () => {
+      attempts++;
+
+      // only try when metadata is present (duration known) OR after HLS has buffered enough
+      if (el.readyState >= 1) {
+        if (trySeekOnce()) return;
+      }
+
+      if (attempts >= MAX_ATTEMPTS) {
+        restoredRef.current = true;
+        if (isLocalhost) log("Resume gave up after retries");
+        return;
+      }
+
+      setTimeout(tick, 250);
+    };
+
+    // Start when metadata is ready
+    if (el.readyState >= 1) {
+      tick();
+    } else {
+      el.addEventListener("loadedmetadata", tick, { once: true });
+    }
+
+    // Extra safety: sometimes HLS resets after “canplay”
+    const onCanPlay = () => {
+      if (!restoredRef.current) tick();
+    };
+    el.addEventListener("canplay", onCanPlay, { once: true });
+
+    return () => {
+      el.removeEventListener("loadedmetadata", tick);
+      el.removeEventListener("canplay", onCanPlay);
+    };
+  }, [
+    id,
+    srcUrl,
+    loc.pathname,
+    loc.search,
+    nav,
+    previewActive,
+    previewSeconds,
+  ]);
+
+  /* ------------ VOD ANALYTICS (play/progress/complete) -------------- */
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+
+    if (!isAuthed) return;
+    if (hardLoginGate) return;
+    if (previewActive) return;
+    if (!id) return;
+
+    const PING_SECONDS = 15;
+
+    const rawVid = video?.id ?? id;
+    const videoIdNum = Number(rawVid);
+    const safeVideoId = Number.isFinite(videoIdNum)
+      ? videoIdNum
+      : String(rawVid);
+
+    const payloadBase = () => {
+      const dur = safeInt(el.duration);
+      const pos = safeInt(el.currentTime);
+      return {
+        video_id: safeVideoId,
+        position_seconds: pos,
+        duration_seconds: dur,
+        page: window.location.pathname + window.location.search,
+        meta: {},
+      };
+    };
+
+    const isActuallyPlaying = () =>
+      !el.paused && !el.ended && el.readyState >= 2;
+
+    const calcDeltaSeconds = () => {
+      const cur = Number(el.currentTime || 0);
+
+      if (lastPosRef.current == null || !Number.isFinite(lastPosRef.current)) {
+        lastPosRef.current = cur;
+        return 0;
+      }
+
+      const raw = cur - Number(lastPosRef.current || 0);
+      const delta = Math.floor(raw);
+
+      if (!Number.isFinite(delta) || delta < 0) {
+        lastPosRef.current = cur;
+        return 0;
+      }
+
+      const capped = Math.min(delta, 60);
+      lastPosRef.current = cur;
+      return capped;
+    };
+
+    const sendOne = async (payload, { force = false } = {}) => {
+      if (analyticsInFlightRef.current) {
+        if (!force) return false;
+      }
+      analyticsInFlightRef.current = true;
+      try {
+        return await sendAnalyticsEventFetch(payload, { timeoutMs: 8000 });
+      } finally {
+        analyticsInFlightRef.current = false;
+      }
+    };
+
+    const sendPlayOnce = async () => {
+      if (playSentRef.current) return;
+      playSentRef.current = true;
+
+      lastPosRef.current = Number(el.currentTime || 0);
+      await sendOne(
+        { event_type: "video_play", ...payloadBase() },
+        { force: true },
+      );
+    };
+
+    const sendProgress = async (force = false) => {
+      if (!force && !isActuallyPlaying()) return;
+
+      const now = Date.now();
+      if (!force && now - lastPingAtRef.current < PING_SECONDS * 1000) return;
+      lastPingAtRef.current = now;
+
+      const delta_seconds = calcDeltaSeconds();
+
+      await sendOne(
+        {
+          event_type: "video_progress",
+          ...payloadBase(),
+          meta: { delta_seconds },
+        },
+        { force },
+      );
+    };
+
+    const sendCompleteOnce = async () => {
+      if (completeSentRef.current) return;
+      completeSentRef.current = true;
+
+      await sendProgress(true);
+
+      await sendOne(
+        {
+          event_type: "video_complete",
+          ...payloadBase(),
+          meta: { delta_seconds: 0 },
+        },
+        { force: true },
+      );
+    };
+
+    const onPlay = async () => {
+      endedHandledRef.current = false;
+      await sendPlayOnce();
+      await sendProgress(true);
+    };
+
+    const onPause = async () => {
+      await sendProgress(true);
+    };
+
+    const onTimeUpdate = async () => {
+      const dur = Number(el.duration || 0);
+      const cur = Number(el.currentTime || 0);
+
+      if (dur > 0 && cur >= dur - 0.75 && !endedHandledRef.current) {
+        endedHandledRef.current = true;
+        await sendCompleteOnce();
+        return;
+      }
+
+      await sendProgress(false);
+    };
+
+    const onEnded = async () => {
+      if (endedHandledRef.current) return;
+      endedHandledRef.current = true;
+      await sendCompleteOnce();
+    };
+
+    const onVisibility = async () => {
+      if (document.visibilityState === "hidden") {
+        await sendProgress(true);
+      }
+    };
+
+    el.addEventListener("play", onPlay);
+    el.addEventListener("pause", onPause);
+    el.addEventListener("timeupdate", onTimeUpdate);
+    el.addEventListener("ended", onEnded);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    const intv = setInterval(() => {
+      sendProgress(false);
+    }, PING_SECONDS * 1000);
+
+    const onBeforeUnload = () => {
+      const base = payloadBase();
+      const payload = {
+        event_type: "video_progress",
+        ...base,
+        meta: { delta_seconds: calcDeltaSeconds() },
+      };
+      beaconAnalyticsEvent(`${apiOrigin()}/api/analytics/event`, payload);
+    };
+
+    window.addEventListener("beforeunload", onBeforeUnload);
+
+    if (isLocalhost) log("analytics tracking enabled for video:", safeVideoId);
+
+    return () => {
+      clearInterval(intv);
+      el.removeEventListener("play", onPlay);
+      el.removeEventListener("pause", onPause);
+      el.removeEventListener("timeupdate", onTimeUpdate);
+      el.removeEventListener("ended", onEnded);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [id, video?.id, isAuthed, hardLoginGate, previewActive]);
+
+  /* ------------ COMMENTS -------------- */
+  useEffect(() => {
+    let alive = true;
+    setCmtErr("");
+    setCmtLoading(true);
+    api
+      .get(`/comments?video_id=${id}`)
+      .then((r) => {
+        if (!alive) return;
+        const items = r.data?.items || r.data || [];
+        setComments(items);
+        setShowAllComments(false);
+      })
+      .catch(() => alive && setComments([]))
+      .finally(() => alive && setCmtLoading(false));
+
     return () => {
       alive = false;
     };
-  }, [isAuthed, id]);
+  }, [id]);
+
+  async function postComment(e) {
+    e.preventDefault();
+    if (!isAuthed) return goLoginWithResume();
+
+    const body = cmtTxt.trim();
+    if (!body) return;
+
+    setCmtErr("");
+    try {
+      const r = await api.post("/comments", { video_id: id, body });
+      const saved = r?.data?.comment || r?.data?.item || r?.data;
+      setComments((prev) => [saved, ...prev]);
+      setCmtTxt("");
+    } catch {
+      setCmtErr("Failed to post comment.");
+    }
+  }
+
+  async function share() {
+    const shareUrl =
+      window.location.origin +
+      loc.pathname +
+      (inPlaylistMode ? `?playlist=${playlistParam}` : "");
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: video?.title, url: shareUrl });
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+        alert("Link copied!");
+      }
+    } catch {}
+  }
 
   async function toggleMembership(pid) {
     const pidStr = String(pid);
@@ -434,69 +1067,63 @@ export default function VideoView() {
         setMemberOf(next);
       }
     } catch {
-      alert("Unable to update playlist membership.");
+      alert("Unable to update playlist.");
     }
   }
 
-  /* comments: load list */
-  useEffect(() => {
-    let alive = true;
-    setCmtErr("");
-    setCmtLoading(true);
-    api
-      .get(`/comments?video_id=${id}`)
-      .then((r) => {
-        if (!alive) return;
-        const items = r.data?.items || r.data || [];
-        setComments(items);
-        setShowAllComments(false); // reset when video changes
-      })
-      .catch(() => {
-        if (!alive) return;
-        setComments([]);
-      })
-      .finally(() => alive && setCmtLoading(false));
-    return () => {
-      alive = false;
-    };
-  }, [id]);
+  let nextVideos = [];
+  let relatedVideos = [];
 
-  async function postComment(e) {
-    e.preventDefault();
-    if (!isAuthed) {
-      nav("/login");
-      return;
-    }
-    const body = String(cmtTxt || "").trim();
-    if (!body) return;
-    setCmtErr("");
-    try {
-      const r = await api.post("/comments", { video_id: id, body });
-      const saved = r?.data && (r.data.comment || r.data.item || r.data);
-      setComments((prev) => [saved, ...prev]);
-      setCmtTxt("");
-    } catch (e) {
-      setCmtErr("Failed to post comment.");
-    }
+  if (categoryVideos.length > 0) {
+    const withoutCurrent = categoryVideos.filter(
+      (v) => String(v.id) !== String(id),
+    );
+    nextVideos = withoutCurrent.slice(0, 8);
+
+    relatedVideos = moreGlobal.filter(
+      (v) => v.category_id !== video.category_id,
+    );
+    relatedVideos = relatedVideos.slice(0, 8);
+  } else {
+    nextVideos = moreGlobal.slice(0, 8);
+    relatedVideos = moreGlobal.slice(8, 16);
   }
 
-  /* share helper */
-  async function share() {
-    const shareUrl =
-      (typeof window !== "undefined" ? window.location.origin : "") +
-      loc.pathname;
-    const title = video?.title || "Watch this video";
-    try {
-      if (navigator.share) {
-        await navigator.share({ title, url: shareUrl });
-      } else {
-        await navigator.clipboard.writeText(shareUrl);
-        alert("Link copied to clipboard");
-      }
-    } catch {}
-  }
+  const nextVideo = nextVideos[0] || null;
+  const remainingNext = nextVideos.slice(1);
 
-  if (loading) {
+  const styles = `
+  .vv { --bg:#0b0f19; --card:#0f172a; --muted:#9aa4b2; --text:#e5e7eb; --text-strong:#fff; --border:rgba(148,163,184,.18); }
+  .vv { background: var(--bg); color: var(--text); min-height: 100vh; }
+  .vv a { color: #93c5fd; text-decoration: none; }
+  .vv a:hover { text-decoration: underline; }
+  .vv-wrap { width: min(1180px, 94vw); margin: 0 auto; padding: 18px 0 40px; }
+  .vv-grid { display:grid; grid-template-columns: minmax(0,1fr) 320px; gap: 18px; align-items:start; }
+  @media (max-width: 1024px) { .vv-grid { grid-template-columns: 1fr; } }
+  .vv-card { background: var(--card); border:1px solid var(--border); border-radius:14px; box-shadow: 0 16px 50px rgba(2,6,23,.25); overflow:hidden; }
+  .vv-pad { padding: 14px; }
+  .vv-h1 { font-weight: 800; font-size: 22px; margin: 14px 8px 8px; color: var(--text-strong); }
+  .vv-byline { display:flex; gap:10px; font-size:13px; color:var(--muted); margin: 0 8px 12px; }
+  .vv-badge { padding:6px 10px; font-size:11px; font-weight:800; border-radius:999px; background:#111827; color:#d1d5db; border:1px solid var(--border); }
+  .vv-row { display:flex; gap:10px; flex-wrap:wrap; }
+  .vv-btn { height:36px; padding:0 14px; border-radius:10px; border:1px solid var(--border); background:#0b1020; color:#fff; cursor:pointer; }
+  .vv-btn:hover { background:#0a1328; }
+  .vv-btn.primary { background:#2563eb; border-color:#2563eb; }
+  .vv-btn.primary:hover { background:#1e40af; }
+  .vv-side-card { background: var(--card); border:1px solid var(--border); border-radius:12px; padding: 10px; margin-bottom: 14px; }
+  .vv-side-title { font-size:12px; color:#cbd5e1; font-weight:800; margin-bottom:6px; }
+  .vv-rel { display:flex; flex-direction:column; gap:8px; }
+  .vv-rel-item { display:flex; gap:10px; text-decoration:none; }
+  .vv-thumb { width:120px; height:68px; border-radius:10px; overflow:hidden; background:#101827; border:1px solid var(--border); position:relative; }
+  .vv-thumb img { width:100%; height:100%; object-fit:cover; }
+  .vv-dur { position:absolute; right:6px; bottom:6px; font-size:10px; font-weight:700; background:rgba(0,0,0,.7); color:#fff; padding:2px 6px; border-radius:6px; }
+  .vv-gate { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.7); }
+  .vv-gate-inner { background:#0b1020; padding:20px; border-radius:12px; border:1px solid var(--border); color:#fff; text-align:center; }
+  .vv-muted { color: var(--muted); }
+  .vv-hr { border:0; border-top:1px solid var(--border); margin:12px 0; }
+  `;
+
+  if (loading)
     return (
       <div className="vv">
         <style dangerouslySetInnerHTML={{ __html: styles }} />
@@ -505,9 +1132,8 @@ export default function VideoView() {
         </div>
       </div>
     );
-  }
 
-  if (err || !video) {
+  if (err || !video)
     return (
       <div className="vv">
         <style dangerouslySetInnerHTML={{ __html: styles }} />
@@ -516,15 +1142,11 @@ export default function VideoView() {
         </div>
       </div>
     );
-  }
 
   const tags = video?.metadata?.tags || [];
   const created = video.created_at || video.created;
   const author = video?.metadata?.authors?.[0];
 
-  const [nextVideo, ...related] = more;
-
-  /* decide which comments to show */
   const visibleComments = showAllComments
     ? comments
     : comments.slice(0, MAX_VISIBLE_COMMENTS);
@@ -533,10 +1155,8 @@ export default function VideoView() {
   return (
     <div className="vv">
       <style dangerouslySetInnerHTML={{ __html: styles }} />
-
       <div className="vv-wrap">
         <div className="vv-grid">
-          {/* LEFT: player and details */}
           <div>
             <div className="vv-card">
               <div style={{ background: "#000", position: "relative" }}>
@@ -548,28 +1168,29 @@ export default function VideoView() {
                     display: "block",
                     background: "#000",
                     pointerEvents:
-                      previewActive && previewHit ? "none" : "auto",
+                      (previewActive && previewHit) || hardLoginGate
+                        ? "none"
+                        : "auto",
                   }}
                   controls
                   playsInline
                   preload="metadata"
                   crossOrigin="anonymous"
+                  controlsList="nodownload"
+                  disablePictureInPicture
+                  onContextMenu={(e) => e.preventDefault()}
                 />
-                {/* Preview gate overlay */}
-                {previewActive && previewHit && (
-                  <div className="vv-gate" aria-live="polite">
+
+                {(hardLoginGate || (previewActive && previewHit)) && (
+                  <div className="vv-gate">
                     <div className="vv-gate-inner">
-                      <p className="vv-gate-text">
-                        Please log in to watch the full video.
-                      </p>
-                      <div
-                        className="vv-row"
-                        style={{ justifyContent: "center" }}
+                      <p>Please log in to watch the full video.</p>
+                      <button
+                        className="vv-btn primary"
+                        onClick={goLoginWithResume}
                       >
-                        <Link className="vv-btn primary block" to="/login">
-                          Log in
-                        </Link>
-                      </div>
+                        Log in
+                      </button>
                     </div>
                   </div>
                 )}
@@ -581,7 +1202,6 @@ export default function VideoView() {
                     ← Back
                   </button>
 
-                  {/* Add to playlist */}
                   {isAuthed ? (
                     <div className="vv-pop">
                       <button
@@ -590,18 +1210,13 @@ export default function VideoView() {
                       >
                         + Add to playlist
                       </button>
+
                       {showPL && (
                         <div className="vv-popmenu">
                           {plLoading && (
-                            <div className="vv-muted" style={{ padding: 6 }}>
-                              Loading…
-                            </div>
+                            <div className="vv-muted">Loading…</div>
                           )}
-                          {!plLoading && myPlaylists.length === 0 && (
-                            <div className="vv-muted" style={{ padding: 6 }}>
-                              You don’t have any playlists yet.
-                            </div>
-                          )}
+
                           {!plLoading &&
                             myPlaylists.map((p) => {
                               const inList = memberOf.has(String(p.id));
@@ -609,17 +1224,14 @@ export default function VideoView() {
                                 <label
                                   key={p.id}
                                   className="vv-poprow"
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    toggleMembership(p.id);
-                                  }}
+                                  onClick={() => toggleMembership(p.id)}
                                 >
                                   <input
                                     type="checkbox"
                                     checked={inList}
                                     readOnly
                                   />
-                                  <span className="vv-poplbl">{p.title}</span>
+                                  <span>{p.title}</span>
                                 </label>
                               );
                             })}
@@ -627,9 +1239,9 @@ export default function VideoView() {
                       )}
                     </div>
                   ) : (
-                    <Link className="vv-btn" to="/login">
+                    <button className="vv-btn" onClick={goLoginWithResume}>
                       + Add to playlist
-                    </Link>
+                    </button>
                   )}
 
                   <button className="vv-btn vv-share" onClick={share}>
@@ -637,49 +1249,41 @@ export default function VideoView() {
                   </button>
                 </div>
 
-                <h1 className="vv-h1">{video.title || "Untitled video"}</h1>
+                <h1 className="vv-h1">{video.title}</h1>
 
                 <div className="vv-byline">
                   {author && <span className="vv-badge">{author}</span>}
                   {created && <span>{datePretty(created)}</span>}
                 </div>
 
-                {!!tags.length && (
-                  <div style={{ margin: "0 8px 8px" }}>
-                    {tags.map((t, i) => (
-                      <span key={`tag-${i}`} className="vv-badge">
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                {!!tags.length &&
+                  tags.map((t, i) => (
+                    <span key={i} className="vv-badge">
+                      {t}
+                    </span>
+                  ))}
 
                 {!!video.description && (
                   <>
                     <hr className="vv-hr" />
-                    <div style={{ margin: "0 8px 8px" }} className="vv-muted">
-                      {video.description}
-                    </div>
+                    <div className="vv-muted">{video.description}</div>
                   </>
                 )}
 
-                {/* Resources (if any) */}
                 {resources.length > 0 && (
                   <>
                     <hr className="vv-hr" />
-                    <div style={{ margin: "0 8px" }}>
-                      <h3 style={{ margin: "0 0 6px", fontSize: 14 }}>
-                        Resources
-                      </h3>
-                      <ul style={{ margin: 0, paddingLeft: 18 }}>
+                    <div>
+                      <h3>Resources</h3>
+                      <ul>
                         {resources.map((r, i) => (
-                          <li key={i} style={{ marginBottom: 6 }}>
+                          <li key={i}>
                             <a
                               href={absUrl(r.url)}
                               target="_blank"
                               rel="noreferrer"
                             >
-                              {r.title || absUrl(r.url)}
+                              {r.title}
                             </a>
                           </li>
                         ))}
@@ -688,12 +1292,12 @@ export default function VideoView() {
                   </>
                 )}
 
-                {/* Comments */}
                 <hr className="vv-hr" />
-                <div className="vv-comment-box" style={{ margin: "0 8px" }}>
+                <div>
                   <strong>Comments</strong>
+
                   {isAuthed ? (
-                    <form onSubmit={postComment} style={{ marginTop: 8 }}>
+                    <form onSubmit={postComment}>
                       <textarea
                         rows={3}
                         value={cmtTxt}
@@ -706,81 +1310,71 @@ export default function VideoView() {
                           border: "1px solid var(--border)",
                           borderRadius: 8,
                           padding: 8,
-                          resize: "vertical",
                         }}
                       />
-                      <div className="vv-row" style={{ marginTop: 6 }}>
-                        <button className="vv-btn primary">Post</button>
-                        {cmtErr && (
-                          <span style={{ color: "#ef4444" }}>{cmtErr}</span>
-                        )}
-                      </div>
+
+                      <button
+                        className="vv-btn primary"
+                        style={{ marginTop: 6 }}
+                      >
+                        Post
+                      </button>
+                      {cmtErr && (
+                        <span style={{ color: "#ef4444" }}>{cmtErr}</span>
+                      )}
                     </form>
                   ) : (
-                    <div style={{ marginTop: 4 }}>
-                      <Link to="/login">Sign in</Link> to join the conversation.
+                    <div>
+                      <button
+                        type="button"
+                        onClick={goLoginWithResume}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "#93c5fd",
+                          padding: 0,
+                          cursor: "pointer",
+                          textDecoration: "underline",
+                        }}
+                      >
+                        Sign in
+                      </button>{" "}
+                      to comment.
                     </div>
                   )}
 
-                  {/* scrollable comments list */}
-                  <div
-                    className="comment-list-wrapper"
-                    style={{ marginTop: 10 }}
-                  >
+                  <div style={{ marginTop: 14 }}>
                     {cmtLoading ? (
                       <div className="vv-muted">Loading comments…</div>
                     ) : comments.length === 0 ? (
                       <div className="vv-muted">No comments yet.</div>
                     ) : (
                       <>
-                        <ul
-                          className="comment-list"
-                          style={{
-                            listStyle: "none",
-                            paddingLeft: 0,
-                          }}
-                        >
-                          {visibleComments.map((c) => (
-                            <li
-                              key={c.id || c._id || Math.random()}
-                              className="comment-item"
-                              style={{
-                                padding: "8px 0",
-                                borderBottom: "1px solid var(--border)",
-                              }}
-                            >
-                              <div
-                                style={{ fontSize: 13, color: "#cbd5e1" }}
-                                className="comment-meta"
-                              >
-                                {c.author_name ||
-                                  c.user_name ||
-                                  (c.user_id
-                                    ? `Member ${c.user_id}`
-                                    : "Member")}
-                                {c.created_at && (
-                                  <> · {datePretty(c.created_at)}</>
-                                )}
-                              </div>
-                              <div
-                                className="comment-body"
-                                style={{ whiteSpace: "pre-wrap" }}
-                              >
-                                {c.body || c.text || ""}
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
+                        {visibleComments.map((c) => (
+                          <div
+                            key={c.id}
+                            style={{
+                              borderBottom: "1px solid var(--border)",
+                              padding: "8px 0",
+                            }}
+                          >
+                            <div style={{ color: "#cbd5e1", fontSize: 13 }}>
+                              {c.user_name || "Member"} •{" "}
+                              {datePretty(c.created_at)}
+                            </div>
+                            <div>{c.body}</div>
+                          </div>
+                        ))}
 
                         {hasMoreComments && (
                           <button
-                            type="button"
-                            onClick={() => setShowAllComments((prev) => !prev)}
-                            className="see-more-btn"
+                            className="vv-btn"
+                            onClick={() => setShowAllComments((x) => !x)}
+                            style={{ marginTop: 6 }}
                           >
                             {showAllComments
-                              ? "Show fewer comments"
-                              : `See more comments (${
+                              ? "Show less"
+                              : `Show more (${
                                   comments.length - MAX_VISIBLE_COMMENTS
                                 })`}
                           </button>
@@ -793,80 +1387,107 @@ export default function VideoView() {
             </div>
           </div>
 
-          {/* RIGHT: next + related */}
-          <aside className="vv-side">
-            {nextVideo && (
-              <div className="vv-side-card" style={{ marginBottom: 12 }}>
-                <div className="vv-side-title">NEXT VIDEO</div>
-                <Link to={`/watch/${nextVideo.id}`} className="vv-next">
-                  <div className="vv-thumb" aria-hidden="true">
-                    {nextVideo.thumbnail_url ? (
-                      <img src={absUrl(nextVideo.thumbnail_url)} alt="" />
-                    ) : (
-                      <div style={{ width: "100%", height: "100%" }} />
-                    )}
-                    {secsFromAny(
-                      nextVideo.duration_seconds ??
-                        nextVideo.duration_sec ??
-                        nextVideo.duration ??
-                        nextVideo?.metadata?.duration
-                    ) && (
-                      <span className="vv-dur">
-                        {formatDuration(
-                          secsFromAny(
-                            nextVideo.duration_seconds ??
-                              nextVideo.duration_sec ??
-                              nextVideo.duration ??
-                              nextVideo?.metadata?.duration
-                          )
-                        )}
-                      </span>
-                    )}
+          <aside>
+            {inPlaylistMode ? (
+              <>
+                {playlistRest.length > 0 && (
+                  <div className="vv-side-card">
+                    <div className="vv-side-title">{playlistMeta?.title}</div>
+                    <div className="vv-rel">
+                      {playlistRest.map((v) => {
+                        const dur = secsFromAny(
+                          v.duration_seconds ??
+                            v.duration_sec ??
+                            v.duration ??
+                            v?.metadata?.duration,
+                        );
+                        return (
+                          <Link
+                            key={v.id}
+                            to={`/watch/${v.id}?playlist=${playlistParam}`}
+                            className="vv-rel-item"
+                          >
+                            <div className="vv-thumb">
+                              {v.thumbnail_url && (
+                                <img src={absUrl(v.thumbnail_url)} alt="" />
+                              )}
+                              {dur && (
+                                <span className="vv-dur">
+                                  {formatDuration(dur)}
+                                </span>
+                              )}
+                            </div>
+                            <div>{v.title}</div>
+                          </Link>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div className="vv-next-title">
-                    {nextVideo.title || "Untitled"}
-                  </div>
-                </Link>
-              </div>
-            )}
+                )}
+              </>
+            ) : (
+              <>
+                {(nextVideo || remainingNext.length > 0) && (
+                  <div className="vv-side-card">
+                    <div className="vv-side-title">Next Video</div>
 
-            {!!related.length && (
-              <div className="vv-side-card">
-                <div className="vv-side-title">Related Videos</div>
-                <div className="vv-rel">
-                  {related.slice(0, 6).map((v) => {
-                    const dur = secsFromAny(
-                      v.duration_seconds ??
-                        v.duration_sec ??
-                        v.duration ??
-                        v?.metadata?.duration
-                    );
-                    return (
+                    {nextVideo && (
                       <Link
-                        key={v.id}
-                        to={`/watch/${v.id}`}
+                        to={`/watch/${nextVideo.id}`}
                         className="vv-rel-item"
                       >
-                        <div className="vv-thumb" aria-hidden="true">
-                          {v.thumbnail_url ? (
-                            <img src={absUrl(v.thumbnail_url)} alt="" />
-                          ) : (
-                            <div style={{ width: "100%", height: "100%" }} />
-                          )}
-                          {dur && (
-                            <span className="vv-dur">
-                              {formatDuration(dur)}
-                            </span>
+                        <div className="vv-thumb">
+                          {nextVideo.thumbnail_url && (
+                            <img src={absUrl(nextVideo.thumbnail_url)} alt="" />
                           )}
                         </div>
-                        <div className="vv-next-title">
-                          {v.title || "Untitled"}
-                        </div>
+                        <div>{nextVideo.title}</div>
                       </Link>
-                    );
-                  })}
-                </div>
-              </div>
+                    )}
+
+                    {remainingNext.length > 0 && (
+                      <div className="vv-rel">
+                        {remainingNext.map((v) => (
+                          <Link
+                            key={v.id}
+                            to={`/watch/${v.id}`}
+                            className="vv-rel-item"
+                          >
+                            <div className="vv-thumb">
+                              {v.thumbnail_url && (
+                                <img src={absUrl(v.thumbnail_url)} alt="" />
+                              )}
+                            </div>
+                            <div>{v.title}</div>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {relatedVideos.length > 0 && (
+                  <div className="vv-side-card">
+                    <div className="vv-side-title">Related Videos</div>
+                    <div className="vv-rel">
+                      {relatedVideos.map((v) => (
+                        <Link
+                          key={v.id}
+                          to={`/watch/${v.id}`}
+                          className="vv-rel-item"
+                        >
+                          <div className="vv-thumb">
+                            {v.thumbnail_url && (
+                              <img src={absUrl(v.thumbnail_url)} alt="" />
+                            )}
+                          </div>
+                          <div>{v.title}</div>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </aside>
         </div>

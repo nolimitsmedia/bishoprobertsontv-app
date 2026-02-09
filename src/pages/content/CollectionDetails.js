@@ -2,7 +2,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import api from "../../api";
-import "./Videos.css";
+// import "./Videos.css";
+import "./Collections.css";
 
 /* ------------ small helpers/styles ------------ */
 const injectedStyles = `
@@ -33,14 +34,16 @@ const injectedStyles = `
 .row { display:grid; grid-template-columns: 1fr 160px; align-items:center; padding:10px 8px; border-bottom:1px solid #f1f5f9; gap:12px; }
 .row:last-child{ border-bottom:none; }
 .row-left { display:flex; align-items:center; gap:12px; min-width:0; }
-.row .thumb { width:64px; height:36px; border-radius:8px; overflow:hidden; border:1px solid #e2e8f0; background:#0b1320; }
-.row .thumb img{ width:100%; height:100%; object-fit:cover; }
+.row .thumb { width:64px; height:36px; border-radius:8px; overflow:hidden; border:1px solid #e2e8f0; background:#0b1320; display:grid; place-items:center; }
+.row .thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
 .row .title { font-weight:800; color:#0b1220; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
 .small { font-size:12px; color:#64748b; }
 .badge { font-size:11px; font-weight:800; padding:6px 10px; border-radius:999px; display:inline-block; }
 .badge-green { background:#ecfdf5; color:#065f46; border:1px solid #a7f3d0; }
 .badge-red { background:#fef2f2; color:#7f1d1d; border:1px solid #fecaca; }
+
+.thumb-fallback { font-size:10px; color:#cbd5e1; opacity:.8; padding:0 6px; }
 `;
 
 function StatusBadge({ visibility }) {
@@ -51,10 +54,23 @@ function StatusBadge({ visibility }) {
     </span>
   );
 }
+
+/**
+ * ✅ IMPORTANT FIX:
+ * Never return "" for an image src.
+ * Return null when empty/invalid so we can conditionally render <img>.
+ */
 function absUrl(u) {
-  if (!u) return "";
-  if (/^https?:\/\//i.test(u)) return u;
-  return u.startsWith("/") ? u : `/${u}`;
+  const s = String(u || "").trim();
+  if (!s) return null;
+  if (/^https?:\/\//i.test(s)) return s;
+  return s.startsWith("/") ? s : `/${s}`;
+}
+
+function Thumb({ url, alt = "" }) {
+  const src = absUrl(url);
+  if (!src) return <div className="thumb-fallback">No image</div>;
+  return <img src={src} alt={alt} />;
 }
 
 export default function CollectionDetail() {
@@ -212,6 +228,7 @@ export default function CollectionDetail() {
     () => allVideos.filter((v) => memberIds.has(String(v.id))),
     [allVideos, memberIds]
   );
+
   const canAdd = useMemo(() => {
     const q = searchAdd.trim().toLowerCase();
     const base = allVideos.filter((v) => !memberIds.has(String(v.id)));
@@ -235,6 +252,7 @@ export default function CollectionDetail() {
       setBusyVideo(null);
     }
   }
+
   async function removeVideo(videoId) {
     try {
       setBusyVideo(videoId);
@@ -252,7 +270,7 @@ export default function CollectionDetail() {
     }
   }
 
-  const thumbPreview = thumbnailUrl ? absUrl(thumbnailUrl) : "";
+  const thumbPreview = absUrl(thumbnailUrl);
 
   return (
     <div>
@@ -414,8 +432,8 @@ export default function CollectionDetail() {
 
       {/* ==================== Videos in this playlist ==================== */}
       <div className="section">
-        <div className="section__head">
-          <div>Videos in this playlist</div>
+        <div className="brtv-collection-playlist">
+          <div className="brtv-collection-head">Videos in this playlist</div>
           <div className="small">
             {inThis.length} item{inThis.length !== 1 ? "s" : ""}
           </div>
@@ -430,7 +448,7 @@ export default function CollectionDetail() {
               <div key={v.id} className="row">
                 <div className="row-left">
                   <div className="thumb">
-                    <img src={absUrl(v.thumbnail_url || "")} alt="" />
+                    <Thumb url={v.thumbnail_url} alt="" />
                   </div>
                   <div className="title">{v.title || "Untitled"}</div>
                 </div>
@@ -464,7 +482,7 @@ export default function CollectionDetail() {
 
       {/* ==================== Add videos ==================== */}
       <div className="section">
-        <div className="section__head">Add videos</div>
+        <div className="brtv-collection-head">Add videos</div>
         <div className="section__body">
           <div style={{ padding: 8 }}>
             <input
@@ -489,7 +507,7 @@ export default function CollectionDetail() {
                 <div key={v.id} className="row">
                   <div className="row-left">
                     <div className="thumb">
-                      <img src={absUrl(v.thumbnail_url || "")} alt="" />
+                      <Thumb url={v.thumbnail_url} alt="" />
                     </div>
                     <div className="title">{v.title || "Untitled"}</div>
                   </div>

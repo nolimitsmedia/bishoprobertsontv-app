@@ -1,3 +1,5 @@
+/* src/pages/admin/Videos.css */
+
 /* ---------- Uscreen-like colors ---------- */
 :root {
   --bg: #f6f8fb;
@@ -9,8 +11,13 @@
   --row: #f8fafc;
 }
 
+/* scope everything to videos page */
+.videos-page {
+  color: var(--ink);
+}
+
 /* ---------- Page chrome ---------- */
-.card {
+.videos-page .card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -18,7 +25,7 @@
 }
 
 /* header buttons */
-.btn {
+.videos-page .btn {
   border: 1px solid var(--border);
   background: #fff;
   color: var(--ink);
@@ -27,24 +34,24 @@
   cursor: pointer;
   font-weight: 500;
 }
-.btn.ghost {
+.videos-page .btn.ghost {
   background: #fff;
 }
-.btn:hover {
+.videos-page .btn:hover {
   filter: brightness(0.98);
 }
-.btn:active {
+.videos-page .btn:active {
   transform: translateY(1px);
 }
 
 /* ---------- Toolbar ---------- */
-.toolbar-grid {
+.videos-page .toolbar-grid {
   padding: 12px;
 }
-.search-wrap {
+.videos-page .search-wrap {
   position: relative;
 }
-.search-icon {
+.videos-page .search-icon {
   position: absolute;
   left: 10px;
   top: 50%;
@@ -52,7 +59,7 @@
   opacity: 0.5;
   pointer-events: none;
 }
-.search {
+.videos-page .search {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -60,24 +67,24 @@
   background: #fff;
   outline: none;
 }
-.search--with-icon {
+.videos-page .search--with-icon {
   padding-left: 32px;
 }
-select.search {
+.videos-page select.search {
   appearance: none;
   background-position: right 10px center;
 }
 
 /* ---------- Table ---------- */
-.table-card {
+.videos-page .table-card {
   overflow-x: auto;
 }
-.table {
+.videos-page .table {
   border-collapse: separate;
   border-spacing: 0;
   width: 100%;
 }
-.table thead th {
+.videos-page .table thead th {
   text-align: left;
   font-size: 12px;
   letter-spacing: 0.02em;
@@ -87,51 +94,53 @@ select.search {
   border-bottom: 1px solid var(--border);
   font-weight: 600;
 }
-.table tbody td {
+.videos-page .table tbody td {
   padding: 14px;
   border-top: 1px solid #f1f5f9;
   vertical-align: middle;
 }
-.table tbody tr:hover td {
+/* .videos-page .table tbody tr:hover td {
   background: #fafbff;
-}
+} */
 
 /* footer line like Uscreen */
-.table-footer {
+.videos-page .table-footer {
   border-top: 1px solid var(--border);
   padding: 12px 14px;
   color: var(--muted);
   font-size: 13px;
 }
 
-/* ---------- Thumbnail cell ---------- */
-.thumb {
-  width: 96px;
-  height: 54px;
-  border-radius: 8px;
+/* ---------- Thumbnail cell (base; injectedStyles will further refine) ---------- */
+.videos-page .thumb {
+  width: 100px !important;
+  height: 72px;
+  border-radius: 10px;
   overflow: hidden;
-  background: #eef2f7;
   flex: 0 0 auto;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05) inset;
+  background: linear-gradient(140deg, #0b1320, #1b2436);
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  line-height: 0;
 }
-.thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.videos-page .thumb img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
   display: block;
 }
 
-.row-title {
+.videos-page .row-title {
   color: var(--ink);
   font-weight: 600;
   text-decoration: none;
 }
-.row-title:hover {
+.videos-page .row-title:hover {
   text-decoration: underline;
 }
 
 /* ---------- Status pill ---------- */
-.badge {
+.videos-page .badge {
   font-size: 11px;
   padding: 4px 8px;
   border-radius: 999px;
@@ -140,19 +149,19 @@ select.search {
   display: inline-flex;
   align-items: center;
 }
-.badge-green {
+.videos-page .badge-green {
   background: #ecfdf5;
   color: #059669;
   border-color: #a7f3d0;
 }
-.badge-red {
+.videos-page .badge-red {
   background: #fef2f2;
   color: #dc2626;
   border-color: #fecaca;
 }
 
 /* ---------- Row actions / menus ---------- */
-.icon-btn {
+.videos-page .icon-btn {
   width: 36px;
   height: 32px;
   border: 1px solid var(--border);
@@ -160,7 +169,7 @@ select.search {
   border-radius: 8px;
   cursor: pointer;
 }
-.menu {
+.videos-page .menu {
   position: absolute;
   right: 0;
   top: 36px;
@@ -172,7 +181,8 @@ select.search {
   box-shadow: 0 12px 24px rgba(15, 23, 42, 0.1);
   z-index: 20;
 }
-.menu-item {
+
+.videos-page .menu-item {
   width: 100%;
   text-align: left;
   background: transparent;
@@ -181,20 +191,63 @@ select.search {
   border-radius: 8px;
   cursor: pointer;
 }
-.menu-item:hover {
+.videos-page .menu-item:hover {
   background: #f3f6fb;
 }
-.menu-item.danger {
+.videos-page .menu-item.danger {
   color: #dc2626;
 }
 
 /* ---------- Mobile niceties ---------- */
 @media (max-width: 900px) {
-  .toolbar-grid {
+  .videos-page .toolbar-grid {
     display: grid;
     grid-template-columns: 1fr;
   }
-  .table {
+  .videos-page .table {
     min-width: 720px;
   }
+
+  .bulkbar-select {
+    width: 100% !important;
+  }
+}
+
+.video-main-title {
+  color: #fff !important;
+}
+
+.apply {
+  color: #fff !important;
+  margin-right: 5px !important;
+}
+
+.bulkbar-select {
+  margin-bottom: 10px !important;
+  width: auto !important;
+}
+
+.videos-page .menu-item:hover {
+  background-color: transparent !important;
+  color: #1b2436 !important;
+}
+
+.bulkbar-tip {
+  margin-bottom: 10px !important;
+}
+
+.table-card {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 16px;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  padding: 14px;
+}
+
+.btn-cancel {
+  border-radius: 15px;
+  border: 1px #0006;
+  cursor: pointer;
 }

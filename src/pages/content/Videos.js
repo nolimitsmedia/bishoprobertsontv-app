@@ -3,9 +3,10 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import api from "../../api";
 import UploadVideosModal from "../../components/UploadVideosModal";
+import DefaultThumb from "../../assets/BishopRobertsonTVLogo.png";
 import "./Videos.css";
 
-/* ---------- scoped styles (adds responsive mobile list + confirm + playlist modal) ---------- */
+/* ---------- scoped styles ---------- */
 const injectedStyles = `
 .videos-page .btn {
   --h:40px; --radius:10px; --pad-x:14px;
@@ -25,9 +26,11 @@ const injectedStyles = `
 }
 .videos-page .btn.secondary:hover { background:#eef2ff; border-color:#c7d2fe; }
 .videos-page .btn.ghost {
-  background: #ffffff; border-color:#e2e8f0; color:#0f172a; min-width: 140px;
+  background: #ffffff; border-color:#e2e8f0; color:#0f172a; min-width: 120px;
 }
 .videos-page .btn.ghost:hover { background:#f8fafc; }
+.videos-page .btn.danger { background:#ef4444; border-color:#ef4444; color:#fff; }
+.videos-page .btn.danger:hover { background:#b91c1c; border-color:#b91c1c; color:#fff; }
 
 .videos-page .icon-btn {
   width: 34px; height: 34px; border-radius: 8px; border: 1px solid #e2e8f0;
@@ -40,12 +43,19 @@ const injectedStyles = `
   border-radius: 10px; box-shadow: 0 12px 30px rgba(2,6,23,.12);
   min-width: 180px; padding: 6px; z-index: 10;
 }
+
+/* ✅ Force action menu font color to black */
+.videos-page .menu,
+.videos-page .menu * {
+  color: #000 !important;
+}
+
 .videos-page .menu-item {
   width:100%; text-align:left; padding: 10px 12px; border-radius:8px;
-  background:transparent; border:none; cursor:pointer; font-weight:600; color:#0f172a;
+  background:transparent; border:none; cursor:pointer; font-weight:600;
 }
 .videos-page .menu-item:hover { background:#f1f5f9; }
-.videos-page .menu-item.danger { color:#b91c1c; }
+.videos-page .menu-item.danger { color:#b91c1c !important; }
 .videos-page .menu-item.danger:hover { background:#fee2e2; }
 
 .videos-page .card { background:#fff; border:1px solid #e2e8f0; border-radius: 16px; }
@@ -56,19 +66,52 @@ const injectedStyles = `
   padding:14px 16px; background:#fafafa; border-bottom:1px solid #e2e8f0; font-weight:700;
 }
 .videos-page .table tbody td { padding: 14px 16px; border-bottom:1px solid #eef2f6; vertical-align: middle; }
-.videos-page .row-title { font-weight:800; color:#0b1220; text-decoration:none; }
+
+/* Your admin UI is dark, keep titles readable */
+.videos-page .row-title { font-weight:800; color:#fff !important; text-decoration:none; }
 .videos-page .row-title:hover { text-decoration:underline; }
 
+/* Thumbnail container */
 .videos-page .thumb {
-  width: 128px; height: 72px; border-radius: 10px; overflow: hidden; flex: 0 0 auto;
+  height: 72px;
+  border-radius: 10px;
+  overflow: hidden;
+  flex: 0 0 auto;
   background: linear-gradient(140deg,#0b1320,#1b2436);
-  position: relative; border:1px solid #e2e8f0;
+  position: relative; border:1px solid rgba(255,255,255,.14);
+  line-height: 0;
 }
-.videos-page .thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+.videos-page .thumb img {
+  width: 100% !important;
+  height: 100% !important;
+  display: block !important;
+  object-fit: cover !important;
+  object-position: center !important;
+}
 .videos-page .thumb .dur {
   position:absolute; right:6px; bottom:6px; font-size:11px; font-weight:700;
   background: rgba(15,23,42,.85); color:#fff; padding: 2px 6px; border-radius: 6px;
   border: 1px solid rgba(255,255,255,.18); backdrop-filter: blur(2px);
+}
+
+/* Default thumbnail (fills the whole container) */
+.videos-page .thumb.thumb--default {
+  background: radial-gradient(120% 120% at 30% 20%,
+    rgba(168,85,247,.35),
+    rgba(15,23,42,.95) 55%,
+    rgba(2,6,23,1) 100%);
+}
+.videos-page .thumb.thumb--default .default-logo {
+  position:absolute; inset:0;
+  display:grid; place-items:center;
+  padding: 10px;
+}
+.videos-page .thumb.thumb--default .default-logo img {
+  width: 88%!important;
+  height: 88%;
+  object-fit: contain!important;
+  opacity: .95;
+  filter: drop-shadow(0 10px 18px rgba(0,0,0,.35));
 }
 
 .videos-page .badge { font-size:11px; font-weight:800; padding:6px 10px; border-radius: 999px; display:inline-block; white-space:nowrap; }
@@ -79,36 +122,28 @@ const injectedStyles = `
 .videos-page .toolbar-grid .search { height:40px; border-radius:10px; border:1px solid #e2e8f0; padding:0 12px; }
 .videos-page .search-wrap { position:relative; }
 .videos-page .search-icon { position:absolute; left:10px; top:50%; transform:translateY(-50%); opacity:.5; }
-.videos-page .search--with-icon { padding-left:32px; }
+.videos-page .search--with-icon { padding-left:32px!important; }
 
 .videos-page .table-footer { padding: 12px 16px; color:#64748b; font-size: 12px; }
 
-/* ---------- Mobile list (<=640px) ---------- */
-@media (max-width: 640px) {
-  .videos-page .table-card { overflow: visible; }
-  .videos-page .table { display: none; } /* hide desktop table */
-  .videos-page .mobile-list { display:block; }
+/* ✅ Select icons (Status chevron + Sort icon) */
+.videos-page select.search {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 40px !important;
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px 16px;
 }
-@media (min-width: 641px) {
-  .videos-page .mobile-list { display:none; }
+.videos-page select.search.select-status {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M6 8l4 4 4-4' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+.videos-page select.search.select-sort {
+  background-image: url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M7 4v12' stroke='%2364748b' stroke-width='2' stroke-linecap='round'/%3E%3Cpath d='M4.5 6.5L7 4l2.5 2.5' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M13 16V4' stroke='%2364748b' stroke-width='2' stroke-linecap='round'/%3E%3Cpath d='M10.5 13.5L13 16l2.5-2.5' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\");
 }
 
-/* mobile item */
-.videos-page .mobile-item {
-  display:flex; align-items:center; gap:12px; padding:14px 16px;
-  border-bottom: 1px solid #eef2f6; position: relative;
-}
-.videos-page .mobile-item .meta { min-width: 0; flex: 1 1 auto; }
-.videos-page .mobile-item .title {
-  font-weight:800; color:#0b1220; text-decoration:none; display:block;
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-}
-.videos-page .mobile-item .sub {
-  margin-top:4px; font-size:12px; color:#64748b; display:flex; gap:8px; align-items:center; flex-wrap:wrap;
-}
-.videos-page .mobile-item .thumb { width: 120px; height: 68px; }
-
-/* ---------- Confirm dialog & banner ---------- */
+/* Confirm dialog */
 .videos-page .confirm-overlay {
   position: fixed; inset: 0; background: rgba(2,6,23,.45);
   display: grid; place-items: center; z-index: 1000;
@@ -118,12 +153,11 @@ const injectedStyles = `
   background: #fff; border-radius: 14px; box-shadow: 0 24px 60px rgba(2,6,23,.25);
   border: 1px solid #e2e8f0; padding: 16px;
 }
-.videos-page .confirm-title { font-weight: 800; font-size: 18px; margin: 4px 0 6px; }
-.videos-page .confirm-msg { color:#475569; font-size: 14px; line-height: 1.4; }
+.videos-page .confirm-title { font-weight: 800; font-size: 18px; margin: 4px 0 6px; color:#000!important; }
+.videos-page .confirm-msg { color:#475569!important; font-size: 14px; line-height: 1.4; }
 .videos-page .confirm-row { display:flex; gap:10px; justify-content:flex-end; margin-top: 16px; }
-.videos-page .btn.danger { background:#ef4444; border-color:#ef4444; color:#fff; }
-.videos-page .btn.danger:hover { background:#b91c1c; border-color:#b91c1c; color:#fff; }
 
+/* Banner */
 .videos-page .banner {
   margin-bottom: 12px; padding: 10px 12px; border-radius: 10px; font-weight: 600;
   display:flex; align-items:center; justify-content:space-between; gap:12px;
@@ -131,20 +165,98 @@ const injectedStyles = `
 .videos-page .banner.error { background:#fee2e2; color:#7f1d1d; border:1px solid #fecaca; }
 .videos-page .banner .x { cursor:pointer; opacity:.7; }
 
-/* ---------- Playlist Picker Modal ---------- */
-.videos-page .pl-overlay { position: fixed; inset: 0; background: rgba(2,6,23,.45); display:grid; place-items:center; z-index:1000; }
-.videos-page .pl-modal {
-  width: min(560px, 94vw); background:#fff; border-radius:14px; border:1px solid #e2e8f0;
-  box-shadow: 0 24px 60px rgba(2,6,23,.25); padding: 16px;
+/* ✅ Toast */
+.videos-page .vid-toast {
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  min-width: 260px;
+  max-width: 360px;
+  padding: 14px 18px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  z-index: 9999;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+  animation: vid-toast-in 0.25s ease-out;
 }
-.videos-page .pl-title { font-weight:800; font-size:18px; margin-bottom:6px; }
-.videos-page .pl-sub { color:#475569; margin-bottom: 12px; }
-.videos-page .pl-list { max-height: 46vh; overflow:auto; border:1px solid #eef2f6; border-radius:10px; }
-.videos-page .pl-row { display:flex; align-items:center; gap:10px; padding:10px 12px; border-bottom:1px solid #f1f5f9; }
-.videos-page .pl-row:last-child { border-bottom:none; }
-.videos-page .pl-new { display:flex; gap:8px; flex-wrap:wrap; }
-.videos-page .pl-new .search { height:40px; border-radius:10px; border:1px solid #e2e8f0; padding:0 12px; }
-.videos-page .pl-footer { display:flex; gap:10px; justify-content:flex-end; margin-top:12px; }
+.videos-page .vid-toast.is-success {
+  background: linear-gradient(135deg, #16a34a, #22c55e);
+  color: #ffffff;
+}
+.videos-page .vid-toast.is-error {
+  background: linear-gradient(135deg, #dc2626, #ef4444);
+  color: #ffffff;
+}
+@keyframes vid-toast-in {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* Mobile list */
+@media (max-width: 640px) {
+  .videos-page .table-card { overflow: visible; }
+  .videos-page .table { display: none; }
+  .videos-page .mobile-list { display:block; }
+}
+@media (min-width: 641px) {
+  .videos-page .mobile-list { display:none; }
+}
+.videos-page .mobile-item {
+  display:flex; align-items:center; gap:12px; padding:14px 16px;
+  border-bottom: 1px solid #eef2f6; position: relative;
+}
+.videos-page .mobile-item .meta { min-width: 0; flex: 1 1 auto; }
+.videos-page .mobile-item .title {
+  font-weight:800; color:#fff !important; text-decoration:none; display:block;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.videos-page .mobile-item .sub {
+  margin-top:4px; font-size:12px; color:#cbd5e1; display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+}
+.videos-page .mobile-item .thumb { width: 120px; height: 68px; }
+
+/* ------------------------------
+   ✅ Modern loading (spinner + skeleton)
+------------------------------ */
+.videos-page .vid-loading {
+  padding: 18px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #fff;
+}
+.videos-page .vid-loading-text { font-weight: 700; opacity: .9; }
+.videos-page .sk-row {
+  display: grid;
+  grid-template-columns: 44px 1.3fr 160px 140px 160px 220px 60px;
+  gap: 0;
+  padding: 12px 0;
+}
+.videos-page .sk-cell { padding: 14px 16px; border-bottom: 1px solid #eef2f6; }
+.videos-page .sk-line {
+  height: 12px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.06) 100%);
+  background-size: 200% 100%;
+  animation: brtv-shimmer 1.2s ease-in-out infinite;
+}
+.videos-page .sk-thumb {
+  width: 120px;
+  height: 68px;
+  border-radius: 10px;
+  background: linear-gradient(140deg,#0b1320,#1b2436);
+  border:1px solid rgba(255,255,255,.14);
+  position: relative;
+  overflow: hidden;
+}
+.videos-page .sk-thumb:before{
+  content:"";
+  position:absolute; inset:0;
+  background: linear-gradient(90deg, rgba(255,255,255,0.00) 0%, rgba(255,255,255,0.10) 50%, rgba(255,255,255,0.00) 100%);
+  background-size: 200% 100%;
+  animation: brtv-shimmer 1.2s ease-in-out infinite;
+}
 `;
 
 /* -------- utils -------- */
@@ -157,6 +269,7 @@ function formatDate(iso) {
     year: "numeric",
   });
 }
+
 function formatDuration(secs) {
   const s = Math.max(0, Number(secs || 0));
   const h = Math.floor(s / 3600);
@@ -165,6 +278,7 @@ function formatDuration(secs) {
   const two = (n) => String(n).padStart(2, "0");
   return h > 0 ? `${h}:${two(m)}:${two(ss)}` : `${m}:${two(ss)}`;
 }
+
 function currencySymbol(c) {
   const map = {
     USD: "$",
@@ -184,7 +298,6 @@ function formatMoney(cur, val) {
   return `${sym}${n.toFixed(2)}${sym ? "" : ` ${cur || ""}`}`.trim();
 }
 
-// Try to read seconds from any common field/shape
 function secsFromAny(v) {
   if (v == null) return null;
   if (typeof v === "number" || /^\d+(\.\d+)?$/.test(String(v))) {
@@ -234,24 +347,34 @@ function pickPriceLabel(item) {
   return "—";
 }
 
-// ---------- Published helpers (NEW) ----------
 function pickPublished(item) {
-  // primary flag
   if (typeof item?.is_published === "boolean") return item.is_published;
-  // status string
   const st = String(item?.status || "").toLowerCase();
   if (st) return st === "published" || st === "live";
-  // timestamps commonly used
   if (item?.published_at || item?.publishedAt || item?.published_on)
     return true;
-  // fallback legacy heuristic (avoid breaking older content)
   return item?.visibility === "public";
 }
 function pickPublishedAt(item) {
   return item?.published_at || item?.publishedAt || item?.published_on || null;
 }
 
-// Figure out the API origin from axios baseURL
+function pickThumbUrl(item) {
+  const md = item?.metadata || {};
+  return (
+    item?.thumbnail_url ||
+    item?.thumbnailUrl ||
+    item?.thumb_url ||
+    item?.poster_url ||
+    item?.poster ||
+    md?.thumbnail_url ||
+    md?.thumbnailUrl ||
+    md?.poster_url ||
+    md?.poster ||
+    ""
+  );
+}
+
 const API_ORIGIN = (() => {
   try {
     const u = new URL(api.defaults.baseURL || "", window.location.href);
@@ -261,41 +384,18 @@ const API_ORIGIN = (() => {
   }
 })();
 
-// Make absolute URLs for /uploads/…
 export function absUrl(url) {
-  if (!url) return "";
-  if (/^(https?:|data:|blob:)/i.test(url)) return url;
-  if (url.startsWith("//")) return window.location.protocol + url;
-  if (url.startsWith("/")) return API_ORIGIN + url;
-  return API_ORIGIN + "/" + url.replace(/^\.\//, "");
+  const raw = String(url || "").trim();
+  if (!raw) return "";
+  if (/^(https?:|data:|blob:)/i.test(raw)) return raw;
+  if (raw.startsWith("//")) return window.location.protocol + raw;
+  if (raw.startsWith("/")) return API_ORIGIN + raw;
+  return API_ORIGIN + "/" + raw.replace(/^\.\//, "");
 }
 
-// SVG fallback thumbnail
-function thumbFallbackSVG(title = "Video") {
-  const svg = `
-  <svg xmlns="http://www.w3.org/2000/svg" width="160" height="100" viewBox="0 0 160 100">
-    <defs>
-      <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0%" stop-color="#0b1320"/>
-        <stop offset="100%" stop-color="#1b2436"/>
-      </linearGradient>
-    </defs>
-    <rect width="160" height="100" rx="10" fill="url(#g)"/>
-    <circle cx="80" cy="50" r="22" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.25)"/>
-    <polygon points="74,40 92,50 74,60" fill="#ffffff"/>
-    <text x="80" y="88" font-size="10" text-anchor="middle" fill="#aeb5c0" font-family="Inter,Arial,sans-serif">${(
-      title || "Video"
-    )
-      .slice(0, 24)
-      .replace(/&/g, "&amp;")}</text>
-  </svg>`;
-  return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
-}
-
-/* -------- small hooks -------- */
 function useIsNarrow(bp = 900) {
   const [narrow, setNarrow] = useState(
-    typeof window !== "undefined" ? window.innerWidth <= bp : false
+    typeof window !== "undefined" ? window.innerWidth <= bp : false,
   );
   useEffect(() => {
     const onResize = () => setNarrow(window.innerWidth <= bp);
@@ -305,7 +405,6 @@ function useIsNarrow(bp = 900) {
   return narrow;
 }
 
-/* -------- UI bits -------- */
 function StatusBadge({ video }) {
   const published = pickPublished(video);
   return (
@@ -326,7 +425,6 @@ function StatusBadge({ video }) {
   );
 }
 
-/* ---------- Confirm dialog component ---------- */
 function ConfirmDialog({
   open,
   title = "Are you sure?",
@@ -360,7 +458,7 @@ function ConfirmDialog({
         <div className="confirm-title">{title}</div>
         <div className="confirm-msg">{message}</div>
         <div className="confirm-row">
-          <button className="btn ghost" onClick={onCancel}>
+          <button className="btn-cancel ghost" onClick={onCancel}>
             {cancelText}
           </button>
           <button
@@ -376,184 +474,169 @@ function ConfirmDialog({
   );
 }
 
-/* ---------- Playlist Picker Modal ---------- */
-function PlaylistPickerModal({ open, video, onClose }) {
-  const [loading, setLoading] = useState(false);
-  const [playlists, setPlaylists] = useState([]);
-  const [checked, setChecked] = useState(new Set());
-  const [initialChecked, setInitialChecked] = useState(new Set());
-  const [newTitle, setNewTitle] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [error, setError] = useState("");
-
-  // load playlists + membership
-  useEffect(() => {
-    if (!open || !video?.id) return;
-    (async () => {
-      setLoading(true);
-      setError("");
-      try {
-        const [pls, mem] = await Promise.all([
-          api.get("/playlists"),
-          api.get(`/playlists/videos/${video.id}`),
-        ]);
-        const items = Array.isArray(pls.data?.items)
-          ? pls.data.items
-          : Array.isArray(pls.data)
-          ? pls.data
-          : [];
-        setPlaylists(items);
-        const ids = new Set((mem.data?.playlist_ids || []).map(String));
-        setChecked(new Set(ids));
-        setInitialChecked(new Set(ids));
-      } catch (e) {
-        console.error("playlist picker load error", e);
-        setError(e?.response?.data?.message || "Failed to load playlists.");
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [open, video]);
-
-  const toggle = (id) => {
-    setChecked((prev) => {
-      const next = new Set(prev);
-      const key = String(id);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
-  async function createNew() {
-    if (!newTitle.trim()) return;
-    try {
-      setCreating(true);
-      const { data } = await api.post("/playlists", {
-        title: newTitle.trim(),
-        visibility: "public",
-      });
-      setPlaylists((p) => [{ ...data, item_count: 0 }, ...p]);
-      setChecked((s) => new Set([...s, String(data.id)]));
-      setNewTitle("");
-    } catch (e) {
-      setError(e?.response?.data?.message || "Failed to create playlist.");
-    } finally {
-      setCreating(false);
-    }
-  }
-
-  async function save() {
-    try {
-      setLoading(true);
-      setError("");
-      const before = initialChecked;
-      const after = checked;
-
-      const toAdd = [...after].filter((id) => !before.has(id));
-      const toRemove = [...before].filter((id) => !after.has(id));
-
-      await Promise.all([
-        ...toAdd.map((id) =>
-          api.post(`/playlists/${id}/videos`, { video_id: video.id })
-        ),
-        ...toRemove.map((id) =>
-          api.delete(`/playlists/${id}/videos/${video.id}`)
-        ),
-      ]);
-
-      onClose?.(true);
-    } catch (e) {
-      console.error("playlist save error", e);
-      setError(e?.response?.data?.message || "Failed to update playlists.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (!open) return null;
-
+/* -----------------------------------------
+   Modern loading blocks (no UI break)
+----------------------------------------- */
+function CircularSpinner({ size = 34, label = "Loading…" }) {
+  const ring = Math.max(4, Math.round(size / 10));
   return (
-    <div className="pl-overlay" onClick={() => onClose?.(false)}>
-      <div className="pl-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="pl-title">Add to playlist</div>
-        <div className="pl-sub">
-          Choose one or more playlists for “{video?.title || "Untitled"}”.
-        </div>
-
-        <div className="pl-new" style={{ marginBottom: 10 }}>
-          <input
-            className="search"
-            style={{ flex: "1 1 260px", minWidth: 200 }}
-            placeholder="New playlist title…"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && createNew()}
+    <div
+      style={{
+        width: size,
+        height: size,
+        display: "grid",
+        placeItems: "center",
+      }}
+    >
+      <style>{`
+        @keyframes brtv-spin { to { transform: rotate(360deg); } }
+        @keyframes brtv-dash {
+          0%   { stroke-dasharray: 1, 200; stroke-dashoffset: 0; }
+          50%  { stroke-dasharray: 90, 200; stroke-dashoffset: -35; }
+          100% { stroke-dasharray: 90, 200; stroke-dashoffset: -125; }
+        }
+      `}</style>
+      <div aria-label={label} role="status">
+        <svg
+          width={size}
+          height={size}
+          viewBox="0 0 50 50"
+          style={{
+            animation: "brtv-spin 1.2s linear infinite",
+            filter: "drop-shadow(0 6px 18px rgba(0,0,0,0.35))",
+          }}
+        >
+          <circle
+            cx="25"
+            cy="25"
+            r="20"
+            fill="none"
+            stroke="rgba(255,255,255,0.10)"
+            strokeWidth={ring}
           />
-          <button
-            className="btn ghost"
-            onClick={createNew}
-            disabled={!newTitle.trim() || creating}
-          >
-            {creating ? "Creating…" : "+ Create"}
-          </button>
-          <Link to="/admin/content/collections" className="btn ghost">
-            Manage playlists
-          </Link>
+          <circle
+            cx="25"
+            cy="25"
+            r="20"
+            fill="none"
+            stroke="rgba(154, 92, 255, 0.95)"
+            strokeLinecap="round"
+            strokeWidth={ring}
+            style={{ animation: "brtv-dash 1.4s ease-in-out infinite" }}
+          />
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+function TableSkeletonDesktop({ rows = 8 }) {
+  return (
+    <div style={{ padding: 0 }}>
+      <div className="sk-row" style={{ borderBottom: "1px solid #e2e8f0" }}>
+        <div className="sk-cell">
+          <div
+            className="sk-line"
+            style={{ width: 18, height: 18, borderRadius: 4 }}
+          />
         </div>
-
-        <div className="pl-list">
-          {loading ? (
-            <div style={{ padding: 12 }}>Loading…</div>
-          ) : playlists.length === 0 ? (
-            <div style={{ padding: 12, color: "#475569" }}>
-              No playlists yet. Create one above.
-            </div>
-          ) : (
-            playlists.map((p) => {
-              const id = String(p.id);
-              return (
-                <label key={id} className="pl-row">
-                  <input
-                    type="checkbox"
-                    checked={checked.has(id)}
-                    onChange={() => toggle(id)}
-                  />
-                  <div style={{ fontWeight: 700 }}>{p.title}</div>
-                  <div
-                    style={{
-                      marginLeft: "auto",
-                      color: "#64748b",
-                      fontSize: 12,
-                    }}
-                  >
-                    {p.item_count ?? p.video_count ?? 0} items
-                  </div>
-                </label>
-              );
-            })
-          )}
+        <div className="sk-cell">
+          <div className="sk-line" style={{ width: 120 }} />
         </div>
-
-        {error && (
-          <div style={{ color: "#b91c1c", marginTop: 8, fontWeight: 600 }}>
-            {error}
-          </div>
-        )}
-
-        <div className="pl-footer">
-          <button
-            className="btn ghost"
-            onClick={() => onClose?.(false)}
-            disabled={loading}
-          >
-            Cancel
-          </button>
-          <button className="btn primary" onClick={save} disabled={loading}>
-            {loading ? "Saving…" : "Save"}
-          </button>
+        <div className="sk-cell">
+          <div className="sk-line" style={{ width: 90 }} />
+        </div>
+        <div className="sk-cell">
+          <div className="sk-line" style={{ width: 70 }} />
+        </div>
+        <div className="sk-cell">
+          <div className="sk-line" style={{ width: 90 }} />
+        </div>
+        <div className="sk-cell">
+          <div className="sk-line" style={{ width: 120 }} />
+        </div>
+        <div className="sk-cell">
+          <div className="sk-line" style={{ width: 18 }} />
         </div>
       </div>
+
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="sk-row">
+          <div className="sk-cell">
+            <div
+              className="sk-line"
+              style={{ width: 18, height: 18, borderRadius: 4 }}
+            />
+          </div>
+          <div
+            className="sk-cell"
+            style={{ display: "flex", gap: 12, alignItems: "center" }}
+          >
+            <div className="sk-thumb" />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div
+                className="sk-line"
+                style={{ width: `${70 + (i % 3) * 8}%` }}
+              />
+              <div style={{ height: 8 }} />
+              <div
+                className="sk-line"
+                style={{
+                  width: `${45 + (i % 4) * 10}%`,
+                  height: 10,
+                  opacity: 0.9,
+                }}
+              />
+            </div>
+          </div>
+          <div className="sk-cell">
+            <div className="sk-line" style={{ width: 90 }} />
+          </div>
+          <div className="sk-cell">
+            <div className="sk-line" style={{ width: 70 }} />
+          </div>
+          <div className="sk-cell">
+            <div className="sk-line" style={{ width: 90 }} />
+          </div>
+          <div className="sk-cell">
+            <div className="sk-line" style={{ width: 120 }} />
+          </div>
+          <div className="sk-cell">
+            <div className="sk-line" style={{ width: 18 }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MobileSkeleton({ rows = 6 }) {
+  return (
+    <div style={{ padding: 0 }}>
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="mobile-item" aria-busy="true">
+          <div
+            className="sk-line"
+            style={{ width: 18, height: 18, borderRadius: 4 }}
+          />
+          <div className="sk-thumb" />
+          <div className="meta" style={{ width: "100%" }}>
+            <div
+              className="sk-line"
+              style={{ width: `${70 + (i % 3) * 8}%` }}
+            />
+            <div style={{ height: 8 }} />
+            <div
+              className="sk-line"
+              style={{ width: `${55 + (i % 4) * 8}%`, height: 10 }}
+            />
+          </div>
+          <div
+            className="sk-line"
+            style={{ width: 18, height: 18, borderRadius: 6 }}
+          />
+        </div>
+      ))}
     </div>
   );
 }
@@ -570,7 +653,6 @@ export default function VideosPage() {
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-
   const [catMap, setCatMap] = useState(new Map());
 
   const [q, setQ] = useState("");
@@ -591,7 +673,25 @@ export default function VideosPage() {
     onConfirm: null,
   });
 
-  const [playlistFor, setPlaylistFor] = useState(null);
+  const [toast, setToast] = useState(null);
+  const toastTimerRef = useRef(null);
+  const showToast = (type, text, ms = 2200) => {
+    setToast({ type, text });
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), ms);
+  };
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
+  const [thumbErrors, setThumbErrors] = useState({});
+
+  // ✅ Selection / bulk actions
+  const [selected, setSelected] = useState(() => new Set());
+  const [bulkAction, setBulkAction] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -634,7 +734,7 @@ export default function VideosPage() {
       list = list.filter(
         (v) =>
           (v.title || "").toLowerCase().includes(query) ||
-          (v.description || "").toLowerCase().includes(query)
+          (v.description || "").toLowerCase().includes(query),
       );
     }
 
@@ -646,20 +746,138 @@ export default function VideosPage() {
     if (sortBy === "newest") {
       list.sort(
         (a, b) =>
-          new Date(b.created_at || b.created || 0) -
-          new Date(a.created_at || a.created || 0)
+          // new Date(b.created_at || b.created || 0) -
+          // new Date(a.created_at || a.created || 0)
+          new Date(pickPublishedAt(b) || b.created_at || b.created || 0) -
+          new Date(pickPublishedAt(a) || a.created_at || a.created || 0),
       );
     } else if (sortBy === "oldest") {
       list.sort(
         (a, b) =>
-          new Date(a.created_at || a.created || 0) -
-          new Date(b.created_at || b.created || 0)
+          // new Date(a.created_at || a.created || 0) -
+          // new Date(b.created_at || b.created || 0)
+          new Date(pickPublishedAt(a) || a.created_at || a.created || 0) -
+          new Date(pickPublishedAt(b) || b.created_at || b.created || 0),
       );
     } else if (sortBy === "title") {
       list.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
     }
     return list;
   }, [items, q, statusFilter, sortBy]);
+
+  useEffect(() => {
+    const ids = new Set(items.map((x) => String(x.id)));
+    setSelected((prev) => {
+      const next = new Set();
+      prev.forEach((id) => {
+        if (ids.has(String(id))) next.add(String(id));
+      });
+      return next;
+    });
+  }, [items]);
+
+  const visibleIds = useMemo(
+    () => filteredSorted.map((v) => String(v.id)),
+    [filteredSorted],
+  );
+
+  const allVisibleSelected = useMemo(() => {
+    if (visibleIds.length === 0) return false;
+    for (const id of visibleIds) if (!selected.has(String(id))) return false;
+    return true;
+  }, [visibleIds, selected]);
+
+  const someVisibleSelected = useMemo(() => {
+    for (const id of visibleIds) if (selected.has(String(id))) return true;
+    return false;
+  }, [visibleIds, selected]);
+
+  const selectedCount = selected.size;
+
+  const toggleSelectOne = (id) => {
+    const key = String(id);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleSelectAllVisible = () => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        visibleIds.forEach((id) => next.delete(String(id)));
+      } else {
+        visibleIds.forEach((id) => next.add(String(id)));
+      }
+      return next;
+    });
+  };
+
+  async function doBulk(action) {
+    const ids = Array.from(selected);
+    if (!ids.length) {
+      showToast("error", "Select at least 1 video.");
+      return;
+    }
+
+    const run = async () => {
+      setBulkBusy(true);
+      setBanner(null);
+      try {
+        const ops =
+          action === "publish"
+            ? ids.map((id) => api.post(`/videos/${id}/publish`))
+            : action === "unpublish"
+              ? ids.map((id) => api.post(`/videos/${id}/unpublish`))
+              : ids.map((id) => api.delete(`/videos/${id}`));
+
+        const results = await Promise.allSettled(ops);
+        const ok = results.filter((r) => r.status === "fulfilled").length;
+        const bad = results.length - ok;
+
+        await load();
+
+        setSelected(new Set());
+
+        if (action === "publish")
+          showToast("success", `Published ${ok} video(s).`);
+        if (action === "unpublish")
+          showToast("success", `Unpublished ${ok} video(s).`);
+        if (action === "delete")
+          showToast("success", `Deleted ${ok} video(s).`);
+
+        if (bad) {
+          showToast("error", `${bad} item(s) failed. Check console.`);
+          console.warn("Bulk action failures:", results);
+        }
+      } catch (e) {
+        console.error("bulk error:", e);
+        showToast("error", e?.response?.data?.message || "Bulk action failed.");
+      } finally {
+        setBulkBusy(false);
+      }
+    };
+
+    if (action === "delete") {
+      setConfirm({
+        open: true,
+        title: `Delete ${ids.length} video(s)?`,
+        message: `These videos will be permanently deleted. This cannot be undone.`,
+        danger: true,
+        confirmText: "Delete",
+        onConfirm: async () => {
+          setConfirm((c) => ({ ...c, open: false }));
+          await run();
+        },
+      });
+      return;
+    }
+
+    await run();
+  }
 
   function askDelete(video) {
     setRowMenu(null);
@@ -676,8 +894,10 @@ export default function VideosPage() {
         try {
           await api.delete(`/videos/${video.id}`);
           await load();
+          showToast("success", "Video deleted.");
         } catch (err) {
           console.error("delete error:", err);
+          showToast("error", err?.response?.data?.message || "Delete failed");
           setBanner({
             type: "error",
             text: err?.response?.data?.message || "Delete failed",
@@ -687,9 +907,44 @@ export default function VideosPage() {
     });
   }
 
+  async function rowPublish(video, makePublished) {
+    setRowMenu(null);
+    try {
+      if (makePublished) await api.post(`/videos/${video.id}/publish`);
+      else await api.post(`/videos/${video.id}/unpublish`);
+      await load();
+      showToast(
+        "success",
+        makePublished ? "Video published." : "Video unpublished.",
+      );
+    } catch (e) {
+      console.error("publish/unpublish error:", e);
+      showToast("error", e?.response?.data?.message || "Action failed.");
+    }
+  }
+
+  const DefaultThumbCard = ({ durSec }) => (
+    <div className="thumb thumb--default" aria-hidden="true">
+      <div className="default-logo">
+        <img src={DefaultThumb} alt="" />
+      </div>
+      {durSec ? <span className="dur">{formatDuration(durSec)}</span> : null}
+    </div>
+  );
+
   return (
     <div className="videos-page">
       <style dangerouslySetInnerHTML={{ __html: injectedStyles }} />
+
+      {toast && (
+        <div
+          className={`vid-toast ${
+            toast.type === "success" ? "is-success" : "is-error"
+          }`}
+        >
+          {toast.text}
+        </div>
+      )}
 
       {banner && (
         <div className={`banner ${banner.type || "error"}`}>
@@ -710,16 +965,6 @@ export default function VideosPage() {
         onConfirm={confirm.onConfirm}
       />
 
-      <PlaylistPickerModal
-        open={!!playlistFor}
-        video={playlistFor}
-        onClose={async (changed) => {
-          setPlaylistFor(null);
-          if (changed) {
-          }
-        }}
-      />
-
       <div
         style={{
           display: "flex",
@@ -729,15 +974,28 @@ export default function VideosPage() {
           flexWrap: "wrap",
         }}
       >
-        <h2 style={{ margin: 0, fontWeight: 800, fontSize: 28 }}>Videos</h2>
+        <h2
+          style={{ margin: 0, fontWeight: 800, fontSize: 28 }}
+          className="video-main-title"
+        >
+          Videos
+        </h2>
 
-        <div style={{ marginLeft: "auto", position: "relative" }}>
+        <div
+          style={{
+            marginLeft: "auto",
+            position: "relative",
+            display: "flex",
+            gap: 10,
+          }}
+        >
           <button
             className="btn secondary"
             onClick={() => setMoreOpen((s) => !s)}
           >
             More actions ▾
           </button>
+
           {moreOpen && (
             <div className="menu" onMouseLeave={() => setMoreOpen(false)}>
               <button
@@ -746,12 +1004,7 @@ export default function VideosPage() {
               >
                 Export CSV
               </button>
-              <button
-                className="menu-item"
-                onClick={() => alert("Bulk edit (todo)")}
-              >
-                Bulk edit
-              </button>
+
               <Link
                 className="menu-item"
                 to="/admin/content/collections"
@@ -761,14 +1014,14 @@ export default function VideosPage() {
               </Link>
             </div>
           )}
-        </div>
 
-        <button className="btn primary" onClick={() => setUploadOpen(true)}>
-          ⬆️ Upload videos
-        </button>
+          <button className="btn primary" onClick={() => setUploadOpen(true)}>
+            ⬆️ Upload videos
+          </button>
+        </div>
       </div>
 
-      <div className="card" style={{ marginBottom: 16 }}>
+      <div className="" style={{ marginBottom: 16 }}>
         <div
           className="toolbar-grid"
           style={{
@@ -789,7 +1042,7 @@ export default function VideosPage() {
           </div>
 
           <select
-            className="search"
+            className="search select-status"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
           >
@@ -799,7 +1052,7 @@ export default function VideosPage() {
           </select>
 
           <select
-            className="search"
+            className="search select-sort"
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
           >
@@ -810,12 +1063,72 @@ export default function VideosPage() {
         </div>
       </div>
 
-      <div className="card table-card">
+      <div className="table-card">
+        {/* ✅ Bulk Actions BAR (moved to top of table area) */}
+        <div className="bulkbar">
+          <div className="bulkbar-left">
+            <div className="bulkbar-title">
+              Bulk actions {selectedCount ? `(${selectedCount} selected)` : ""}
+            </div>
+            <div className="bulkbar-tip">
+              Tip: select rows using the checkboxes.
+            </div>
+          </div>
+
+          <div className="bulkbar-right">
+            <select
+              className="bulkbar-select"
+              value={bulkAction}
+              onChange={(e) => setBulkAction(e.target.value)}
+              disabled={bulkBusy}
+            >
+              <option value="">Choose…</option>
+              <option value="publish">Publish</option>
+              <option value="unpublish">Unpublish</option>
+              <option value="delete">Delete</option>
+            </select>
+
+            <button
+              className="btn ghost apply"
+              style={{ height: 36, minWidth: 90 }}
+              disabled={!bulkAction || selectedCount === 0 || bulkBusy}
+              onClick={async () => {
+                await doBulk(bulkAction);
+                setBulkAction("");
+              }}
+            >
+              {bulkBusy ? "Working…" : "Apply"}
+            </button>
+
+            <button
+              className="btn secondary"
+              style={{ height: 36, minWidth: 110 }}
+              disabled={selectedCount === 0 || bulkBusy}
+              onClick={() => setSelected(new Set())}
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+
+        {/* ✅ Modern loading in table area (desktop + mobile) */}
         {!isMobile &&
           (loading ? (
-            <div style={{ padding: 24 }}>Loading…</div>
+            <div style={{ padding: 0 }}>
+              <div className="vid-loading">
+                <CircularSpinner size={34} label="Loading videos…" />
+                <div className="vid-loading-text">Loading videos…</div>
+              </div>
+              <TableSkeletonDesktop rows={8} />
+            </div>
           ) : filteredSorted.length === 0 ? (
-            <div style={{ padding: 32, textAlign: "center" }}>
+            <div
+              style={{
+                padding: 32,
+                textAlign: "center",
+                color: "#fff!important",
+              }}
+            >
               No videos yet.
             </div>
           ) : (
@@ -823,7 +1136,17 @@ export default function VideosPage() {
               <thead>
                 <tr>
                   <th style={{ width: 44 }}>
-                    <input type="checkbox" disabled />
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      ref={(el) => {
+                        if (el)
+                          el.indeterminate =
+                            !allVisibleSelected && someVisibleSelected;
+                      }}
+                      onChange={toggleSelectAllVisible}
+                      aria-label="Select all"
+                    />
                   </th>
                   <th>VIDEOS</th>
                   <th style={{ width: 160 }}>CATEGORY</th>
@@ -833,21 +1156,27 @@ export default function VideosPage() {
                   <th style={{ width: 60 }} />
                 </tr>
               </thead>
+
               <tbody>
                 {filteredSorted.map((v) => {
                   const title = v.title || "Untitled";
-                  const imgSrc = absUrl(v.thumbnail_url || "");
-                  const fallback = thumbFallbackSVG(title);
-                  const editHref = editHrefFor(v.id);
+                  const raw = pickThumbUrl(v);
+                  const thumb = absUrl(raw);
                   const durSec = pickDurationSeconds(v);
-                  const catName = pickCategoryName(v, catMap);
-                  const price = pickPriceLabel(v);
+                  const editHref = editHrefFor(v.id);
+                  const showDefault = !thumb || !!thumbErrors[v.id];
 
                   return (
                     <tr key={v.id}>
                       <td>
-                        <input type="checkbox" />
+                        <input
+                          type="checkbox"
+                          checked={selected.has(String(v.id))}
+                          onChange={() => toggleSelectOne(v.id)}
+                          aria-label={`Select ${title}`}
+                        />
                       </td>
+
                       <td>
                         <div
                           style={{
@@ -857,26 +1186,29 @@ export default function VideosPage() {
                             minWidth: 0,
                           }}
                         >
-                          <div className="thumb" aria-hidden="true">
-                            {imgSrc ? (
+                          {showDefault ? (
+                            <DefaultThumbCard durSec={durSec} />
+                          ) : (
+                            <div className="thumb" aria-hidden="true">
                               <img
-                                src={imgSrc}
+                                src={thumb}
                                 alt=""
                                 loading="lazy"
-                                onError={(e) => {
-                                  e.currentTarget.onerror = null;
-                                  e.currentTarget.src = fallback;
-                                }}
+                                onError={() =>
+                                  setThumbErrors((prev) => ({
+                                    ...prev,
+                                    [v.id]: true,
+                                  }))
+                                }
                               />
-                            ) : (
-                              <img src={fallback} alt="" />
-                            )}
-                            {durSec ? (
-                              <span className="dur">
-                                {formatDuration(durSec)}
-                              </span>
-                            ) : null}
-                          </div>
+                              {durSec ? (
+                                <span className="dur">
+                                  {formatDuration(durSec)}
+                                </span>
+                              ) : null}
+                            </div>
+                          )}
+
                           <Link
                             to={editHref}
                             className="row-title"
@@ -892,12 +1224,18 @@ export default function VideosPage() {
                           </Link>
                         </div>
                       </td>
-                      <td style={{ whiteSpace: "nowrap" }}>{catName}</td>
-                      <td style={{ whiteSpace: "nowrap" }}>{price}</td>
+
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        {pickCategoryName(v, catMap)}
+                      </td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        {pickPriceLabel(v)}
+                      </td>
                       <td>
                         <StatusBadge video={v} />
                       </td>
                       <td>{formatDate(v.created_at || v.created)}</td>
+
                       <td style={{ position: "relative" }}>
                         <button
                           className="icon-btn"
@@ -909,6 +1247,7 @@ export default function VideosPage() {
                         >
                           ⋮
                         </button>
+
                         {rowMenu === v.id && (
                           <div
                             className="menu"
@@ -922,12 +1261,15 @@ export default function VideosPage() {
                             </button>
                             <button
                               className="menu-item"
-                              onClick={() => {
-                                setRowMenu(null);
-                                setPlaylistFor(v);
-                              }}
+                              onClick={() => rowPublish(v, true)}
                             >
-                              Add to playlist…
+                              Publish
+                            </button>
+                            <button
+                              className="menu-item"
+                              onClick={() => rowPublish(v, false)}
+                            >
+                              Unpublish
                             </button>
                             <button
                               className="menu-item danger"
@@ -948,41 +1290,62 @@ export default function VideosPage() {
         {isMobile && (
           <div className="mobile-list">
             {loading ? (
-              <div style={{ padding: 24 }}>Loading…</div>
+              <div style={{ padding: 0 }}>
+                <div className="vid-loading">
+                  <CircularSpinner size={34} label="Loading videos…" />
+                  <div className="vid-loading-text">Loading videos…</div>
+                </div>
+                <MobileSkeleton rows={6} />
+              </div>
             ) : filteredSorted.length === 0 ? (
-              <div style={{ padding: 32, textAlign: "center" }}>
+              <div style={{ padding: 32, textAlign: "center", color: "#fff" }}>
                 No videos yet.
               </div>
             ) : (
               filteredSorted.map((v) => {
                 const title = v.title || "Untitled";
-                const imgSrc = absUrl(v.thumbnail_url || "");
-                const fallback = thumbFallbackSVG(title);
-                const editHref = editHrefFor(v.id);
+                const raw = pickThumbUrl(v);
+                const thumb = absUrl(raw);
                 const durSec = pickDurationSeconds(v);
-                const catName = pickCategoryName(v, catMap);
-                const price = pickPriceLabel(v);
+                const editHref = editHrefFor(v.id);
+                const showDefault = !thumb || !!thumbErrors[v.id];
 
                 return (
                   <div key={v.id} className="mobile-item">
-                    <div className="thumb" aria-hidden="true">
-                      {imgSrc ? (
+                    <input
+                      type="checkbox"
+                      checked={selected.has(String(v.id))}
+                      onChange={() => toggleSelectOne(v.id)}
+                      aria-label={`Select ${title}`}
+                    />
+
+                    {showDefault ? (
+                      <div className="thumb thumb--default" aria-hidden="true">
+                        <div className="default-logo">
+                          <img src={DefaultThumb} alt="" />
+                        </div>
+                        {durSec ? (
+                          <span className="dur">{formatDuration(durSec)}</span>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="thumb" aria-hidden="true">
                         <img
-                          src={imgSrc}
+                          src={thumb}
                           alt=""
                           loading="lazy"
-                          onError={(e) => {
-                            e.currentTarget.onerror = null;
-                            e.currentTarget.src = fallback;
-                          }}
+                          onError={() =>
+                            setThumbErrors((prev) => ({
+                              ...prev,
+                              [v.id]: true,
+                            }))
+                          }
                         />
-                      ) : (
-                        <img src={fallback} alt="" />
-                      )}
-                      {durSec ? (
-                        <span className="dur">{formatDuration(durSec)}</span>
-                      ) : null}
-                    </div>
+                        {durSec ? (
+                          <span className="dur">{formatDuration(durSec)}</span>
+                        ) : null}
+                      </div>
+                    )}
 
                     <div className="meta">
                       <Link to={editHref} className="title">
@@ -990,8 +1353,8 @@ export default function VideosPage() {
                       </Link>
                       <div className="sub">
                         <StatusBadge video={v} />
-                        <span>• {catName}</span>
-                        <span>• {price}</span>
+                        <span>• {pickCategoryName(v, catMap)}</span>
+                        <span>• {pickPriceLabel(v)}</span>
                         <span>• {formatDate(v.created_at || v.created)}</span>
                       </div>
                     </div>
@@ -1007,6 +1370,7 @@ export default function VideosPage() {
                       >
                         ⋮
                       </button>
+
                       {rowMenu === v.id && (
                         <div
                           className="menu"
@@ -1021,12 +1385,15 @@ export default function VideosPage() {
                           </button>
                           <button
                             className="menu-item"
-                            onClick={() => {
-                              setRowMenu(null);
-                              setPlaylistFor(v);
-                            }}
+                            onClick={() => rowPublish(v, true)}
                           >
-                            Add to playlist…
+                            Publish
+                          </button>
+                          <button
+                            className="menu-item"
+                            onClick={() => rowPublish(v, false)}
+                          >
+                            Unpublish
                           </button>
                           <button
                             className="menu-item danger"
@@ -1044,7 +1411,9 @@ export default function VideosPage() {
           </div>
         )}
 
-        <div className="table-footer">Displaying {filteredSorted.length}</div>
+        <div className="table-footer">
+          Displaying {filteredSorted.length} • Selected {selectedCount}
+        </div>
       </div>
 
       <UploadVideosModal

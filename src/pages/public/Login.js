@@ -1,5 +1,5 @@
 // src/pages/public/Login.js
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
 import api from "../../api";
 import "./Login.css";
@@ -12,13 +12,31 @@ export default function Login() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
+  // UX-only helpers (does not change auth logic)
+  const [capsOn, setCapsOn] = useState(false);
+
   const navigate = useNavigate();
   const location = useLocation();
 
+  function appendResumeTime(url, resumeSeconds) {
+    const t = Number(resumeSeconds);
+    if (!Number.isFinite(t) || t <= 0) return url || "/";
+
+    // If already has t=, don't add again
+    if (String(url || "").includes("t=")) return url;
+
+    const hasQuery = String(url || "").includes("?");
+    return `${url}${hasQuery ? "&" : "?"}t=${Math.floor(t)}`;
+  }
+
   function computeRedirect(user) {
-    // 1) ?next=/path
     const qs = new URLSearchParams(location.search);
+
+    // 1) ?next=/path
     const nextParam = qs.get("next");
+
+    // If login was triggered mid-watch, we may have t=
+    const resumeT = qs.get("t");
 
     // 2) pending path set by a ProtectedRoute
     const pendingPath = localStorage.getItem("pendingPath");
@@ -32,7 +50,9 @@ export default function Login() {
     const role = String(user?.role || "user").toLowerCase();
     const roleDefault = role === "admin" ? "/admin" : "/account";
 
-    return nextParam || pendingPath || stateFrom || roleDefault || "/";
+    const baseTarget =
+      nextParam || pendingPath || stateFrom || roleDefault || "/";
+    return appendResumeTime(baseTarget, resumeT);
   }
 
   async function onSubmit(e) {
@@ -41,7 +61,13 @@ export default function Login() {
     setError("");
 
     try {
-      const res = await api.post("/auth/login", { email, password });
+      // Small UX improvement: trim email (doesn't remove/replace any logic)
+      const cleanEmail = String(email || "").trim();
+
+      const res = await api.post("/auth/login", {
+        email: cleanEmail,
+        password,
+      });
       const token = res?.data?.token;
       const user = res?.data?.user || res?.data?.me || null;
 
@@ -83,12 +109,22 @@ export default function Login() {
     }
   }
 
+  const canSubmit = useMemo(() => {
+    return (
+      String(email || "").trim().length > 0 && String(password || "").length > 0
+    );
+  }, [email, password]);
+
   return (
     <div className="auth-wrap">
       <div className="auth-grid">
-        {/* Left: form card */}
         <div className="auth-card card">
-          <h1 className="auth-title">Sign in</h1>
+          <div className="auth-head">
+            <h1 className="auth-title">Sign in</h1>
+            <div className="auth-sub">
+              Use your email and password to access your account.
+            </div>
+          </div>
 
           {error ? <div className="auth-alert">{error}</div> : null}
 
@@ -101,7 +137,10 @@ export default function Login() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="username"
+                placeholder="Enter your email"
                 required
+                autoFocus
+                inputMode="email"
               />
             </label>
 
@@ -114,8 +153,13 @@ export default function Login() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="current-password"
+                  placeholder="Enter your password"
                   required
+                  onKeyUp={(e) =>
+                    setCapsOn(e.getModifierState?.("CapsLock") || false)
+                  }
                 />
+
                 <button
                   type="button"
                   className="auth-eye"
@@ -126,6 +170,11 @@ export default function Login() {
                   {showPw ? "🙈" : "👁️"}
                 </button>
               </div>
+              {capsOn ? (
+                <div className="auth-hint warn">Caps Lock is on</div>
+              ) : (
+                <div className="auth-hint"> </div>
+              )}
             </label>
 
             <div className="auth-row">
@@ -143,8 +192,19 @@ export default function Login() {
               </Link>
             </div>
 
-            <button className="auth-btn primary" disabled={submitting}>
-              {submitting ? "Signing in…" : "Sign in"}
+            <button
+              className="auth-btn primary"
+              disabled={submitting || !canSubmit}
+              aria-busy={submitting ? "true" : "false"}
+            >
+              {submitting ? (
+                <span className="auth-btn-spin">
+                  <span className="auth-spinner" aria-hidden="true" />
+                  Signing in…
+                </span>
+              ) : (
+                "Sign in"
+              )}
             </button>
           </form>
 
@@ -153,19 +213,16 @@ export default function Login() {
           </div>
         </div>
 
-        {/* Right: promo / artwork (hidden on mobile) */}
         <aside className="auth-aside">
           <div className="auth-aside-inner">
+            <div className="auth-aside-badge">Member Access</div>
             <h2>Welcome back</h2>
-            <p>
-              Access your library, manage your subscriptions, and keep
-              streaming.
-            </p>
-            <ul>
-              <li>Unlimited streaming on any device</li>
-              <li>Cancel anytime</li>
-              <li>Secure checkout</li>
-            </ul>
+            <p>Access your library and manage your playlist.</p>
+
+            <div className="auth-aside-foot">
+              <span className="auth-dot" />
+              <span>Tip: Use “Remember me” on trusted devices only.</span>
+            </div>
           </div>
         </aside>
       </div>

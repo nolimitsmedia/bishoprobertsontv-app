@@ -1,0 +1,248 @@
+/* src/pages/admin/PagesAdmin.css */
+.pg-page {
+  padding: 24px 18px;
+}
+.pg-wrap {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.pg-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.pg-kicker {
+  opacity: 0.75;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+}
+.pg-title {
+  margin: 6px 0 0;
+  font-size: 34px;
+}
+.pg-sub {
+  margin: 6px 0 0;
+  opacity: 0.8;
+}
+
+.pg-card {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  overflow: hidden;
+  padding: 15px;
+}
+.pg-card--error {
+  border-color: rgba(255, 80, 80, 0.25);
+}
+.pg-errorTitle {
+  font-weight: 700;
+  padding: 16px 16px 6px;
+}
+.pg-errorText {
+  padding: 0 16px 16px;
+  opacity: 0.9;
+}
+.pg-muted {
+  opacity: 0.75;
+}
+
+.pg-filters {
+  margin: 14px 0;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.pg-search {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  min-width: 260px;
+}
+.pg-search input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.25);
+  color: #fff;
+}
+.pg-selects {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.pg-select label {
+  display: block;
+  font-size: 12px;
+  opacity: 0.8;
+  margin-bottom: 6px;
+}
+.pg-select select {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.25);
+  color: #fff;
+}
+
+.pg-pill {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.pg-btn {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.25);
+  color: #fff;
+  cursor: pointer;
+}
+.pg-btn--ghost {
+  background: rgba(0, 0, 0, 0.18);
+}
+.pg-btn--primary {
+  background: linear-gradient(
+    135deg,
+    rgba(154, 92, 255, 1),
+    rgba(110, 70, 255, 1)
+  );
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.pg-btn--danger {
+  background: rgba(255, 70, 70, 0.16);
+  border-color: rgba(255, 70, 70, 0.35);
+}
+.pg-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pg-list {
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+.pg-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.18);
+}
+.pg-row--skeleton {
+  border-style: dashed;
+}
+.pg-left {
+  min-width: 0;
+}
+.pg-name {
+  font-weight: 800;
+  font-size: 16px;
+}
+.pg-meta {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.pg-right {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.pg-badge {
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.22);
+}
+.pg-badge.is-published {
+  border-color: rgba(88, 220, 140, 0.35);
+}
+.pg-badge.is-draft {
+  border-color: rgba(255, 210, 90, 0.35);
+}
+.pg-badge.is-access {
+  opacity: 0.9;
+}
+
+.pg-emptyTitle {
+  font-weight: 800;
+  /* padding: 18px 16px 6px; */
+}
+.pg-x {
+  border: none;
+  background: transparent;
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.pg-modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  z-index: 50;
+}
+.pg-modal {
+  width: min(560px, 96vw);
+  background: rgba(20, 20, 25, 0.98);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  overflow: hidden;
+}
+.pg-modalHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.pg-modalTitle {
+  font-weight: 900;
+  font-size: 18px;
+}
+.pg-form {
+  padding: 14px 16px;
+  display: grid;
+  gap: 12px;
+}
+.pg-field label {
+  display: block;
+  font-size: 12px;
+  opacity: 0.85;
+  margin-bottom: 6px;
+}
+.pg-field input,
+.pg-field select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.25);
+  color: #fff;
+}
+.pg-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 6px;
+}

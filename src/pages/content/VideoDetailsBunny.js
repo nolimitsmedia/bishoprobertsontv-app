@@ -63,7 +63,7 @@ const PricingEditor = React.memo(function PricingEditor({ value, onChange }) {
           }
         : null,
     }),
-    [value]
+    [value],
   );
 
   const [local, setLocal] = useState(normalized);
@@ -272,8 +272,8 @@ function normalizeCategories(raw) {
   const list = Array.isArray(raw?.items)
     ? raw.items
     : Array.isArray(raw)
-    ? raw
-    : [];
+      ? raw
+      : [];
   return list
     .map((c) => ({
       id:
@@ -419,7 +419,7 @@ export default function VideoDetails() {
 
       const mineOnly = scopeToMe(normalizeCategories(cRes.data), me);
       const uniqueCats = Array.from(
-        new Map(mineOnly.map((c) => [String(c.id), c])).values()
+        new Map(mineOnly.map((c) => [String(c.id), c])).values(),
       );
       setCats(uniqueCats);
 
@@ -706,7 +706,7 @@ export default function VideoDetails() {
 
   const videoUrlAbs = absUrl(form.video_url || "");
   const isBunnyEmbed = /\/\/iframe\.mediadelivery\.net\/embed\//i.test(
-    videoUrlAbs
+    videoUrlAbs,
   );
 
   return (

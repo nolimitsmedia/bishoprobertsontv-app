@@ -1,0 +1,966 @@
+// src/pages/admin/Calendar.js
+import React, { useEffect, useMemo, useState } from "react";
+import api from "../../api";
+import "./Calendar.css";
+
+/**
+ * Admin Calendar (Uscreen-style scheduling)
+ * API:
+ *  GET    /api/admin/calendar/events?from=YYYY-MM-DD&to=YYYY-MM-DD
+ *  POST   /api/admin/calendar/events
+ *  PUT    /api/admin/calendar/events/:id
+ *  DELETE /api/admin/calendar/events/:id
+ */
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+function toISODate(d) {
+  const x = new Date(d);
+  return `${x.getFullYear()}-${pad2(x.getMonth() + 1)}-${pad2(x.getDate())}`;
+}
+
+function toLocalInputValue(d) {
+  if (!d) return "";
+  const x = new Date(d);
+  const yyyy = x.getFullYear();
+  const mm = pad2(x.getMonth() + 1);
+  const dd = pad2(x.getDate());
+  const hh = pad2(x.getHours());
+  const mi = pad2(x.getMinutes());
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+}
+
+function fromLocalInputValue(v) {
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function startOfMonth(date) {
+  const d = new Date(date.getFullYear(), date.getMonth(), 1);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function endOfMonth(date) {
+  const d = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
+function startOfWeek(date, weekStartsOn = 0) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay();
+  const diff = (day - weekStartsOn + 7) % 7;
+  d.setDate(d.getDate() - diff);
+  return d;
+}
+
+function addDays(date, n) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
+function sameDay(a, b) {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function niceMonthTitle(d) {
+  return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+}
+
+function niceDayTitle(d) {
+  return d.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function sortByStartAsc(a, b) {
+  return new Date(a.start_at).getTime() - new Date(b.start_at).getTime();
+}
+
+const TYPE_OPTIONS = [
+  { value: "live", label: "Live Stream" },
+  { value: "premiere", label: "Premiere" },
+  { value: "upload", label: "Upload / Publish" },
+  { value: "meeting", label: "Meeting / Internal" },
+];
+
+/* -----------------------------------------
+   Modern Loading Spinner (matches LiveStreaming.js)
+----------------------------------------- */
+function CircularSpinner({ size = 40, label = "Loading…" }) {
+  const ring = Math.max(4, Math.round(size / 10));
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        placeItems: "center",
+        gap: 10,
+        padding: "14px 0",
+      }}
+    >
+      <style>{`
+        @keyframes brtv-spin { to { transform: rotate(360deg); } }
+        @keyframes brtv-dash {
+          0%   { stroke-dasharray: 1, 200; stroke-dashoffset: 0; }
+          50%  { stroke-dasharray: 90, 200; stroke-dashoffset: -35; }
+          100% { stroke-dasharray: 90, 200; stroke-dashoffset: -125; }
+        }
+      `}</style>
+
+      <div
+        aria-label={label}
+        role="status"
+        style={{
+          width: size,
+          height: size,
+          display: "grid",
+          placeItems: "center",
+        }}
+      >
+        <svg
+          width={size}
+          height={size}
+          viewBox="0 0 50 50"
+          style={{
+            animation: "brtv-spin 1.2s linear infinite",
+            filter: "drop-shadow(0 6px 18px rgba(0,0,0,0.35))",
+          }}
+        >
+          <circle
+            cx="25"
+            cy="25"
+            r="20"
+            fill="none"
+            stroke="rgba(255,255,255,0.10)"
+            strokeWidth={ring}
+          />
+          <circle
+            cx="25"
+            cy="25"
+            r="20"
+            fill="none"
+            stroke="rgba(154, 92, 255, 0.95)"
+            strokeLinecap="round"
+            strokeWidth={ring}
+            style={{ animation: "brtv-dash 1.4s ease-in-out infinite" }}
+          />
+        </svg>
+      </div>
+
+      {!!label && (
+        <div style={{ color: "rgba(255,255,255,0.78)", fontSize: 13 }}>
+          {label}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* -----------------------------------------
+   Skeleton Shimmer Blocks (no deps)
+----------------------------------------- */
+function ShimmerBlock({ style }) {
+  return (
+    <>
+      <style>{`
+        @keyframes brtv-shimmer {
+          0% { background-position: 100% 0; }
+          100% { background-position: 0 0; }
+        }
+      `}</style>
+      <div
+        style={{
+          borderRadius: 10,
+          background:
+            "linear-gradient(90deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.06) 100%)",
+          backgroundSize: "200% 100%",
+          animation: "brtv-shimmer 1.15s ease-in-out infinite",
+          ...style,
+        }}
+      />
+    </>
+  );
+}
+
+function SkeletonCalendarLayout({ isMonthView }) {
+  // Month view: calendar grid is the important part.
+  // Week view: grid is smaller but still show it.
+  const gridCount = isMonthView ? 42 : 7;
+
+  return (
+    <div className="cal-layout" aria-busy="true">
+      {/* LEFT: Calendar grid card */}
+      <div className="cal-gridCard">
+        {isMonthView ? (
+          <div className="cal-weekdays">
+            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+              <div key={d} className="cal-weekday">
+                {d}
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        <div className={`cal-grid ${isMonthView ? "is-month" : "is-week"}`}>
+          {Array.from({ length: gridCount }).map((_, i) => (
+            <div
+              key={i}
+              className="cal-cell"
+              style={{
+                cursor: "default",
+              }}
+            >
+              <div className="cal-cellTop">
+                <ShimmerBlock
+                  style={{
+                    width: 26,
+                    height: 12,
+                    borderRadius: 8,
+                  }}
+                />
+                <ShimmerBlock
+                  style={{
+                    width: 22,
+                    height: 14,
+                    borderRadius: 999,
+                    opacity: 0.65,
+                  }}
+                />
+              </div>
+
+              <div className="cal-pills">
+                <ShimmerBlock
+                  style={{
+                    width: `${55 + (i % 3) * 10}%`,
+                    height: 16,
+                    borderRadius: 999,
+                  }}
+                />
+                <div style={{ height: 6 }} />
+                <ShimmerBlock
+                  style={{
+                    width: `${40 + (i % 4) * 12}%`,
+                    height: 16,
+                    borderRadius: 999,
+                    opacity: 0.9,
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* RIGHT: Agenda card */}
+      <div className="cal-agendaCard">
+        <div className="cal-agendaHead">
+          <div className="cal-agendaTitleWrap">
+            <h3 className="cal-agendaTitle">Agenda</h3>
+            <div className="cal-agendaSub">Scheduled items in this range</div>
+          </div>
+
+          <div className="cal-agendaCount">
+            <ShimmerBlock style={{ width: 80, height: 12, borderRadius: 8 }} />
+          </div>
+        </div>
+
+        <div style={{ paddingTop: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <CircularSpinner size={34} label="" />
+            <div style={{ color: "rgba(255,255,255,0.78)", fontSize: 13 }}>
+              Loading calendar…
+            </div>
+          </div>
+
+          <div style={{ height: 12 }} />
+
+          <div className="cal-agendaList" style={{ pointerEvents: "none" }}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div
+                key={i}
+                className="cal-agendaItem"
+                style={{
+                  cursor: "default",
+                  opacity: 0.95,
+                }}
+              >
+                <ShimmerBlock
+                  style={{
+                    width: 110,
+                    height: 22,
+                    borderRadius: 999,
+                  }}
+                />
+                <div className="cal-agendaMain">
+                  <ShimmerBlock
+                    style={{
+                      width: `${62 + (i % 3) * 12}%`,
+                      height: 12,
+                      borderRadius: 8,
+                    }}
+                  />
+                  <div style={{ height: 6 }} />
+                  <ShimmerBlock
+                    style={{
+                      width: `${40 + (i % 3) * 15}%`,
+                      height: 10,
+                      borderRadius: 8,
+                      opacity: 0.9,
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function Calendar() {
+  const [view, setView] = useState("month"); // "month" | "week"
+  const [cursor, setCursor] = useState(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
+
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({
+    title: "",
+    type: "live",
+    start_at: "",
+    end_at: "",
+    video_id: "",
+    category_id: "",
+    notes: "",
+  });
+  const [saving, setSaving] = useState(false);
+
+  const range = useMemo(() => {
+    if (view === "week") {
+      const from = startOfWeek(cursor, 0);
+      const to = addDays(from, 6);
+      return { from, to };
+    }
+
+    const mStart = startOfMonth(cursor);
+    const mEnd = endOfMonth(cursor);
+    const from = startOfWeek(mStart, 0);
+    const to = addDays(startOfWeek(mEnd, 0), 6);
+    return { from, to };
+  }, [view, cursor]);
+
+  async function fetchEvents() {
+    setLoading(true);
+    setErr("");
+    try {
+      const from = toISODate(range.from);
+      const to = toISODate(range.to);
+
+      // cache-bust to prevent 304 stale responses
+      const res = await api.get(
+        `/admin/calendar/events?from=${from}&to=${to}&_=${Date.now()}`
+      );
+
+      if (!res?.data?.ok)
+        throw new Error(res?.data?.message || "Failed to load");
+
+      setEvents(Array.isArray(res.data.events) ? res.data.events : []);
+    } catch (e) {
+      const msg =
+        e?.response?.data?.message ||
+        e?.message ||
+        "We couldn’t load calendar data.";
+      setErr(msg);
+      setEvents([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchEvents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, range.from.getTime(), range.to.getTime()]);
+
+  const gridDays = useMemo(() => {
+    const days = [];
+    let d = new Date(range.from);
+    d.setHours(0, 0, 0, 0);
+    const end = new Date(range.to);
+    end.setHours(0, 0, 0, 0);
+
+    while (d.getTime() <= end.getTime()) {
+      days.push(new Date(d));
+      d = addDays(d, 1);
+    }
+    return days;
+  }, [range]);
+
+  const eventsByDay = useMemo(() => {
+    const map = new Map();
+    for (const ev of events) {
+      const start = new Date(ev.start_at);
+      const key = toISODate(start);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(ev);
+    }
+    for (const [k, list] of map.entries()) {
+      list.sort(sortByStartAsc);
+      map.set(k, list);
+    }
+    return map;
+  }, [events]);
+
+  const agenda = useMemo(() => [...events].sort(sortByStartAsc), [events]);
+
+  function openCreateForDay(day) {
+    const start = new Date(day);
+    start.setHours(19, 0, 0, 0);
+    const end = new Date(start);
+    end.setHours(end.getHours() + 1);
+
+    setEditing(null);
+    setForm({
+      title: "",
+      type: "live",
+      start_at: toLocalInputValue(start),
+      end_at: toLocalInputValue(end),
+      video_id: "",
+      category_id: "",
+      notes: "",
+    });
+    setModalOpen(true);
+  }
+
+  function openEdit(ev) {
+    setEditing(ev);
+    setForm({
+      title: ev.title || "",
+      type: ev.type || "live",
+      start_at: toLocalInputValue(ev.start_at),
+      end_at: toLocalInputValue(ev.end_at),
+      video_id: ev.video_id ? String(ev.video_id) : "",
+      category_id: ev.category_id ? String(ev.category_id) : "",
+      notes: ev.notes || "",
+    });
+    setModalOpen(true);
+  }
+
+  function closeModal() {
+    if (saving) return;
+    setModalOpen(false);
+    setEditing(null);
+  }
+
+  async function saveEvent(e) {
+    e.preventDefault();
+    if (saving) return;
+
+    const payload = {
+      title: String(form.title || "").trim(),
+      type: form.type,
+      start_at: fromLocalInputValue(form.start_at),
+      end_at: fromLocalInputValue(form.end_at),
+      video_id: form.video_id ? Number(form.video_id) : null,
+      category_id: form.category_id ? Number(form.category_id) : null,
+      notes: String(form.notes || "").trim(),
+    };
+
+    if (!payload.title) {
+      alert("Title is required.");
+      return;
+    }
+    if (!payload.start_at) {
+      alert("Start date/time is required.");
+      return;
+    }
+    if (
+      payload.end_at &&
+      new Date(payload.end_at) < new Date(payload.start_at)
+    ) {
+      alert("End time must be after start time.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      if (editing?.id) {
+        const res = await api.put(
+          `/admin/calendar/events/${editing.id}`,
+          payload
+        );
+        if (!res?.data?.ok)
+          throw new Error(res?.data?.message || "Update failed");
+      } else {
+        const res = await api.post(`/admin/calendar/events`, payload);
+        if (!res?.data?.ok)
+          throw new Error(res?.data?.message || "Create failed");
+      }
+
+      setModalOpen(false);
+      setEditing(null);
+      await fetchEvents();
+    } catch (err2) {
+      const msg =
+        err2?.response?.data?.message ||
+        err2?.message ||
+        "Failed to save event.";
+      alert(msg);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteEvent() {
+    if (!editing?.id) return;
+    if (!window.confirm("Delete this scheduled item?")) return;
+
+    setSaving(true);
+    try {
+      const res = await api.delete(`/admin/calendar/events/${editing.id}`);
+      if (!res?.data?.ok)
+        throw new Error(res?.data?.message || "Delete failed");
+
+      setModalOpen(false);
+      setEditing(null);
+      await fetchEvents();
+    } catch (err2) {
+      const msg =
+        err2?.response?.data?.message ||
+        err2?.message ||
+        "Failed to delete event.";
+      alert(msg);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function prev() {
+    if (view === "week") setCursor(addDays(cursor, -7));
+    else setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1));
+  }
+
+  function next() {
+    if (view === "week") setCursor(addDays(cursor, 7));
+    else setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1));
+  }
+
+  function today() {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    setCursor(d);
+  }
+
+  const isMonthView = view === "month";
+  const todayDate = new Date();
+  todayDate.setHours(0, 0, 0, 0);
+
+  const rangeLabel =
+    view === "week"
+      ? `${niceDayTitle(range.from)} – ${niceDayTitle(range.to)}`
+      : niceMonthTitle(cursor);
+
+  return (
+    <div className="cal-page">
+      <div className="cal-wrap">
+        <div className="cal-top">
+          <div className="cal-topLeft">
+            <div className="cal-kicker">ADMIN</div>
+            <h1 className="cal-title">Calendar</h1>
+            <p className="cal-sub">
+              Schedule live streams, premieres, and content drops.
+            </p>
+          </div>
+
+          <div className="cal-controls">
+            <button className="cal-btn cal-btn--ghost" onClick={today}>
+              Today
+            </button>
+            <button
+              className="cal-btn cal-btn--ghost"
+              onClick={prev}
+              aria-label="Previous"
+            >
+              ←
+            </button>
+            <button
+              className="cal-btn cal-btn--ghost"
+              onClick={next}
+              aria-label="Next"
+            >
+              →
+            </button>
+
+            <div className="cal-sep" />
+
+            <button
+              className={`cal-btn ${
+                view === "month" ? "cal-btn--primary" : "cal-btn--ghost"
+              }`}
+              onClick={() => setView("month")}
+            >
+              Month
+            </button>
+            <button
+              className={`cal-btn ${
+                view === "week" ? "cal-btn--primary" : "cal-btn--ghost"
+              }`}
+              onClick={() => setView("week")}
+            >
+              Week
+            </button>
+          </div>
+        </div>
+
+        <div className="cal-bar">
+          <div className="cal-rangeTitle">{rangeLabel}</div>
+
+          <div className="cal-barRight">
+            <div className="cal-statPill">
+              <span className="cal-statLabel">Items</span>
+              <span className="cal-statValue">{events.length}</span>
+            </div>
+
+            <button
+              className="cal-btn cal-btn--primary"
+              onClick={() => openCreateForDay(new Date())}
+            >
+              + New schedule
+            </button>
+          </div>
+        </div>
+
+        {/* ✅ Modern loading treatment (spinner + skeleton shimmer) */}
+        {loading ? (
+          <SkeletonCalendarLayout isMonthView={isMonthView} />
+        ) : err ? (
+          <div className="cal-card">
+            <div className="cal-errorTitle">We couldn’t load the calendar.</div>
+            <div className="cal-errorText">{err}</div>
+            <div className="cal-muted" style={{ marginTop: 10 }}>
+              Make sure backend route exists: <b>/api/admin/calendar/events</b>
+            </div>
+          </div>
+        ) : (
+          <div className="cal-layout">
+            <div className="cal-gridCard">
+              {isMonthView ? (
+                <div className="cal-weekdays">
+                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
+                    (d) => (
+                      <div key={d} className="cal-weekday">
+                        {d}
+                      </div>
+                    )
+                  )}
+                </div>
+              ) : null}
+
+              <div
+                className={`cal-grid ${isMonthView ? "is-month" : "is-week"}`}
+              >
+                {gridDays.map((day) => {
+                  const iso = toISODate(day);
+                  const list = eventsByDay.get(iso) || [];
+                  const inMonth = day.getMonth() === cursor.getMonth();
+                  const isToday = sameDay(day, todayDate);
+
+                  return (
+                    <div
+                      key={iso}
+                      className={[
+                        "cal-cell",
+                        !inMonth && isMonthView ? "is-out" : "",
+                        isToday ? "is-today" : "",
+                      ].join(" ")}
+                      onClick={() => openCreateForDay(day)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") openCreateForDay(day);
+                      }}
+                      title="Click to schedule"
+                    >
+                      <div className="cal-cellTop">
+                        <div className="cal-dayNum">{day.getDate()}</div>
+                        {list.length ? (
+                          <div className="cal-dayCount">{list.length}</div>
+                        ) : null}
+                      </div>
+
+                      <div className="cal-pills">
+                        {list.slice(0, isMonthView ? 3 : 6).map((ev) => (
+                          <button
+                            key={ev.id}
+                            className={`cal-pill cal-pill--${
+                              ev.type || "live"
+                            }`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEdit(ev);
+                            }}
+                            title={ev.title}
+                          >
+                            <span className="cal-pillDot" />
+                            <span className="cal-pillText">
+                              {ev.title || "Untitled"}
+                            </span>
+                          </button>
+                        ))}
+                        {list.length > (isMonthView ? 3 : 6) ? (
+                          <div className="cal-more">
+                            +{list.length - (isMonthView ? 3 : 6)} more
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="cal-agendaCard">
+              <div className="cal-agendaHead">
+                <div className="cal-agendaTitleWrap">
+                  <h3 className="cal-agendaTitle">Agenda</h3>
+                  <div className="cal-agendaSub">
+                    Scheduled items in this range
+                  </div>
+                </div>
+
+                <div className="cal-agendaCount">
+                  {agenda.length} item{agenda.length === 1 ? "" : "s"}
+                </div>
+              </div>
+
+              {agenda.length === 0 ? (
+                <div className="cal-empty">
+                  <div className="cal-emptyTitle">No scheduled items yet</div>
+                  <div className="cal-emptyText">
+                    Click any day on the calendar to create your first schedule.
+                  </div>
+                </div>
+              ) : (
+                <div className="cal-agendaList">
+                  {agenda.map((ev) => {
+                    const d = new Date(ev.start_at);
+                    return (
+                      <button
+                        key={ev.id}
+                        className="cal-agendaItem"
+                        onClick={() => openEdit(ev)}
+                      >
+                        <div
+                          className={`cal-typeBadge cal-typeBadge--${
+                            ev.type || "live"
+                          }`}
+                        >
+                          {(ev.type || "live").toUpperCase()}
+                        </div>
+                        <div className="cal-agendaMain">
+                          <div className="cal-agendaItemTitle">
+                            {ev.title || "Untitled"}
+                          </div>
+                          <div className="cal-agendaMeta">
+                            {d.toLocaleString(undefined, {
+                              weekday: "short",
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {modalOpen ? (
+        <div className="cal-modalOverlay" onMouseDown={closeModal}>
+          <div
+            className="cal-modal"
+            onMouseDown={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="cal-modalHead">
+              <div>
+                <div className="cal-modalTitle">
+                  {editing?.id ? "Edit schedule" : "New schedule"}
+                </div>
+                <div className="cal-muted">
+                  {editing?.id
+                    ? `ID: ${editing.id}`
+                    : "Create a scheduled item for the calendar."}
+                </div>
+              </div>
+
+              <button className="cal-x" onClick={closeModal} aria-label="Close">
+                ✕
+              </button>
+            </div>
+
+            <form className="cal-form" onSubmit={saveEvent}>
+              <div className="cal-field">
+                <label>Title</label>
+                <input
+                  value={form.title}
+                  onChange={(e) =>
+                    setForm((s) => ({ ...s, title: e.target.value }))
+                  }
+                  placeholder="e.g., Sunday Service Live"
+                />
+              </div>
+
+              <div className="cal-row2">
+                <div className="cal-field">
+                  <label>Type</label>
+                  <select
+                    value={form.type}
+                    onChange={(e) =>
+                      setForm((s) => ({ ...s, type: e.target.value }))
+                    }
+                  >
+                    {TYPE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="cal-field">
+                  <label>Start</label>
+                  <input
+                    type="datetime-local"
+                    value={form.start_at}
+                    onChange={(e) =>
+                      setForm((s) => ({ ...s, start_at: e.target.value }))
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="cal-row2">
+                <div className="cal-field">
+                  <label>End (optional)</label>
+                  <input
+                    type="datetime-local"
+                    value={form.end_at}
+                    onChange={(e) =>
+                      setForm((s) => ({ ...s, end_at: e.target.value }))
+                    }
+                  />
+                </div>
+
+                <div className="cal-field">
+                  <label>Link to video ID (optional)</label>
+                  <input
+                    value={form.video_id}
+                    onChange={(e) =>
+                      setForm((s) => ({ ...s, video_id: e.target.value }))
+                    }
+                    placeholder="e.g., 123"
+                    inputMode="numeric"
+                  />
+                </div>
+              </div>
+
+              <div className="cal-row2">
+                <div className="cal-field">
+                  <label>Category ID (optional)</label>
+                  <input
+                    value={form.category_id}
+                    onChange={(e) =>
+                      setForm((s) => ({ ...s, category_id: e.target.value }))
+                    }
+                    placeholder="e.g., 45"
+                    inputMode="numeric"
+                  />
+                </div>
+
+                <div className="cal-field">
+                  <label>Notes (optional)</label>
+                  <input
+                    value={form.notes}
+                    onChange={(e) =>
+                      setForm((s) => ({ ...s, notes: e.target.value }))
+                    }
+                    placeholder="Internal notes for the team…"
+                  />
+                </div>
+              </div>
+
+              <div className="cal-modalActions">
+                {editing?.id ? (
+                  <button
+                    type="button"
+                    className="cal-btn cal-btn--danger"
+                    onClick={deleteEvent}
+                    disabled={saving}
+                  >
+                    Delete
+                  </button>
+                ) : (
+                  <span />
+                )}
+
+                <div className="cal-actionsRight">
+                  <button
+                    type="button"
+                    className="cal-btn cal-btn--ghost"
+                    onClick={closeModal}
+                    disabled={saving}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="cal-btn cal-btn--primary"
+                    type="submit"
+                    disabled={saving}
+                  >
+                    {saving ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              </div>
+
+              <div
+                className="cal-muted"
+                style={{ marginTop: 10, fontSize: 12 }}
+              >
+                Tip: Click any day cell to quickly create a schedule.
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}

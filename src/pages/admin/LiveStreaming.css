@@ -177,3 +177,16 @@
 .icon-btn:hover {
   background: #f7f8fa;
 }
+
+div {
+  /* color: #3f1770 !important; */
+  color: #fff !important;
+}
+
+.brtv-status {
+  color: #3f1770 !important;
+}
+
+.brtv-publisher {
+  color: #6b7280 !important;
+}

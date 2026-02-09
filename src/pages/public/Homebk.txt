@@ -1,186 +1,723 @@
-import React from "react";
-import { Link } from "react-router-dom";
-import Slider from "react-slick";
-import PublicHeader from "../../components/PublicHeader";
+// src/pages/public/Home.jsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import "./Home.css";
-import "slick-carousel/slick/slick.css";
-import "slick-carousel/slick/slick-theme.css";
+import { Link } from "react-router-dom";
+import api from "../../api";
+import ImgHead from "../../assets/bishopimage.png";
+import DefaultThumb from "../../assets/BishopRobertsonTVLogo.png";
 
-const Home = () => {
-  const sliderSettings = {
-    dots: false,
-    infinite: true,
-    speed: 7000,
-    slidesToShow: 4,
-    slidesToScroll: 1,
-    autoplay: true,
-    autoplaySpeed: 0,
-    cssEase: "linear",
-    pauseOnHover: false,
-    responsive: [
-      { breakpoint: 1024, settings: { slidesToShow: 2 } },
-      { breakpoint: 600, settings: { slidesToShow: 1 } },
-    ],
-  };
+// use the same channel id / handle you use in LivePage.jsx
+const CHANNEL_ID = "gworrdns";
 
-  return (
-    <>
-      {/* <PublicHeader /> */}
-      <div className="home-container">
-        {/* Hero Section */}
-        <section className="hero">
-          <h1>Turn your video content into a thriving business</h1>
-          <p>
-            Build a world-class streaming platform or the next big membership
-            community. Bishop makes it easy to turn your videos into a
-            profitable subscription business.
-          </p>
-          <div className="cta-buttons">
-            <Link to="/register" className="btn-primary">
-              Start Free Trial
-            </Link>
-            <Link to="/demo" className="btn-secondary">
-              Book a Demo
-            </Link>
-          </div>
-          <p className="note">No credit card required to get started.</p>
-        </section>
+/* -----------------------------------------
+   Utilities
+----------------------------------------- */
+const absUrl = (u) => {
+  if (!u) return null;
+  if (/^https?:\/\//i.test(u)) return u;
 
-        {/* Carousel Section */}
-        <section className="carousel-section">
-          <Slider {...sliderSettings}>
-            {[...Array(8)].map((_, i) => (
-              <div key={i} className="carousel-card">
-                <img
-                  src={`/carousel/${i + 1}.jpg`}
-                  alt={`Creator ${i + 1}`}
-                  className="carousel-image"
-                />
-              </div>
-            ))}
-          </Slider>
-        </section>
-
-        {/* Platform Stats */}
-        <section className="stats-section">
-          <div className="stats-grid">
-            <div>
-              <h3>15 MILLION</h3>
-              <p>End users reached</p>
-            </div>
-            <div>
-              <h3>3,500+</h3>
-              <p>Successful creators</p>
-            </div>
-            <div>
-              <h3>$210M+</h3>
-              <p>Revenue generated</p>
-            </div>
-          </div>
-        </section>
-
-        {/* Monetization Features */}
-        <section className="monetization-section">
-          <h2>Monetize Your Content Your Way</h2>
-          <div className="monetization-grid">
-            <div className="monetization-card">
-              <h3>Subscriptions</h3>
-              <p>
-                Offer monthly or yearly plans for unlimited access to your
-                content.
-              </p>
-            </div>
-            <div className="monetization-card">
-              <h3>Pay-Per-View</h3>
-              <p>
-                Charge viewers a one-time fee to access specific videos or
-                events.
-              </p>
-            </div>
-            <div className="monetization-card">
-              <h3>Bundles</h3>
-              <p>Package related content together and sell it as a bundle.</p>
-            </div>
-            <div className="monetization-card">
-              <h3>Donations</h3>
-              <p>
-                Accept voluntary contributions from your loyal audience or
-                supporters.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* Supported Platforms */}
-        <section className="platforms-section">
-          <h2>Available on Every Screen</h2>
-          <div className="platform-icons">
-            <img src="/platforms/web.svg" alt="Web" />
-            <img src="/platforms/ios.svg" alt="iOS" />
-            <img src="/platforms/android.svg" alt="Android" />
-            <img src="/platforms/roku.svg" alt="Roku" />
-            <img src="/platforms/appletv.svg" alt="Apple TV" />
-          </div>
-        </section>
-
-        {/* Benefits Section */}
-        <section className="features-section">
-          <h2>Uscreen is perfect for...</h2>
-          <ul>
-            <li>Fitness & Wellness Brands</li>
-            <li>Educational Creators</li>
-            <li>Faith-Based Media</li>
-            <li>Entertainment Networks</li>
-          </ul>
-        </section>
-
-        {/* Mobile App Feature */}
-        <section className="mobile-app-section">
-          <div className="mobile-app-grid">
-            <img src="/mobile-preview.png" alt="Mobile App" />
-            <div>
-              <h2>Your Branded Mobile App</h2>
-              <p>
-                Give your audience a premium experience with your own branded
-                app on iOS and Android. Increase engagement and deliver content
-                on the go.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* Testimonials */}
-        <section className="testimonials">
-          <h2>What our creators are saying</h2>
-          <div className="testimonial-grid">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="testimonial-card">
-                <p>⭐⭐⭐⭐⭐</p>
-                <p>
-                  "This platform helped us build a loyal audience and triple our
-                  revenue."
-                </p>
-                <small>- Creator {i + 1}</small>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* Final CTA */}
-        <section className="final-cta">
-          <h2>Unlock Recurring Membership Revenue — Starting Today</h2>
-          <div className="cta-buttons">
-            <Link to="/register" className="btn-primary">
-              Start Free Trial
-            </Link>
-            <Link to="/demo" className="btn-secondary">
-              Book a Demo
-            </Link>
-          </div>
-        </section>
-      </div>
-    </>
-  );
+  const base = (api?.defaults?.baseURL || "").replace(/\/api\/?$/i, "");
+  return u.startsWith("/") ? `${base}${u}` : `${base}/${u}`;
 };
 
-export default Home;
+async function safeGet(path, opts = {}) {
+  try {
+    const res = await api.get(path, {
+      ...opts,
+      validateStatus: () => true,
+    });
+    const status = res?.status ?? 0;
+    const ok = status >= 200 && status < 300;
+    return { ok, status, data: res?.data };
+  } catch {
+    return { ok: false, status: 0, data: null };
+  }
+}
+
+function normalizeItems(data) {
+  if (!data) return [];
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data.items)) return data.items;
+  if (Array.isArray(data.videos)) return data.videos;
+  if (Array.isArray(data.rows)) return data.rows;
+  return [];
+}
+
+function pickVideoSrc(v) {
+  if (!v || typeof v !== "object") return null;
+
+  const raw =
+    v.video_url ||
+    v.videoUrl ||
+    v.stream_url ||
+    v.streamUrl ||
+    v.playback_url ||
+    v.playbackUrl ||
+    v.file_url ||
+    v.fileUrl ||
+    v.url ||
+    v.src ||
+    v.source ||
+    v?.metadata?.video_url ||
+    v?.metadata?.videoUrl ||
+    v?.metadata?.stream_url ||
+    v?.metadata?.playback_url ||
+    null;
+
+  return absUrl(raw);
+}
+
+/* ---------- shared helpers for countdown ---------- */
+function parseNextLiveToLocalDate(ts) {
+  if (!ts) return null;
+  const d = new Date(ts); // ISO/UTC → local
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
+
+function formatDuration(totalSec) {
+  const s = Math.max(0, Math.floor(totalSec));
+  const days = Math.floor(s / 86400);
+  const hours = Math.floor((s % 86400) / 3600);
+  const minutes = Math.floor((s % 3600) / 60);
+  const seconds = s % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+
+  return `${pad(days)}d : ${pad(hours)}h : ${pad(minutes)}m : ${pad(seconds)}s`;
+}
+
+/* -----------------------------------------
+   Modern Loading Spinner (MUI-like, no deps)
+----------------------------------------- */
+function CircularSpinner({ size = 44, label = "Loading…" }) {
+  const ring = Math.max(4, Math.round(size / 10));
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        placeItems: "center",
+        gap: 10,
+        padding: "18px 0",
+      }}
+    >
+      <style>{`
+        @keyframes brtv-spin { to { transform: rotate(360deg); } }
+        @keyframes brtv-dash {
+          0%   { stroke-dasharray: 1, 200; stroke-dashoffset: 0; }
+          50%  { stroke-dasharray: 90, 200; stroke-dashoffset: -35; }
+          100% { stroke-dasharray: 90, 200; stroke-dashoffset: -125; }
+        }
+      `}</style>
+
+      <div
+        aria-label={label}
+        role="status"
+        style={{
+          width: size,
+          height: size,
+          display: "grid",
+          placeItems: "center",
+        }}
+      >
+        <svg
+          width={size}
+          height={size}
+          viewBox="0 0 50 50"
+          style={{
+            animation: "brtv-spin 1.2s linear infinite",
+            filter: "drop-shadow(0 6px 18px rgba(0,0,0,0.35))",
+          }}
+        >
+          <circle
+            cx="25"
+            cy="25"
+            r="20"
+            fill="none"
+            stroke="rgba(255,255,255,0.10)"
+            strokeWidth={ring}
+          />
+          <circle
+            cx="25"
+            cy="25"
+            r="20"
+            fill="none"
+            stroke="rgba(154, 92, 255, 0.95)"
+            strokeLinecap="round"
+            strokeWidth={ring}
+            style={{ animation: "brtv-dash 1.4s ease-in-out infinite" }}
+          />
+        </svg>
+      </div>
+
+      <div style={{ color: "rgba(255,255,255,0.78)", fontSize: 14 }}>
+        {label}
+      </div>
+    </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <main className="home-root">
+      <HeaderHero />
+      <JoinStrip />
+      <FeaturedHighlight />
+      <LatestTeaching />
+      <WatchMoreCTA />
+      <AboutSection />
+    </main>
+  );
+}
+
+/* ---------------------------------------------------------
+   1) HEADER + HERO
+--------------------------------------------------------- */
+function HeaderHero() {
+  return (
+    <section className="hero-section">
+      <div className="hero-overlay" />
+
+      <div className="hero-content">
+        <div className="hero-kicker">
+          Apostolic Teaching • Breakthrough Living
+        </div>
+
+        <h1 className="hero-title">Experience the Message Without Limits</h1>
+
+        <p className="hero-sub">
+          Stream life-changing revelation and prophetic teaching directly from
+          Bishop Robertson.
+        </p>
+
+        <Link className="hero-cta" to="/catalog">
+          Start Watching
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+/* ---------------------------------------------------------
+   2) JOIN STRIP
+--------------------------------------------------------- */
+function JoinStrip() {
+  return (
+    <section className="join-strip">
+      <div className="join-inner">
+        <div>
+          <h5>The Connection</h5>
+          <h2 className="join-title">DRM</h2>
+          <p className="join-sub">"You become who you connect to!" - DRM</p>
+        </div>
+
+        <Link to="/signup" className="join-btn">
+          Join Now
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+/* ---------------------------------------------------------
+   3) FEATURED HIGHLIGHT — Live Stream + Countdown
+--------------------------------------------------------- */
+function FeaturedHighlight() {
+  const [nextLiveAt, setNextLiveAt] = useState(null);
+  const [countdown, setCountdown] = useState("");
+  const [showWatch, setShowWatch] = useState(false);
+  const [liveOngoing, setLiveOngoing] = useState(false);
+
+  // ✅ spinner for Live Stream section while loading
+  const [loadingLive, setLoadingLive] = useState(true);
+
+  // ✅ keep refs to avoid stale values inside the 15s refresh loop
+  const nextLiveAtRef = useRef(null);
+  const liveOngoingRef = useRef(false);
+
+  useEffect(() => {
+    nextLiveAtRef.current = nextLiveAt;
+  }, [nextLiveAt]);
+
+  useEffect(() => {
+    liveOngoingRef.current = liveOngoing;
+  }, [liveOngoing]);
+
+  const token =
+    localStorage.getItem("token") || sessionStorage.getItem("token");
+  const isAuthed = !!token;
+
+  function shouldIgnoreNetworkSuspended(err) {
+    const msg = String(err?.message || "");
+    return msg.includes("ERR_NETWORK_IO_SUSPENDED");
+  }
+
+  function safeDate(v) {
+    if (!v) return null;
+    const d = new Date(v);
+    if (!Number.isNaN(d.getTime())) return d;
+
+    if (typeof v === "string") {
+      const d2 = new Date(v.replace(" ", "T"));
+      if (!Number.isNaN(d2.getTime())) return d2;
+    }
+    return null;
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+
+    function setLiveState(next) {
+      if (cancelled) return;
+      setLiveOngoing((prev) => (prev === next ? prev : next));
+      liveOngoingRef.current = next;
+    }
+
+    function setNextLiveDate(d) {
+      if (cancelled) return;
+      if (!d) return;
+
+      setNextLiveAt((prev) => {
+        const prevT = prev ? prev.getTime() : null;
+        const nextT = d.getTime();
+        if (prevT === nextT) return prev;
+        return d;
+      });
+      nextLiveAtRef.current = d;
+    }
+
+    async function fetchNextLive() {
+      if (typeof document !== "undefined" && document.hidden) return;
+
+      try {
+        const res = await api.get(`/streamcontrol/${CHANNEL_ID}/next-live`, {
+          params: { _: Date.now() },
+          signal: controller.signal,
+        });
+
+        const data = res.data || {};
+        const state = String(data.state || "").toLowerCase();
+
+        if (state === "live_window" || data.is_live === true) {
+          setLiveState(true);
+          return;
+        }
+
+        const ts =
+          data.next_live_datetime ||
+          data.next_live_at ||
+          data.next_event?.start_at ||
+          data.event?.start_at ||
+          null;
+
+        const d = safeDate(ts) || parseNextLiveToLocalDate(ts);
+
+        if (d) {
+          setLiveState(false);
+          setNextLiveDate(d);
+        }
+      } catch (e) {
+        if (controller.signal.aborted) return;
+        if (shouldIgnoreNetworkSuspended(e)) return;
+      }
+    }
+
+    async function fetchNextLiveFallbackAuthed() {
+      if (!isAuthed) return;
+      if (typeof document !== "undefined" && document.hidden) return;
+
+      try {
+        const from = new Date();
+        const to = new Date();
+        to.setDate(to.getDate() + 60);
+
+        const ymd = (d) => {
+          const x = new Date(d);
+          const pad2 = (n) => String(n).padStart(2, "0");
+          return `${x.getFullYear()}-${pad2(x.getMonth() + 1)}-${pad2(
+            x.getDate(),
+          )}`;
+        };
+
+        const res = await api.get("/admin/calendar/events", {
+          params: { from: ymd(from), to: ymd(to), _: Date.now() },
+          signal: controller.signal,
+        });
+
+        const items = Array.isArray(res.data?.events)
+          ? res.data.events
+          : Array.isArray(res.data)
+            ? res.data
+            : [];
+
+        const now = Date.now();
+
+        const liveEvents = items
+          .filter((e) => String(e.type || "").toLowerCase() === "live")
+          .map((e) => ({
+            ...e,
+            _start: safeDate(e.start_at),
+            _end: e.end_at ? safeDate(e.end_at) : null,
+          }))
+          .filter((e) => e._start)
+          .sort((a, b) => a._start.getTime() - b._start.getTime());
+
+        const current = liveEvents.find(
+          (e) => e._start.getTime() <= now && e._end && e._end.getTime() >= now,
+        );
+
+        if (current) {
+          setLiveState(true);
+          return;
+        }
+
+        const upcoming = liveEvents.find((e) => e._start.getTime() > now);
+        if (upcoming) {
+          setLiveState(false);
+          setNextLiveDate(upcoming._start);
+        }
+      } catch (e) {
+        if (controller.signal.aborted) return;
+        if (shouldIgnoreNetworkSuspended(e)) return;
+      }
+    }
+
+    async function refresh() {
+      const isLive = liveOngoingRef.current;
+      const hasNext = !!nextLiveAtRef.current;
+      if (!isLive && !hasNext) setLoadingLive(true);
+
+      await fetchNextLive();
+
+      const isLive2 = liveOngoingRef.current;
+      const hasNext2 = !!nextLiveAtRef.current;
+
+      if (!cancelled && !isLive2 && !hasNext2) {
+        await fetchNextLiveFallbackAuthed();
+      }
+
+      if (!cancelled) setLoadingLive(false);
+    }
+
+    refresh();
+    const intv = setInterval(refresh, 15000);
+
+    const onVis = () => {
+      if (!document.hidden) refresh();
+    };
+    document.addEventListener("visibilitychange", onVis);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearInterval(intv);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthed]);
+
+  useEffect(() => {
+    if (liveOngoing) {
+      setCountdown("");
+      setShowWatch(true);
+      return;
+    }
+
+    if (!nextLiveAt) {
+      setCountdown("");
+      setShowWatch(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const tick = () => {
+      if (cancelled) return;
+      const now = new Date();
+      const diffSec = (nextLiveAt - now) / 1000;
+
+      if (diffSec <= 0) {
+        setCountdown("");
+        setShowWatch(true);
+        setLiveOngoing(true);
+        return;
+      }
+
+      setCountdown(formatDuration(diffSec));
+      setShowWatch(false);
+    };
+
+    tick();
+    const intv = setInterval(tick, 1000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intv);
+    };
+  }, [nextLiveAt, liveOngoing]);
+
+  return (
+    <section className="feature-section">
+      <img src="/media/featured-bg.jpg" alt="" className="feature-bg" />
+      <div className="feature-overlay" />
+
+      <div className="feature-content">
+        <h3 className="feature-title">Live Stream</h3>
+
+        {loadingLive && !liveOngoing && !countdown && (
+          <CircularSpinner label="Loading live schedule…" />
+        )}
+
+        {countdown && !liveOngoing && (
+          <div className="home-live-countdown">
+            <span className="home-live-countdown-label">
+              Next Live Stream Starts In
+            </span>
+            <span className="home-live-countdown-time">{countdown}</span>
+          </div>
+        )}
+
+        {liveOngoing && (
+          <div className="home-live-countdown">
+            <span className="home-live-countdown-label">
+              The Live Stream is ongoing
+            </span>
+          </div>
+        )}
+
+        {showWatch && (
+          <Link to="/live-streaming" className="feature-btn">
+            Watch Live
+          </Link>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ---------------------------------------------------------
+   4) LATEST TEACHING — Featured video + Grid
+--------------------------------------------------------- */
+function LatestTeaching() {
+  const [videos, setVideos] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      setLoading(true);
+      try {
+        // Try public endpoint first (your Home uses this),
+        // then fall back to the other public endpoint your Catalog supports.
+        const tries = [
+          { path: "/public/videos", params: { limit: 8 } },
+          { path: "/videos/public", params: { limit: 8 } },
+        ];
+
+        let items = [];
+        for (const t of tries) {
+          const r = await safeGet(t.path, { params: t.params });
+          if (!r.ok) continue;
+          items = normalizeItems(r.data);
+          if (Array.isArray(items) && items.length) break;
+        }
+
+        if (!cancelled) setVideos(Array.isArray(items) ? items : []);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const featured = videos[0] || null;
+  const rest = videos.slice(1);
+
+  const featuredThumb = useMemo(() => {
+    if (!featured) return DefaultThumb;
+    const raw =
+      featured.thumbnail_url ||
+      featured?.metadata?.thumbnail_vertical_url ||
+      featured?.metadata?.thumbnail_url ||
+      null;
+    return absUrl(raw) || DefaultThumb;
+  }, [featured]);
+
+  const featuredSrc = useMemo(() => {
+    if (!featured) return null;
+    return pickVideoSrc(featured);
+  }, [featured]);
+
+  return (
+    <section className="latest-section">
+      <h2 className="latest-title">Latest Teaching</h2>
+      <p className="latest-sub">A fresh impartation to strengthen your walk.</p>
+
+      {loading ? (
+        <div className="latest-loading">
+          <CircularSpinner label="Loading latest videos…" />
+        </div>
+      ) : !videos.length ? (
+        <div
+          className="latest-loading"
+          style={{ color: "rgba(255,255,255,0.75)" }}
+        >
+          No videos found yet.
+        </div>
+      ) : (
+        <>
+          {/* ✅ Featured block (this is what fills your blank area) */}
+          <div className="latest-featured">
+            {featuredSrc ? (
+              <div className="latest-featured-player">
+                <video
+                  src={featuredSrc}
+                  poster={featuredThumb}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  controlsList="nodownload"
+                  disablePictureInPicture
+                  onContextMenu={(e) => e.preventDefault()}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    borderRadius: 14,
+                    background: "rgba(0,0,0,0.35)",
+                  }}
+                />
+              </div>
+            ) : (
+              <Link
+                to={`/watch/${featured.id}`}
+                className="latest-featured-fallback"
+              >
+                <img
+                  src={featuredThumb}
+                  alt={featured.title || "Latest Video"}
+                  onError={(e) => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = DefaultThumb;
+                  }}
+                  style={{
+                    width: "100%",
+                    borderRadius: 14,
+                    display: "block",
+                  }}
+                />
+                <div className="latest-featured-overlay">
+                  <span className="latest-featured-play">▶</span>
+                </div>
+              </Link>
+            )}
+
+            <div className="latest-featured-meta">
+              <h4 className="latest-video-title">
+                {featured.title || "Latest Teaching"}
+              </h4>
+              <p className="latest-category">
+                {featured.category_name || featured?.category?.name || ""}
+              </p>
+              <Link
+                to={`/watch/${featured.id}`}
+                className="latest-featured-btn"
+              >
+                Watch Now
+              </Link>
+            </div>
+          </div>
+
+          {/* Grid */}
+          <div className="latest-grid">
+            {rest.map((v) => {
+              const rawThumb =
+                v.thumbnail_url ||
+                v?.metadata?.thumbnail_vertical_url ||
+                v?.metadata?.thumbnail_url ||
+                null;
+
+              const thumbSrc = absUrl(rawThumb) || DefaultThumb;
+              const isDefaultThumb = !absUrl(rawThumb);
+
+              return (
+                <Link
+                  key={v.id}
+                  to={`/watch/${v.id}`}
+                  className="latest-card hover-card"
+                >
+                  <div
+                    className={
+                      "latest-thumb" +
+                      (isDefaultThumb ? " is-default-thumb" : "")
+                    }
+                  >
+                    <img
+                      src={thumbSrc}
+                      alt={v.title || "Video"}
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = DefaultThumb;
+                      }}
+                    />
+
+                    <div className="hover-play">
+                      <span>▶</span>
+                    </div>
+                  </div>
+
+                  <div className="latest-meta">
+                    <h4 className="latest-video-title">{v.title}</h4>
+                    <p className="latest-category">
+                      {v.category_name || v?.category?.name || ""}
+                    </p>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+/* ---------------------------------------------------------
+   5) WATCH MORE CTA
+--------------------------------------------------------- */
+function WatchMoreCTA() {
+  return (
+    <section className="cta-section">
+      <h3 className="cta-title">Go Deeper Into The Word</h3>
+      <p className="cta-sub">Stream powerful teachings anytime, anywhere.</p>
+
+      <Link to="/catalog" className="cta-button">
+        Browse Catalog
+      </Link>
+    </section>
+  );
+}
+
+/* ---------------------------------------------------------
+   6) ABOUT SECTION
+--------------------------------------------------------- */
+function AboutSection() {
+  return (
+    <section className="about-section">
+      <img src={ImgHead} className="about-avatar" alt="Bishop Robertson" />
+
+      <div className="about-content">
+        <h4 className="about-name">Bishop Robertson</h4>
+        <p className="about-text">
+          A leader, pioneer, and prophetic voice for over five decades. Bishop
+          Robertson continues to deliver revelation and impartation that
+          transforms lives across the world.
+        </p>
+      </div>
+    </section>
+  );
+}
