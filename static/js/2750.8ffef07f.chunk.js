@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkadmin_panel=self.webpackChunkadmin_panel||[]).push([[2750],{1024:(e,p,a)=>{e.exports=a.p+"static/media/bishopimage.35ee890ef3455df8965a.png"},1137:()=>{},1828:(e,p,a)=>{e.exports=a.p+"static/media/BishopRobertsonTVLogo.16d66f490739f4b74726.png"},4278:(e,p,a)=>{a(5043),a(1137),a(2768),a(1024),a(1828);a.p;a(579)}}]);
