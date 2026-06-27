@@ -1,7 +1,7 @@
 {
   "files": {
     "main.css": "/bishoprobertsontv-app/static/css/main.37e277b0.css",
-    "main.js": "/bishoprobertsontv-app/static/js/main.390b6855.js",
+    "main.js": "/bishoprobertsontv-app/static/js/main.d4e19431.js",
     "static/css/6684.c9fe4cfc.chunk.css": "/bishoprobertsontv-app/static/css/6684.c9fe4cfc.chunk.css",
     "static/js/6684.3981540e.chunk.js": "/bishoprobertsontv-app/static/js/6684.3981540e.chunk.js",
     "static/css/9929.b44955bf.chunk.css": "/bishoprobertsontv-app/static/css/9929.b44955bf.chunk.css",
@@ -68,10 +68,10 @@
     "static/js/5015.d92afec2.chunk.js": "/bishoprobertsontv-app/static/js/5015.d92afec2.chunk.js",
     "static/css/7854.b87e397e.chunk.css": "/bishoprobertsontv-app/static/css/7854.b87e397e.chunk.css",
     "static/js/7854.c3f10734.chunk.js": "/bishoprobertsontv-app/static/js/7854.c3f10734.chunk.js",
-    "static/css/8201.88e2194f.chunk.css": "/bishoprobertsontv-app/static/css/8201.88e2194f.chunk.css",
+    "static/css/8201.286607d7.chunk.css": "/bishoprobertsontv-app/static/css/8201.286607d7.chunk.css",
     "static/js/8201.139ed016.chunk.js": "/bishoprobertsontv-app/static/js/8201.139ed016.chunk.js",
     "static/js/1605.49fbbf72.chunk.js": "/bishoprobertsontv-app/static/js/1605.49fbbf72.chunk.js",
-    "static/css/7080.e60430bb.chunk.css": "/bishoprobertsontv-app/static/css/7080.e60430bb.chunk.css",
+    "static/css/7080.0953bf2d.chunk.css": "/bishoprobertsontv-app/static/css/7080.0953bf2d.chunk.css",
     "static/js/7080.3f0a6dc6.chunk.js": "/bishoprobertsontv-app/static/js/7080.3f0a6dc6.chunk.js",
     "static/css/4927.af34c217.chunk.css": "/bishoprobertsontv-app/static/css/4927.af34c217.chunk.css",
     "static/js/4927.e2a216ac.chunk.js": "/bishoprobertsontv-app/static/js/4927.e2a216ac.chunk.js",
@@ -121,7 +121,7 @@
     "static/media/brtv-home-banner.png": "/bishoprobertsontv-app/static/media/brtv-home-banner.bf32eff841d05703d98b.png",
     "index.html": "/bishoprobertsontv-app/index.html",
     "main.37e277b0.css.map": "/bishoprobertsontv-app/static/css/main.37e277b0.css.map",
-    "main.390b6855.js.map": "/bishoprobertsontv-app/static/js/main.390b6855.js.map",
+    "main.d4e19431.js.map": "/bishoprobertsontv-app/static/js/main.d4e19431.js.map",
     "6684.c9fe4cfc.chunk.css.map": "/bishoprobertsontv-app/static/css/6684.c9fe4cfc.chunk.css.map",
     "6684.3981540e.chunk.js.map": "/bishoprobertsontv-app/static/js/6684.3981540e.chunk.js.map",
     "9929.b44955bf.chunk.css.map": "/bishoprobertsontv-app/static/css/9929.b44955bf.chunk.css.map",
@@ -188,10 +188,10 @@
     "5015.d92afec2.chunk.js.map": "/bishoprobertsontv-app/static/js/5015.d92afec2.chunk.js.map",
     "7854.b87e397e.chunk.css.map": "/bishoprobertsontv-app/static/css/7854.b87e397e.chunk.css.map",
     "7854.c3f10734.chunk.js.map": "/bishoprobertsontv-app/static/js/7854.c3f10734.chunk.js.map",
-    "8201.88e2194f.chunk.css.map": "/bishoprobertsontv-app/static/css/8201.88e2194f.chunk.css.map",
+    "8201.286607d7.chunk.css.map": "/bishoprobertsontv-app/static/css/8201.286607d7.chunk.css.map",
     "8201.139ed016.chunk.js.map": "/bishoprobertsontv-app/static/js/8201.139ed016.chunk.js.map",
     "1605.49fbbf72.chunk.js.map": "/bishoprobertsontv-app/static/js/1605.49fbbf72.chunk.js.map",
-    "7080.e60430bb.chunk.css.map": "/bishoprobertsontv-app/static/css/7080.e60430bb.chunk.css.map",
+    "7080.0953bf2d.chunk.css.map": "/bishoprobertsontv-app/static/css/7080.0953bf2d.chunk.css.map",
     "7080.3f0a6dc6.chunk.js.map": "/bishoprobertsontv-app/static/js/7080.3f0a6dc6.chunk.js.map",
     "4927.af34c217.chunk.css.map": "/bishoprobertsontv-app/static/css/4927.af34c217.chunk.css.map",
     "4927.e2a216ac.chunk.js.map": "/bishoprobertsontv-app/static/js/4927.e2a216ac.chunk.js.map",
@@ -236,6 +236,6 @@
   },
   "entrypoints": [
     "static/css/main.37e277b0.css",
-    "static/js/main.390b6855.js"
+    "static/js/main.d4e19431.js"
   ]
 }
