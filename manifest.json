@@ -1,23 +1,20 @@
 {
+  "id": "./",
+  "name": "BishopRobertson.TV",
   "short_name": "BRTV",
-  "name": "Bishop Robertson TV App",
-  "description": "Bishop Robertson TV Admin & Streaming Platform",
-  "icons": [
-    {
-      "src": "bishop-robertson-tv-icon-192.png",
-      "type": "image/png",
-      "sizes": "192x192",
-      "purpose": "any"
-    },
-    {
-      "src": "bishop-robertson-tv-icon-512.png",
-      "type": "image/png",
-      "sizes": "512x512",
-      "purpose": "any"
-    }
-  ],
-  "start_url": ".",
+  "description": "Watch sermons, live services and teachings from Bishop Daniel Robertson, Jr.",
+  "lang": "en",
+  "start_url": "./?source=app",
+  "scope": "./",
   "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#000000"
+  "orientation": "any",
+  "theme_color": "#030104",
+  "background_color": "#030104",
+  "categories": ["entertainment", "lifestyle", "education"],
+  "icons": [
+    { "src": "pwa-icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "any" },
+    { "src": "pwa-icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any" },
+    { "src": "pwa-maskable-192.png", "type": "image/png", "sizes": "192x192", "purpose": "maskable" },
+    { "src": "pwa-maskable-512.png", "type": "image/png", "sizes": "512x512", "purpose": "maskable" }
+  ]
 }
