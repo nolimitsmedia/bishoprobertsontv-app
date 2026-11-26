@@ -1,0 +1,108 @@
+{
+  "_about": "BishopRobertson.TV — this site’s own default wording (Phase 2C). Used only where the page editor has no saved value.",
+  "home": {
+    "home_hero": {
+      "kicker": "Apostolic Teaching · Breakthrough Living",
+      "title": "Experience the Message Without Limits",
+      "sub": "Stream life-changing revelation and prophetic teaching directly from Bishop Robertson.",
+      "cta_text": "Start Watching",
+      "cta_href": "/catalog"
+    },
+    "home_join": {
+      "eyebrow": "The Connection",
+      "title": "DRM",
+      "sub": "\"You become who you connect to!\" — DRM",
+      "cta_text": "Join Now",
+      "cta_href": "/signup"
+    },
+    "home_cta": {
+      "title": "Go Deeper Into The Word",
+      "sub": "Stream powerful teachings anytime, anywhere.",
+      "cta_text": "Browse Catalog",
+      "cta_href": "/catalog"
+    },
+    "home_about": {
+      "name": "Bishop Robertson",
+      "text": "A leader, pioneer, and prophetic voice for over five decades. Bishop Robertson continues to deliver revelation and impartation that transforms lives across the world. His ministry reaches believers in every nation through live broadcasts, on-demand teaching, and a global community of faith."
+    }
+  },
+  "header_items": [
+    {
+      "id": "home",
+      "label": "Home",
+      "href": "/",
+      "parentId": null,
+      "visible": true
+    },
+    {
+      "id": "about",
+      "label": "About Bishop",
+      "href": "/about",
+      "parentId": null,
+      "visible": true
+    },
+    {
+      "id": "bio",
+      "label": "Bio",
+      "href": "/about",
+      "parentId": "about",
+      "visible": true
+    },
+    {
+      "id": "pastoral",
+      "label": "Pastoral Leadership",
+      "href": "/pastoral-leadership",
+      "parentId": "about",
+      "visible": true
+    },
+    {
+      "id": "watch",
+      "label": "Watch",
+      "href": "/catalog",
+      "parentId": null,
+      "visible": true
+    },
+    {
+      "id": "live",
+      "label": "Live",
+      "href": "/live-streaming",
+      "parentId": null,
+      "visible": true
+    },
+    {
+      "id": "community",
+      "label": "Community",
+      "href": "/community",
+      "parentId": null,
+      "visible": false
+    },
+    {
+      "id": "partner",
+      "label": "Become a Partner",
+      "href": "/partnership",
+      "parentId": null,
+      "visible": true
+    },
+    {
+      "id": "store",
+      "label": "Store",
+      "href": "https://bishoprobertson.tv/store/",
+      "parentId": null,
+      "visible": true
+    },
+    {
+      "id": "give",
+      "label": "Give",
+      "href": "https://secure.myvanco.com/L-YRQM",
+      "parentId": null,
+      "visible": true
+    },
+    {
+      "id": "contact",
+      "label": "Contact",
+      "href": "/contact",
+      "parentId": null,
+      "visible": true
+    }
+  ]
+}
