@@ -23,6 +23,7 @@ export default function Markdown({ children }) {
         img: (props) => (
           <img
             {...props}
+            alt={props.alt || ""}
             loading="lazy"
             style={{ maxWidth: "100%", height: "auto", display: "block" }}
           />

@@ -1,6 +1,7 @@
 // src/pages/admin/WebsiteEditor.js
 import React, { useEffect, useMemo, useState } from "react";
 import api from "../../api";
+import { SITE } from "../../config/site";
 
 /* ----------------------------------------------------------------------------
  * Defaults (kept in sync with server's defaultSettings)
@@ -12,7 +13,7 @@ const DEFAULTS = {
     custom_theme: false,
     logo_url: null,
     favicon_url: null,
-    name: "BishopTV",
+    name: SITE.name,
   },
   navigation: {
     menu: [
@@ -186,7 +187,7 @@ export default function WebsiteEditor() {
     }
     if (q) {
       list = list.filter((v) =>
-        (v.title || v.name || "").toLowerCase().includes(q)
+        (v.title || v.name || "").toLowerCase().includes(q),
       );
     }
     return list;
@@ -199,7 +200,7 @@ export default function WebsiteEditor() {
       gridTemplateColumns: panelOpen ? "minmax(720px,1fr) 420px" : "1fr",
       transition: "grid-template-columns .18s ease",
     }),
-    [panelOpen]
+    [panelOpen],
   );
 
   // Click handler: Featured Category box -> open editor & go to Catalog tab
@@ -249,6 +250,7 @@ export default function WebsiteEditor() {
 
           {previewTab === "Home" ? (
             <PreviewHome
+              siteName={settings.branding.name || "Your ministry"}
               theme={theme}
               brandColor={settings.branding.brand_color}
               // real data
@@ -580,6 +582,7 @@ function PreviewTopNav({ siteName, active, onTab, editOpen, onEditToggle }) {
 }
 
 function PreviewHome({
+  siteName = "Your ministry",
   theme,
   brandColor,
   categories,
@@ -688,12 +691,9 @@ function PreviewHome({
 
       <div style={{ textAlign: "center", marginTop: 16 }}>
         <span className="vd-small vd-muted">
-          © 2025 <strong>Robin's membership</strong> · Terms · Privacy · FAQ ·
-          Buy gift card · Claim gift card
+          © {new Date().getFullYear()} <strong>{siteName}</strong> · Terms ·
+          Privacy · FAQ · Buy gift card · Claim gift card
         </span>
-        <div className="vd-small vd-muted" style={{ marginTop: 4 }}>
-          ⚡ Powered by Uscreen (preview)
-        </div>
       </div>
     </div>
   );

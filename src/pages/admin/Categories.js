@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import api from "../../api";
 import Sidebar from "../../components/Sidebar";
+import { confirmDialog } from "../../components/ui/Dialogs";
 
 export default function Categories() {
   const [categories, setCategories] = useState([]);
@@ -44,7 +45,7 @@ export default function Categories() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Are you sure?")) return;
+    if (!(await confirmDialog("Are you sure?"))) return;
     try {
       await api.delete(`/categories/${id}`);
       setMessage("Category deleted.");

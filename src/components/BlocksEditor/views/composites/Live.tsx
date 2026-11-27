@@ -2,6 +2,7 @@
 import React, { useMemo } from "react";
 import type { FC } from "react";
 import renderHtml from "../../core/html"; // <-- uses your updated renderHtml
+import sanitizeHtml from "../../../../utils/sanitizeHtml";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
@@ -71,7 +72,7 @@ const Live: FC<Props> = (props) => {
       <div
         className={className}
         // IMPORTANT: do not sanitize styles here or the backgroundImage will be removed
-        dangerouslySetInnerHTML={{ __html: html }}
+        dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }}
       />
     );
   }

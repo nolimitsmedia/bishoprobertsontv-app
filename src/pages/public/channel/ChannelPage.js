@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useOutletContext, useParams, useNavigate } from "react-router-dom";
 import api from "../../../api";
 import { renderHtml } from "../../../components/BlocksEditor/core/html";
+import sanitizeHtml from "../../../utils/sanitizeHtml";
 
 /** Map any of the shapes we might store to { blocks: [...] } */
 function normalizeModel(raw) {
@@ -64,7 +65,7 @@ export default function ChannelPage() {
     const bySlug = pages.find(
       (p) =>
         (p.slug || p.page_slug || "").toLowerCase() ===
-        String(pageSlug).toLowerCase()
+        String(pageSlug).toLowerCase(),
     );
     if (bySlug) return bySlug;
 
@@ -135,7 +136,7 @@ export default function ChannelPage() {
     return (
       <main
         style={{ padding: "18px 16px 40px" }}
-        dangerouslySetInnerHTML={{ __html: page.published_html }}
+        dangerouslySetInnerHTML={{ __html: sanitizeHtml(page.published_html) }}
       />
     );
   }
@@ -146,7 +147,7 @@ export default function ChannelPage() {
     return (
       <main
         style={{ padding: "18px 16px 40px" }}
-        dangerouslySetInnerHTML={{ __html: builderHtml }}
+        dangerouslySetInnerHTML={{ __html: sanitizeHtml(builderHtml) }}
       />
     );
   }
@@ -156,7 +157,7 @@ export default function ChannelPage() {
     page.content_published ||
       page.content_draft ||
       page.blocks ||
-      page.meta?.blocks
+      page.meta?.blocks,
   );
 
   const html = renderHtml(model.blocks);
@@ -164,7 +165,7 @@ export default function ChannelPage() {
   return (
     <main
       style={{ padding: "18px 16px 40px" }}
-      dangerouslySetInnerHTML={{ __html: html }}
+      dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }}
     />
   );
 }

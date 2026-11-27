@@ -94,7 +94,7 @@ function buildAnnualSavingsMap(plans) {
     if (p.interval === "year") byTier.get(tier).y = p;
   }
   const out = new Map();
-  for (const [tier, pair] of byTier.entries()) {
+  for (const [, pair] of byTier.entries()) {
     if (pair.m && pair.y) {
       const mTotal = (pair.m.price_cents || 0) * 12;
       const y = pair.y.price_cents || 0;
@@ -162,11 +162,11 @@ export default function Subscribe() {
 
   const hasMonthly = useMemo(
     () => plans.some((p) => p.interval === "month"),
-    [plans]
+    [plans],
   );
   const hasYearly = useMemo(
     () => plans.some((p) => p.interval === "year"),
-    [plans]
+    [plans],
   );
 
   const filtered = useMemo(
@@ -174,7 +174,7 @@ export default function Subscribe() {
       plans
         .filter((p) => p.interval === billing)
         .sort((a, b) => (a.price_cents || 0) - (b.price_cents || 0)),
-    [plans, billing]
+    [plans, billing],
   );
 
   const savingsMap = useMemo(() => buildAnnualSavingsMap(plans), [plans]);
@@ -289,9 +289,9 @@ export default function Subscribe() {
             const isActive = currentPlanId
               ? String(currentPlanId) === String(id)
               : legacyPlan
-              ? (legacyPlan === "yearly" && p.interval === "year") ||
-                (legacyPlan === "monthly" && p.interval === "month")
-              : false;
+                ? (legacyPlan === "yearly" && p.interval === "year") ||
+                  (legacyPlan === "monthly" && p.interval === "month")
+                : false;
 
             const isPopular = popularId && String(popularId) === String(id);
             const features = p.features || {};

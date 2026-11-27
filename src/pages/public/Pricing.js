@@ -73,7 +73,7 @@ const BRAND = {
     color: "#6d6dff",
     icon: "✺",
     blurb:
-      "Get the most from Bishop with a custom plan tailored to your needs.",
+      "Get the most from Ministry TV with a custom plan tailored to your needs.",
   },
 };
 
@@ -267,7 +267,7 @@ export default function Pricing() {
               interval === "annual" ||
               interval === "yearly"
               ? Number(cents || 0) / 12
-              : cents
+              : cents,
           );
           const yearly = monthly; // no annual toggle UI anymore
 
@@ -276,11 +276,11 @@ export default function Pricing() {
 
           const featuresCore = parseArrayMaybe(
             row.features_core,
-            FALLBACK_FEATURES[bucket].core
+            FALLBACK_FEATURES[bucket].core,
           );
           const featuresAccess = parseArrayMaybe(
             row.features_access,
-            FALLBACK_FEATURES[bucket].access
+            FALLBACK_FEATURES[bucket].access,
           );
           const blurb = (row.description || "").trim() || BRAND[bucket].blurb;
 
@@ -337,8 +337,8 @@ export default function Pricing() {
                 b === "starter"
                   ? "Starter Plan"
                   : b === "pro"
-                  ? "Pro Plan"
-                  : "Enterprise Plan",
+                    ? "Pro Plan"
+                    : "Enterprise Plan",
               color: BRAND[b].color,
               icon: BRAND[b].icon,
               blurb: BRAND[b].blurb,
@@ -370,8 +370,8 @@ export default function Pricing() {
               b === "starter"
                 ? "Starter Plan"
                 : b === "pro"
-                ? "Pro Plan"
-                : "Enterprise Plan",
+                  ? "Pro Plan"
+                  : "Enterprise Plan",
             color: BRAND[b].color,
             icon: BRAND[b].icon,
             blurb: BRAND[b].blurb,
@@ -379,7 +379,7 @@ export default function Pricing() {
             featuresAccess: FALLBACK_FEATURES[b].access,
             ctaText: "Subscribe Now",
             ctaHrefBuilder: (c) => `/signup?plan_card=${b}&cycle=${c}`,
-          }))
+          })),
         );
         // Also set placeholder pricing with Enterprise at $500
         setPricing({
@@ -469,7 +469,9 @@ export default function Pricing() {
 
                 <div className="divider" />
 
-                <div className="group-title">Access to Bishop Platform</div>
+                <div className="group-title">
+                  Access to the Ministry TV platform
+                </div>
                 <ul>
                   {p.featuresAccess.map((f, i) => (
                     <li key={i}>

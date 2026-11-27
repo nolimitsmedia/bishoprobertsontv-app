@@ -1,4 +1,5 @@
 import React from "react";
+import sanitizeHtml from "../../../../utils/sanitizeHtml.js";
 
 type AnyNode = { type: string; html?: string; style?: any };
 
@@ -12,6 +13,9 @@ export default function Text({ node }: { node: AnyNode }) {
     borderRadius: s.radius ? Number(s.radius) : undefined,
   };
   return (
-    <div style={style} dangerouslySetInnerHTML={{ __html: node.html ?? "" }} />
+    <div
+      style={style}
+      dangerouslySetInnerHTML={{ __html: sanitizeHtml(node.html ?? "") }}
+    />
   );
 }

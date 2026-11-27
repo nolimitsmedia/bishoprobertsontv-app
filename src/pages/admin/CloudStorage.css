@@ -1,0 +1,306 @@
+/* Cloud Storage page — uses the admin theme colours */
+.cs-page {
+  display: grid;
+  gap: 18px;
+  max-width: 1200px;
+}
+.cs-head h1 {
+  margin: 0 0 4px;
+  font-size: 26px;
+  font-weight: 900;
+  color: #fff;
+}
+.cs-head p {
+  margin: 0;
+  color: #9aa2b6;
+}
+.cs-card {
+  padding: 18px;
+  border-radius: 16px;
+  background: #131722;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: grid;
+  gap: 12px;
+}
+.cs-cardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.cs-cardHead h2,
+.cs-cardHead h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: #fff;
+}
+.cs-hint {
+  margin: 0;
+  color: #9aa2b6;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.cs-sub {
+  display: block;
+  color: #9aa2b6;
+  font-size: 12.5px;
+}
+.cs-err {
+  display: block;
+  color: #fca5a5;
+  font-size: 12.5px;
+  margin-top: 2px;
+}
+.cs-grid2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.cs-grid3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+.cs-field {
+  display: grid;
+  gap: 6px;
+  color: #c6cbd8;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.cs-field input,
+.cs-field select,
+.cs-input {
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: #0b0d14;
+  color: #e8eaf2;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  min-width: 0;
+}
+.cs-input {
+  flex: 1;
+}
+.cs-field input:focus-visible,
+.cs-field select:focus-visible,
+.cs-input:focus-visible {
+  outline: none;
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.3);
+}
+.cs-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.cs-btn {
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 0;
+  background: #8b5cf6;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.cs-btn:hover:not(:disabled) {
+  background: #7c4ded;
+}
+.cs-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.cs-btn--ghost {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+}
+.cs-btn--ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+.cs-btn--danger {
+  background: rgba(248, 113, 113, 0.14);
+  color: #fca5a5;
+}
+.cs-btn:focus-visible,
+.cs-provider:focus-visible {
+  outline: 2px solid #c4b5fd;
+  outline-offset: 2px;
+}
+.cs-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 800;
+  white-space: nowrap;
+  margin-left: 6px;
+}
+.cs-pill.is-on {
+  background: rgba(52, 211, 153, 0.14);
+  color: #6ee7b7;
+}
+.cs-pill.is-off {
+  background: rgba(255, 255, 255, 0.08);
+  color: #9aa2b6;
+}
+.cs-pill.is-err {
+  background: rgba(248, 113, 113, 0.14);
+  color: #fca5a5;
+}
+.cs-pill.is-wait {
+  background: rgba(139, 92, 246, 0.18);
+  color: #c4b5fd;
+}
+.cs-conns {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.cs-conns li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #e8eaf2;
+}
+.cs-providers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px;
+}
+.cs-provider {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: #e8eaf2;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.cs-provider:hover:not(:disabled) {
+  border-color: rgba(167, 139, 250, 0.6);
+  background: rgba(139, 92, 246, 0.1);
+}
+.cs-provider:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.cs-tableWrap {
+  overflow-x: auto;
+}
+.cs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  color: #e8eaf2;
+}
+.cs-table th {
+  text-align: left;
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9aa2b6;
+  padding: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: transparent;
+}
+.cs-table td {
+  padding: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  vertical-align: top;
+}
+.cs-table a {
+  color: #c4b5fd;
+}
+.cs-file {
+  font-weight: 700;
+}
+.cs-path {
+  display: block;
+  color: #9aa2b6;
+  font-size: 12px;
+}
+.cs-empty {
+  color: #9aa2b6;
+  text-align: center;
+  padding: 18px;
+}
+.cs-importBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.cs-toast {
+  position: sticky;
+  top: 8px;
+  z-index: 5;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 13.5px;
+}
+.cs-toast.is-success {
+  background: rgba(52, 211, 153, 0.16);
+  color: #a7f3d0;
+  border: 1px solid rgba(52, 211, 153, 0.4);
+}
+.cs-toast.is-error {
+  background: rgba(248, 113, 113, 0.16);
+  color: #fecaca;
+  border: 1px solid rgba(248, 113, 113, 0.4);
+}
+.cs-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+@media (max-width: 760px) {
+  .cs-conns li {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* buttons keep their size inside forms (an older global form style stretched them) */
+.cs-page .cs-row {
+  justify-content: flex-start;
+}
+.cs-page .cs-row .cs-btn,
+.cs-page .cs-importBar .cs-btn {
+  width: auto !important;
+  flex: 0 0 auto !important;
+  margin: 0 !important;
+}

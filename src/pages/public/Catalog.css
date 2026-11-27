@@ -418,3 +418,37 @@
     grid-template-columns: repeat(1, 1fr);
   }
 }
+
+/* Thumbnails: soft animated placeholder until the image arrives, then fade in */
+.nf-thumb {
+  background: linear-gradient(100deg, #15151d 30%, #23233a 50%, #15151d 70%);
+  background-size: 220% 100%;
+  animation: nf-shimmer 1.4s ease-in-out infinite;
+}
+.nf-thumb .nf-thumb-img {
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+.nf-thumb .nf-thumb-img.is-loaded,
+.nf-thumb .nf-thumb-img--default {
+  opacity: 1;
+}
+.nf-thumb.is-loaded {
+  animation: none;
+}
+@keyframes nf-shimmer {
+  0% {
+    background-position: 120% 0;
+  }
+  100% {
+    background-position: -120% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nf-thumb {
+    animation: none;
+  }
+  .nf-thumb .nf-thumb-img {
+    transition: none;
+  }
+}

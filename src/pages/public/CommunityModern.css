@@ -1,0 +1,269 @@
+/* Community feed + Create a post — modern dark design (matches the admin/dashboard look) */
+:is(.comm-wrap, .commnew-root) {
+  --cm-panel: #131722;
+  --cm-panel2: #171c29;
+  --cm-line: rgba(255, 255, 255, 0.1);
+  --cm-line2: rgba(255, 255, 255, 0.16);
+  --cm-text: #e8eaf2;
+  --cm-muted: #9aa2b6;
+  --cm-accent: #8b5cf6;
+  --cm-accentText: #c4b5fd;
+  color: var(--cm-text);
+}
+/* cards */
+:is(.comm-wrap, .commnew-root)
+  :is(.comm-sidebar, .comm-pinned, .comm-card, .comm-formcard) {
+  background: var(--cm-panel) !important;
+  border: 1px solid var(--cm-line) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28) !important;
+}
+.comm-wrap .comm-sidebar {
+  padding: 14px !important;
+}
+.comm-wrap .comm-title,
+.commnew-root .comm-page-title {
+  font-size: 26px !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.01em;
+  color: #fff !important;
+}
+.commnew-root .comm-page-subtitle {
+  color: var(--cm-muted) !important;
+  font-size: 14px !important;
+}
+
+/* fields */
+:is(.comm-wrap, .commnew-root) :is(.comm-input, .comm-textarea, select) {
+  background: var(--cm-panel2) !important;
+  border: 1px solid var(--cm-line2) !important;
+  border-radius: 12px !important;
+  color: var(--cm-text) !important;
+  font-size: 14.5px !important;
+  font-family: inherit !important;
+}
+:is(.comm-wrap, .commnew-root) :is(.comm-input, select) {
+  min-height: 42px;
+  padding: 0 14px !important;
+}
+.commnew-root .comm-textarea {
+  padding: 12px 14px !important;
+  min-height: 160px;
+  line-height: 1.55;
+}
+:is(.comm-wrap, .commnew-root)
+  :is(.comm-input, .comm-textarea, select):focus-visible {
+  outline: none !important;
+  border-color: #a78bfa !important;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.35) !important;
+}
+:is(.comm-wrap, .commnew-root) :is(.comm-input, .comm-textarea)::placeholder {
+  color: #737b90 !important;
+  font-family: inherit !important;
+}
+.commnew-root .comm-label {
+  color: var(--cm-muted) !important;
+  font-size: 12.5px !important;
+  font-weight: 700 !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+.commnew-root .comm-hint {
+  color: #8f97ad !important;
+  font-size: 12.5px !important;
+}
+
+/* buttons */
+:is(.comm-wrap, .commnew-root) .comm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px !important;
+  border-radius: 999px !important;
+  border: 1px solid var(--cm-line2) !important;
+  background: var(--cm-panel2) !important;
+  color: var(--cm-text) !important;
+  font-weight: 700 !important;
+  font-size: 13.5px !important;
+  box-shadow: none !important;
+  cursor: pointer;
+}
+:is(.comm-wrap, .commnew-root) .comm-btn:hover {
+  border-color: #a78bfa !important;
+}
+:is(.comm-wrap, .commnew-root) .comm-btn--primary {
+  background: var(--cm-accent) !important;
+  border-color: var(--cm-accent) !important;
+  color: #fff !important;
+}
+:is(.comm-wrap, .commnew-root) .comm-btn--primary:hover {
+  filter: brightness(1.08);
+}
+:is(.comm-wrap, .commnew-root) .comm-btn--ghost {
+  background: transparent !important;
+}
+:is(.comm-wrap, .commnew-root) .comm-btn--danger {
+  background: rgba(248, 113, 113, 0.12) !important;
+  border-color: transparent !important;
+  color: #fca5a5 !important;
+}
+:is(.comm-wrap, .commnew-root) .comm-btn:focus-visible {
+  outline: 2px solid #c4b5fd !important;
+  outline-offset: 2px;
+}
+
+/* channels */
+.comm-wrap .comm-channel-list {
+  display: grid;
+  gap: 6px;
+}
+.comm-wrap .comm-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 12px !important;
+  border-radius: 10px !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  color: var(--cm-text) !important;
+  font-weight: 600 !important;
+  text-align: left;
+}
+.comm-wrap .comm-chip::before {
+  content: "#";
+  color: var(--cm-muted);
+  font-weight: 800;
+}
+.comm-wrap .comm-chip:hover {
+  background: var(--cm-panel2) !important;
+}
+.comm-wrap .comm-chip.is-active,
+.comm-wrap .comm-chip.active,
+.comm-wrap .comm-chip[aria-pressed="true"] {
+  background: linear-gradient(
+    90deg,
+    rgba(139, 92, 246, 0.28),
+    rgba(139, 92, 246, 0.06)
+  ) !important;
+  box-shadow: inset 3px 0 0 var(--cm-accent) !important;
+}
+
+/* pinned */
+.comm-wrap .comm-pinned {
+  border-style: solid !important;
+  background: linear-gradient(
+    180deg,
+    rgba(139, 92, 246, 0.08),
+    var(--cm-panel)
+  ) !important;
+}
+
+/* posts */
+.comm-wrap .comm-card {
+  overflow: hidden;
+}
+.comm-wrap .comm-card__head {
+  padding: 14px 16px !important;
+  border-bottom: 0 !important;
+}
+.comm-wrap .comm-author {
+  font-weight: 800 !important;
+  color: #fff !important;
+}
+.comm-wrap .comm-date {
+  color: var(--cm-muted) !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+}
+.comm-wrap .comm-card__media {
+  margin: 0 16px !important;
+  border-radius: 12px !important;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  background: #0b0d14;
+}
+.comm-wrap .comm-card__media img,
+.comm-wrap .comm-card__media video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  display: block;
+}
+.comm-wrap .comm-card__body {
+  padding: 12px 16px 4px !important;
+  color: #c6cbd8 !important;
+  font-size: 14.5px !important;
+  line-height: 1.6;
+}
+.comm-wrap .comm-card__title,
+.comm-wrap .comm-card__title a {
+  color: #fff !important;
+  text-decoration: none !important;
+  font-size: 17px !important;
+  font-weight: 800 !important;
+}
+.comm-wrap .comm-card__title a:hover {
+  text-decoration: underline !important;
+}
+.comm-wrap .comm-card__actions {
+  padding: 12px 16px 14px !important;
+  border-top: 1px solid var(--cm-line) !important;
+  margin-top: 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* create a post */
+.commnew-root .comm-formcard {
+  padding: 18px !important;
+}
+.commnew-root .comm-drop {
+  border: 1.5px dashed rgba(167, 139, 250, 0.45) !important;
+  border-radius: 14px !important;
+  background: rgba(139, 92, 246, 0.06) !important;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+.commnew-root .comm-drop:hover {
+  border-color: #a78bfa !important;
+  background: rgba(139, 92, 246, 0.1) !important;
+}
+.commnew-root .comm-drop-icon {
+  background: var(--cm-accent) !important;
+  color: #fff !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}
+.commnew-root .comm-drop-title {
+  color: #fff !important;
+}
+.commnew-root .comm-drop-sub {
+  color: var(--cm-muted) !important;
+}
+.commnew-root .comm-formactions {
+  border-top: 1px solid var(--cm-line) !important;
+  padding-top: 14px !important;
+}
+/* the media box has side margins, so it must not also be forced to 100% width */
+.comm-wrap .comm-card__media {
+  width: auto !important;
+  max-width: none !important;
+  display: block;
+}
+.comm-wrap .comm-card__media + * {
+  margin-top: 12px;
+}
+.comm-wrap .comm-card__title {
+  display: block;
+  padding: 0 16px;
+}
+.comm-wrap .comm-card__body .comm-card__title {
+  padding: 0;
+}

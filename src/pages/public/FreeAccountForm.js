@@ -2,7 +2,10 @@
 import React, { useMemo, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import api from "../../api";
-import "./FreeAccountForm.css";
+import AuthShell, {
+  AuthField,
+  PasswordInput,
+} from "../../components/auth/AuthShell";
 
 export default function FreeAccountForm() {
   const nav = useNavigate();
@@ -54,18 +57,6 @@ export default function FreeAccountForm() {
     if (/[^A-Za-z0-9]/.test(p)) score++;
     return Math.min(score, 5);
   }, [form.password]);
-
-  const canSubmit = useMemo(() => {
-    return (
-      validators.name &&
-      validators.email &&
-      validators.phone &&
-      validators.password &&
-      validators.confirm &&
-      validators.agree &&
-      !loading
-    );
-  }, [validators, loading]);
 
   function markTouched(name) {
     setTouched((t) => ({ ...t, [name]: true }));
@@ -164,203 +155,184 @@ export default function FreeAccountForm() {
     }
   }
 
+  // strength: 0 none, 1 weak, 2 fair, 3 good, 4 strong
+  const level = !form.password
+    ? 0
+    : passwordScore <= 1
+      ? 1
+      : passwordScore === 2
+        ? 2
+        : passwordScore <= 4
+          ? 3
+          : 4;
+  const levelLabel = ["", "Weak", "Fair", "Good", "Strong"][level];
+
   return (
-    <div className="free-account-page">
-      <div className="free-account-shell">
-        <div className="free-account-header">
-          <h1 className="page-title">Register</h1>
-          <p className="page-subtitle">
-            Create your free account to start watching on{" "}
-            <span>BishopRobertson.TV</span>.
-          </p>
+    <AuthShell
+      headline="Create your free account"
+      points={[
+        "Free to join — no card needed",
+        "Watch messages and join the live services",
+        "Save favourites to My List and pick up where you left off",
+      ]}
+      title="Register"
+      subtitle="It takes less than a minute."
+      wide
+      footer={
+        <>
+          Already have an account?{" "}
+          <Link to="/login" className="as-link">
+            Sign in
+          </Link>
+        </>
+      }
+    >
+      {err ? (
+        <div className="as-alert" role="alert">
+          {err}
         </div>
-
-        <form className="card form-grid" onSubmit={onSubmit} noValidate>
-          {err && (
-            <div className="alert error" role="alert" aria-live="polite">
-              {err}
-            </div>
-          )}
-
-          <div className="field">
-            <label htmlFor="fa-name">Full name</label>
+      ) : null}
+      <form className="as-form" onSubmit={onSubmit} noValidate>
+        <div className="as-grid2">
+          <AuthField label="Full name" error={fieldError("name")}>
             <input
-              id="fa-name"
+              className="as-input"
               name="name"
               value={form.name}
               onChange={upd}
               onBlur={() => markTouched("name")}
-              placeholder="e.g., Jordan Smith"
+              placeholder="e.g. Jordan Smith"
               autoComplete="name"
               required
             />
-            {fieldError("name") && (
-              <div className="field-err">{fieldError("name")}</div>
-            )}
-          </div>
-
-          <div className="field">
-            <label htmlFor="fa-email">Email</label>
+          </AuthField>
+          <AuthField label="Email" error={fieldError("email")}>
             <input
-              id="fa-email"
-              name="email"
+              className="as-input"
               type="email"
+              name="email"
               value={form.email}
               onChange={upd}
               onBlur={() => markTouched("email")}
               placeholder="you@example.com"
               autoComplete="email"
+              inputMode="email"
               required
             />
-            {fieldError("email") && (
-              <div className="field-err">{fieldError("email")}</div>
-            )}
-          </div>
-
-          <div className="field">
-            <label htmlFor="fa-phone">Contact number</label>
+          </AuthField>
+          <AuthField label="Contact number" error={fieldError("phone")}>
             <input
-              id="fa-phone"
-              name="phone"
+              className="as-input"
               type="tel"
+              name="phone"
               value={form.phone}
               onChange={upd}
               onBlur={() => markTouched("phone")}
+              placeholder="e.g. +1 555 123 4567"
               autoComplete="tel"
-              placeholder="e.g., +1 555 123 4567"
+              inputMode="tel"
               required
             />
-            {fieldError("phone") && (
-              <div className="field-err">{fieldError("phone")}</div>
-            )}
-          </div>
-
-          <div className="field">
-            <label htmlFor="fa-org">Organization (optional)</label>
+          </AuthField>
+          <AuthField label="Organization" optional>
             <input
-              id="fa-org"
+              className="as-input"
               name="org"
               value={form.org}
               onChange={upd}
-              onBlur={() => markTouched("org")}
-              placeholder="Church, business, or team"
+              placeholder="Church, business or team"
               autoComplete="organization"
             />
-          </div>
-
-          <div className="field">
-            <label htmlFor="fa-pass">Password</label>
-            <div className="input-row">
-              <input
-                id="fa-pass"
-                name="password"
-                type={showPw ? "text" : "password"}
-                value={form.password}
-                onChange={upd}
-                onBlur={() => markTouched("password")}
-                autoComplete="new-password"
-                required
-                minLength={6}
-                placeholder="Create a password"
-              />
-              <button
-                type="button"
-                className="ghost-btn"
-                onClick={() => setShowPw((s) => !s)}
-                aria-label={showPw ? "Hide password" : "Show password"}
-              >
-                {showPw ? "Hide" : "Show"}
-              </button>
+          </AuthField>
+          <AuthField
+            label="Password"
+            error={fieldError("password")}
+            hint="At least 6 characters."
+          >
+            <PasswordInput
+              show={showPw}
+              onToggle={() => setShowPw((v) => !v)}
+              name="password"
+              value={form.password}
+              onChange={upd}
+              onBlur={() => markTouched("password")}
+              placeholder="Create a password"
+              autoComplete="new-password"
+              required
+            />
+          </AuthField>
+          <AuthField label="Confirm password" error={fieldError("confirm")}>
+            <PasswordInput
+              show={showConfirm}
+              onToggle={() => setShowConfirm((v) => !v)}
+              name="confirm"
+              value={form.confirm}
+              onChange={upd}
+              onBlur={() => markTouched("confirm")}
+              placeholder="Type it again"
+              autoComplete="new-password"
+              required
+            />
+          </AuthField>
+        </div>
+        {form.password ? (
+          <div className="as-strength" aria-live="polite">
+            <div className="as-bars" data-level={level} aria-hidden="true">
+              <span />
+              <span />
+              <span />
+              <span />
             </div>
-
-            <div className="pw-meter" aria-hidden="true">
-              <div className={`pw-bar s${passwordScore}`} />
-            </div>
-            <div className="hint">
-              Use at least 6 characters. Stronger passwords include numbers and
-              symbols.
-            </div>
-
-            {fieldError("password") && (
-              <div className="field-err">{fieldError("password")}</div>
-            )}
+            <p className="as-hint">Password strength: {levelLabel}</p>
           </div>
-
-          <div className="field">
-            <label htmlFor="fa-confirm">Confirm password</label>
-            <div className="input-row">
-              <input
-                id="fa-confirm"
-                name="confirm"
-                type={showConfirm ? "text" : "password"}
-                value={form.confirm}
-                onChange={upd}
-                onBlur={() => markTouched("confirm")}
-                autoComplete="new-password"
-                required
-                minLength={6}
-                placeholder="Re-enter your password"
-              />
-              <button
-                type="button"
-                className="ghost-btn"
-                onClick={() => setShowConfirm((s) => !s)}
-                aria-label={
-                  showConfirm
-                    ? "Hide confirm password"
-                    : "Show confirm password"
-                }
-              >
-                {showConfirm ? "Hide" : "Show"}
-              </button>
-            </div>
-            {fieldError("confirm") && (
-              <div className="field-err">{fieldError("confirm")}</div>
-            )}
-          </div>
-
-          <div className="field checkbox">
-            <label>
-              <input
-                type="checkbox"
-                name="agree"
-                checked={form.agree}
-                onChange={upd}
-                onBlur={() => markTouched("agree")}
-              />
-              <span>
-                I agree to the{" "}
-                <Link to="/legal/terms" target="_blank" rel="noreferrer">
-                  Terms of Service
-                </Link>{" "}
-                and{" "}
-                <Link to="/legal/privacy" target="_blank" rel="noreferrer">
-                  Privacy Policy
-                </Link>
-                .
-              </span>
-            </label>
-            {fieldError("agree") && (
-              <div className="field-err">{fieldError("agree")}</div>
-            )}
-          </div>
-
-          <button className="pl-btn primary" disabled={!canSubmit}>
-            {loading ? (
-              <span className="btn-loading">
-                <span className="spinner" aria-hidden="true" />
-                Creating your account…
-              </span>
-            ) : (
-              "Create Free Account"
-            )}
-          </button>
-
-          <p className="muted small">
-            Already have an account? <Link to="/login">Log in</Link>
-          </p>
-        </form>
-      </div>
-    </div>
+        ) : null}
+        <div className="as-field">
+          <label className="as-check">
+            <input
+              type="checkbox"
+              name="agree"
+              checked={form.agree}
+              onChange={upd}
+              onBlur={() => markTouched("agree")}
+              aria-invalid={fieldError("agree") ? true : undefined}
+              aria-describedby={
+                fieldError("agree") ? "fa-agree-err" : undefined
+              }
+            />
+            <span>
+              I agree to the{" "}
+              <Link to="/terms" target="_blank" rel="noreferrer">
+                Terms and Conditions
+              </Link>{" "}
+              and the{" "}
+              <Link to="/privacy" target="_blank" rel="noreferrer">
+                Privacy Policy
+              </Link>
+              .
+            </span>
+          </label>
+          {fieldError("agree") ? (
+            <p className="as-error" id="fa-agree-err">
+              {fieldError("agree")}
+            </p>
+          ) : null}
+        </div>
+        <button
+          type="submit"
+          className="as-btn"
+          disabled={loading}
+          aria-busy={loading ? "true" : "false"}
+        >
+          {loading ? (
+            <>
+              <span className="as-spinner" aria-hidden="true" />
+              Creating your account…
+            </>
+          ) : (
+            "Create free account"
+          )}
+        </button>
+      </form>
+    </AuthShell>
   );
 }

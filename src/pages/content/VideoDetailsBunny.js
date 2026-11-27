@@ -6,6 +6,7 @@ import "./VideoDetails.css";
 
 /* 🆕 Bunny Stream direct upload helper */
 import { uploadAndSaveToVideoRecord } from "../../lib/bunnyStreamUpload";
+import { confirmDialog } from "../../components/ui/Dialogs";
 
 /* -------------------- utils -------------------- */
 function fmtDate(d) {
@@ -683,7 +684,8 @@ export default function VideoDetails() {
   }
 
   async function doDelete() {
-    if (!window.confirm("Delete this video? This cannot be undone.")) return;
+    if (!(await confirmDialog("Delete this video? This cannot be undone.")))
+      return;
     try {
       setDeleting(true);
       await api.delete(`/videos/${id}`);

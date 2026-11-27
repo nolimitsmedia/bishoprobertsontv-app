@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import SortableList, { SortableItem } from "./views/SortableList";
 import api from "../../api";
+import sanitizeHtml from "../../utils/sanitizeHtml";
 
 /* -------------------------------- Utils -------------------------------- */
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -436,14 +437,14 @@ export default function BlocksEditor(props) {
   // Initialize from props
   const initial = useMemo(
     () => deepClone(blocksProp ?? value ?? []),
-    [blocksProp, value]
+    [blocksProp, value],
   );
   const [blocks, setBlocks] = useState(initial);
   const [selectedId, setSelectedId] = useState(null);
 
   // Sync down when parent changes list reference
   const lastSigRef = useRef(
-    JSON.stringify({ b: blocksProp ?? null, v: value ?? null })
+    JSON.stringify({ b: blocksProp ?? null, v: value ?? null }),
   );
   useEffect(() => {
     const sig = JSON.stringify({ b: blocksProp ?? null, v: value ?? null });
@@ -496,7 +497,7 @@ export default function BlocksEditor(props) {
       { type: "embed", title: "Embed (HTML)" },
       { type: "hero", title: "Hero" },
     ],
-    []
+    [],
   );
 
   const addToRoot = useCallback((type) => {
@@ -670,7 +671,7 @@ export default function BlocksEditor(props) {
                         if (!node) return prev;
                         node.children = reorderArray(
                           node.children || [],
-                          newIds
+                          newIds,
                         );
                         return next;
                       })
@@ -722,7 +723,7 @@ export default function BlocksEditor(props) {
         const colCount = Math.max(1, Number(b.props?.columns || 2));
         const gap = Number(b.props?.gap || 16);
         const cols = Array.from({ length: colCount }).map(
-          (_, i) => b.children?.[i] || []
+          (_, i) => b.children?.[i] || [],
         );
         const bg = b.props?.background || "";
         const bgImage = b.props?.backgroundImage || "";
@@ -793,7 +794,7 @@ export default function BlocksEditor(props) {
                               const curr = node.children?.[colIdx] || [];
                               node.children[colIdx] = reorderArray(
                                 curr,
-                                newIds
+                                newIds,
                               );
                               return next;
                             })
@@ -1049,7 +1050,7 @@ export default function BlocksEditor(props) {
       }
       case "embed": {
         const html = b.props?.html || "";
-        return <div dangerouslySetInnerHTML={{ __html: html }} />;
+        return <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }} />;
       }
       case "hero": {
         const p = b.props || {};
@@ -1061,8 +1062,8 @@ export default function BlocksEditor(props) {
                 p.backgroundImage ? `, url(${p.backgroundImage})` : ""
               }`
             : p.backgroundImage
-            ? `url(${p.backgroundImage})`
-            : undefined;
+              ? `url(${p.backgroundImage})`
+              : undefined;
 
         return (
           <div
@@ -1132,7 +1133,7 @@ export default function BlocksEditor(props) {
         return next;
       });
     },
-    [selectedId]
+    [selectedId],
   );
 
   /* -------------------------------- Inspector ----------------------------- */

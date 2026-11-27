@@ -2,7 +2,6 @@
 import React from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import api from "../../api";
-import SubscriptionPlanNew from "./SubscriptionPlanNew";
 
 /**
  * This file reuses the PlanEditor embedded in SubscriptionPlanNew.js.
@@ -407,7 +406,8 @@ export default function SubscriptionPlanEdit() {
           });
           p =
             (data.items || []).find(
-              (x) => String(x.id) === String(id) || String(x._id) === String(id)
+              (x) =>
+                String(x.id) === String(id) || String(x._id) === String(id),
             ) || null;
         }
         if (!p) {

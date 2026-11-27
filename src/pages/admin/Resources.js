@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import api, { uploadApi } from "../../api";
 import "./Resources.css";
+import { confirmDialog } from "../../components/ui/Dialogs";
 
 const TYPE_OPTIONS = [
   { value: "doc", label: "Doc" },
@@ -300,7 +301,7 @@ export default function Resources() {
     } catch (e) {
       setResources([]);
       setErr(
-        e?.response?.data?.message || e?.message || "Failed to load resources."
+        e?.response?.data?.message || e?.message || "Failed to load resources.",
       );
     } finally {
       setLoading(false);
@@ -406,7 +407,9 @@ export default function Resources() {
           payload.url = url;
         } catch (upErr) {
           return alert(
-            upErr?.response?.data?.message || upErr?.message || "Upload failed."
+            upErr?.response?.data?.message ||
+              upErr?.message ||
+              "Upload failed.",
           );
         } finally {
           setUploading(false);
@@ -444,7 +447,9 @@ export default function Resources() {
 
   async function onDelete() {
     if (!editing?.id) return;
-    if (!window.confirm("Delete this resource? (It will be deactivated)"))
+    if (
+      !(await confirmDialog("Delete this resource? (It will be deactivated)"))
+    )
       return;
 
     setSaving(true);
@@ -751,8 +756,8 @@ export default function Resources() {
                       form.type === "pdf"
                         ? "application/pdf"
                         : form.type === "image"
-                        ? "image/*"
-                        : undefined
+                          ? "image/*"
+                          : undefined
                     }
                   />
                   <div className="res-muted" style={{ marginTop: 6 }}>

@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import api from "../../api";
+import "../public/Login.css"; // its .auth-input field style (used to come from the Login page)
 
 function CopyBox({ label, value }) {
   return (

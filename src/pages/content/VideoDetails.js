@@ -3,7 +3,11 @@ import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
 import api from "../../api";
 import "./VideoDetails.css";
+import "./VideoDetailsModern.css";
 import PlaylistPicker from "../../components/modals/PlaylistPicker";
+import ReplaceVideoFile from "../../components/admin/ReplaceVideoFile";
+import TrimVideo from "../../components/admin/TrimVideo";
+import { confirmDialog } from "../../components/ui/Dialogs";
 
 /* -------------------- utils -------------------- */
 function absUrl(u) {
@@ -293,6 +297,12 @@ export default function VideoDetails() {
 
   const [geo, setGeo] = useState({ geo_allow: [], geo_block: [] });
 
+  // Bunny Stream videos are previewed in Bunny's player (Chrome's basic player
+  // cannot open their streaming format and stayed at 0:00).
+  const [streamPreview, setStreamPreview] = useState({
+    url: "",
+    failed: false,
+  });
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -301,6 +311,10 @@ export default function VideoDetails() {
     thumbnail_url: "",
     thumbnail_vertical_url: "",
     video_url: "",
+    preview_video_url: "",
+    preview_embed_url: "",
+    preview_bunny_video_id: "",
+    preview_duration_seconds: 0,
     visibility: "private",
     is_premium: true,
     created_at: null,
@@ -358,6 +372,30 @@ export default function VideoDetails() {
       const vd = vRes.data;
       const md = vd.metadata || {};
 
+      // Bunny Stream: preview in Bunny's player
+      const isStream =
+        String(vd.provider || "").toLowerCase() === "bunny_stream" ||
+        /mediadelivery\.net|vz-[a-z0-9-]+\.b-cdn\.net/i.test(
+          `${vd.embed_url || ""} ${vd.video_url || ""}`,
+        );
+      const failed =
+        isStream &&
+        /^(error|failed)$/i.test(String(vd.processing_status || ""));
+      let url = String(vd.embed_url || "").trim();
+      if (!url && vd.bunny_library_id && vd.bunny_video_id)
+        url = `https://iframe.mediadelivery.net/embed/${vd.bunny_library_id}/${vd.bunny_video_id}`;
+      if (isStream && url) {
+        try {
+          const u = new URL(url);
+          u.searchParams.set("autoplay", "false");
+          u.searchParams.set("preload", "false");
+          u.searchParams.set("responsive", "true");
+          url = u.toString();
+        } catch {
+          /* keep */
+        }
+      }
+      setStreamPreview({ url: isStream ? url : "", failed });
       setForm((f) => ({
         ...f,
         title: vd.title || "",
@@ -367,6 +405,10 @@ export default function VideoDetails() {
         thumbnail_url: vd.thumbnail_url || "",
         thumbnail_vertical_url: md.thumbnail_vertical_url || "",
         video_url: vd.video_url || "",
+        preview_video_url: vd.preview_video_url || "",
+        preview_embed_url: vd.preview_embed_url || "",
+        preview_bunny_video_id: vd.preview_bunny_video_id || "",
+        preview_duration_seconds: vd.preview_duration_seconds || 0,
         visibility: vd.visibility || "private",
         is_premium: vd.is_premium ?? true,
         created_at: vd.created_at || null,
@@ -452,6 +494,10 @@ export default function VideoDetails() {
       category_id: form.category_id || null,
       thumbnail_url: form.thumbnail_url || null,
       video_url: form.video_url || null,
+      preview_video_url: form.preview_video_url || null,
+      preview_embed_url: form.preview_embed_url || null,
+      preview_bunny_video_id: form.preview_bunny_video_id || null,
+      preview_duration_seconds: Number(form.preview_duration_seconds || 0),
       visibility: form.visibility,
       is_premium: !!form.is_premium,
       free_preview_seconds: effectivePreview,
@@ -561,16 +607,32 @@ export default function VideoDetails() {
   }
 
   /* ---------------- Uploads ---------------- */
-  async function uploadStorage(file) {
+  async function uploadStorage(file, kind = "videos") {
     const fd = new FormData();
     fd.append("file", file);
-    const res = await withTimeout(api.post("uploads/video", fd), 120000);
+    fd.append("kind", kind);
+
+    if (kind === "images") {
+      fd.append("category", "thumbnails");
+      fd.append("folder", "video-thumbnails");
+    }
+
+    const endpoint =
+      kind === "images"
+        ? "uploads/image?kind=images&category=thumbnails&folder=video-thumbnails"
+        : "uploads/video";
+
+    const res = await withTimeout(api.post(endpoint, fd), 120000);
     return res.data?.url;
+  }
+
+  async function uploadThumbnail(file) {
+    return uploadStorage(file, "images");
   }
 
   /* ---------------- Delete ---------------- */
   async function doDelete() {
-    if (!window.confirm("Delete this video?")) return;
+    if (!(await confirmDialog("Delete this video?"))) return;
     try {
       setDeleting(true);
       await withTimeout(api.delete(`videos/${id}`), 20000);
@@ -687,7 +749,7 @@ export default function VideoDetails() {
                 )}
 
                 <button
-                  className="btn"
+                  className="btn vd-primary"
                   onClick={primaryAction}
                   disabled={anyBusy}
                 >
@@ -847,7 +909,9 @@ export default function VideoDetails() {
                   const file = e.target.files?.[0];
                   if (!file) return;
                   try {
-                    const url = await uploadStorage(file);
+                    const url = await uploadThumbnail(file);
+                    if (!url)
+                      throw new Error("Upload did not return a thumbnail URL");
                     await api.put(`videos/${id}`, { thumbnail_url: url });
                     setForm((f) => ({ ...f, thumbnail_url: url }));
                   } catch {
@@ -900,13 +964,13 @@ export default function VideoDetails() {
             </section>
 
             {/* Danger zone */}
-            <section className="card">
+            <section className="card vd-danger">
               <h3 className="vd-h" style={{ color: "rgba(255,255,255,0.9)" }}>
                 Danger zone
               </h3>
               <div className="vd-row">
                 <button
-                  className="btn ghost"
+                  className="btn ghost vd-dangerBtn"
                   onClick={doDelete}
                   disabled={deleting || anyBusy}
                 >
@@ -923,7 +987,27 @@ export default function VideoDetails() {
               <h3 className="vd-h">Video</h3>
 
               <div className="vd-video">
-                {form.video_url ? (
+                {streamPreview.failed ? (
+                  <div
+                    className="vd-video-fallback vd-video-failed"
+                    role="note"
+                  >
+                    The Bunny Stream copy of this video failed to encode, so it
+                    cannot play. Use <strong>Replace video file</strong> below
+                    to upload the file again.
+                  </div>
+                ) : streamPreview.url ? (
+                  <div className="vd-embed">
+                    <iframe
+                      key={videoReloadKey}
+                      src={streamPreview.url}
+                      title={`Preview: ${form.title || "video"}`}
+                      loading="lazy"
+                      allow="accelerometer; gyroscope; encrypted-media; picture-in-picture; fullscreen"
+                      allowFullScreen
+                    />
+                  </div>
+                ) : form.video_url ? (
                   <video
                     key={videoReloadKey}
                     ref={videoRef}
@@ -935,6 +1019,18 @@ export default function VideoDetails() {
                   <div className="vd-video-fallback">No video uploaded</div>
                 )}
               </div>
+              <ReplaceVideoFile
+                videoId={id}
+                highlight={
+                  new URLSearchParams(location.search).get("replace") === "1"
+                }
+                onReplaced={() => loadAll({ current: true })}
+              />
+              <TrimVideo
+                videoId={id}
+                duration={form.duration_seconds}
+                onDone={() => loadAll({ current: true })}
+              />
             </section>
 
             {/* Visibility */}
@@ -1061,7 +1157,7 @@ export default function VideoDetails() {
                 </button>
               ) : (
                 <button
-                  className="btn"
+                  className="btn vd-primary"
                   onClick={primaryAction}
                   disabled={anyBusy}
                   title="Saves everything and publishes in one step"
@@ -1120,7 +1216,10 @@ export default function VideoDetails() {
                     <span className="vd-muted">sec</span>
                   </div>
 
-                  <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                  <div
+                    className="vd-presets"
+                    style={{ display: "flex", gap: 6, marginTop: 6 }}
+                  >
                     {[30, 60, 120, 300].map((sec) => (
                       <button
                         key={sec}
@@ -1134,8 +1233,67 @@ export default function VideoDetails() {
                   </div>
 
                   <div className="vd-muted vd-small" style={{ marginTop: 4 }}>
-                    Guests can watch up to this point.
+                    Guests can watch up to this point. For Bunny Stream videos,
+                    use the preview clip fields below because Bunny iframe
+                    playback cannot be stopped by the React preview timer.
                   </div>
+
+                  <div className="vd-gap" />
+                  <label className="vd-label">
+                    Bunny Stream preview embed URL
+                  </label>
+                  <input
+                    className="search"
+                    value={form.preview_embed_url || ""}
+                    onChange={(e) =>
+                      setForm({ ...form, preview_embed_url: e.target.value })
+                    }
+                    placeholder="https://iframe.mediadelivery.net/embed/libraryId/previewVideoId"
+                  />
+
+                  <div className="vd-gap" />
+                  <label className="vd-label">Preview Bunny video ID</label>
+                  <input
+                    className="search"
+                    value={form.preview_bunny_video_id || ""}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        preview_bunny_video_id: e.target.value,
+                      })
+                    }
+                    placeholder="Optional if preview embed URL is provided"
+                  />
+
+                  <div className="vd-gap" />
+                  <label className="vd-label">
+                    Preview video URL / HLS URL
+                  </label>
+                  <input
+                    className="search"
+                    value={form.preview_video_url || ""}
+                    onChange={(e) =>
+                      setForm({ ...form, preview_video_url: e.target.value })
+                    }
+                    placeholder="Optional preview .m3u8 or MP4 URL"
+                  />
+
+                  <div className="vd-gap" />
+                  <label className="vd-label">
+                    Preview clip duration seconds
+                  </label>
+                  <input
+                    className="search"
+                    type="number"
+                    min="0"
+                    value={form.preview_duration_seconds || 0}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        preview_duration_seconds: Number(e.target.value || 0),
+                      })
+                    }
+                  />
                 </>
               )}
 

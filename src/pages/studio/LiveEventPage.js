@@ -2,6 +2,8 @@
 import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import api from "../../api";
+import { confirmDialog } from "../../components/ui/Dialogs";
+import "../public/Login.css"; // its .auth-input field style (used to come from the Login page)
 
 /* ── Page-scoped CSS to match LiveCreatePage ─────────────────────────────── */
 const PAGE_CSS = `
@@ -103,7 +105,7 @@ export default function LiveEventPage() {
 
   const watchUrl = useMemo(
     () => `${window.location.origin}/watch/live/${id}`,
-    [id]
+    [id],
   );
 
   useEffect(() => {
@@ -156,8 +158,8 @@ export default function LiveEventPage() {
       const { data } = await api.post(`/live/events/${id}/end`);
       await refresh();
       if (data?.vod_video_id) {
-        setTimeout(() => {
-          if (window.confirm("VOD is created. Open the replay now?")) {
+        setTimeout(async () => {
+          if (await confirmDialog("VOD is created. Open the replay now?")) {
             window.open(`/watch/${data.vod_video_id}`, "_blank");
           }
         }, 100);
@@ -217,7 +219,7 @@ export default function LiveEventPage() {
                 onCopy={() =>
                   copyText(
                     "rtmp",
-                    ev.rtmp_ingest || "rtmp://rtmp.livepeer.studio/live"
+                    ev.rtmp_ingest || "rtmp://rtmp.livepeer.studio/live",
                   )
                 }
               />

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import sanitizeHtml from "../../../../utils/sanitizeHtml";
 
 type Item = { id: string; title?: string; html?: string };
 type AnyNode = { type: string; items?: Item[]; style?: any };
@@ -33,7 +34,9 @@ export default function Accordion({ node }: { node: AnyNode }) {
             {isOpen ? (
               <div
                 style={body}
-                dangerouslySetInnerHTML={{ __html: it.html ?? "" }}
+                dangerouslySetInnerHTML={{
+                  __html: sanitizeHtml(it.html ?? ""),
+                }}
               />
             ) : null}
           </div>

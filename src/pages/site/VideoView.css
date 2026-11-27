@@ -562,3 +562,360 @@
   display: flex;
   justify-content: flex-end;
 }
+
+/* Bunny Stream hosted player */
+.vv-bunny-player-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  overflow: hidden;
+}
+
+.vv-bunny-player {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: #000;
+}
+
+/* Add to src/pages/site/VideoView.css */
+.vv-bunny-player-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+
+.vv-bunny-player {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: #000;
+}
+
+.vv-bunny-preview-cta {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  z-index: 4;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(2, 6, 23, 0.78);
+  backdrop-filter: blur(12px);
+  color: #fff;
+  pointer-events: auto;
+}
+
+.vv-bunny-preview-cta span {
+  font-weight: 800;
+  font-size: 13px;
+  color: #fff;
+}
+
+@media (max-width: 640px) {
+  .vv-bunny-preview-cta {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* Release 2.0 Part B: Up next card */
+.vv-upnext-thumb {
+  display: block;
+  width: 100%;
+  max-width: 260px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 8px;
+  margin: 8px 0;
+}
+.vv-upnext-name {
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+/* playback error message (mobile fix) */
+.vv-playErr {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.78);
+  color: #fff;
+  text-align: center;
+  max-width: calc(100% - 24px);
+  z-index: 3;
+}
+.vv-playErr p {
+  margin: 0;
+  font-weight: 700;
+}
+/* signed-out Bunny preview ended: keep the player's shape behind the sign-in screen */
+.vv-preview-ended {
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  background: #000 center / cover no-repeat;
+  filter: brightness(0.45);
+}
+/* muted autoplay: sound button / hint (top-left of the player) */
+.vv-soundBtn {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 9px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+  font-size: 14px;
+  cursor: pointer;
+}
+.vv-soundBtn:hover {
+  background: rgba(0, 0, 0, 0.88);
+}
+.vv-soundBtn:focus-visible,
+.vv-ctaClose:focus-visible {
+  outline: 3px solid #a78bfa;
+  outline-offset: 2px;
+}
+.vv-soundHint {
+  cursor: default;
+  pointer-events: none;
+  font-weight: 700;
+}
+/* × on the "Free preview" bar */
+.vv-bunny-preview-cta .vv-ctaClose {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  margin: 0 0 0 4px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 50%;
+  background: transparent;
+  color: #fff;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.vv-bunny-preview-cta .vv-ctaClose:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ===== Watch page: title first, one clean action row, Save menu, comments ===== */
+.vv-pad .vv-h1 {
+  margin: 4px 0 4px;
+  font-size: clamp(20px, 2.2vw, 26px);
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+.vv-pad .vv-byline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: #9aa2b6;
+  font-size: 13.5px;
+  margin-bottom: 14px;
+}
+.vv-actionsRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+}
+.vv-actionsRow .vv-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f1f2f7;
+  font-weight: 700;
+  font-size: 14px;
+}
+.vv-actionsRow .vv-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.vv-actionsRow .vv-btn:focus-visible {
+  outline: 2px solid #c4b5fd;
+  outline-offset: 2px;
+}
+.vv-actionsRow .vv-iconBtn {
+  width: 38px;
+  padding: 0;
+  justify-content: center;
+  font-size: 16px;
+}
+.vv-actionsRow .vv-saveBtn.is-open {
+  background: rgba(139, 92, 246, 0.22);
+  border-color: rgba(167, 139, 250, 0.6);
+}
+.vv-actionsRow .vv-resume {
+  background: #8b5cf6;
+  border-color: #8b5cf6;
+  color: #fff;
+}
+.vv-actionsRow .vv-resume:hover {
+  background: #7c4ded;
+}
+
+.vv-popmenu.vv-saveMenu {
+  min-width: 260px;
+  padding: 8px;
+  border-radius: 14px;
+  background: #131722;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+  display: grid;
+  gap: 2px;
+}
+.vv-saveSection {
+  padding: 8px 8px 4px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8f97ad;
+}
+.vv-saveMenu .vv-poprow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #e8eaf2;
+}
+.vv-saveMenu .vv-poprow:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.vv-saveMenu .vv-poprow input {
+  accent-color: #8b5cf6;
+  width: 16px;
+  height: 16px;
+}
+.vv-saveMenu .vw-myList,
+.vv-saveMenu > button.vw-listBtn,
+.vv-saveMenu > button[aria-pressed] {
+  width: 100%;
+  justify-content: flex-start;
+  border-radius: 9px !important;
+  background: transparent !important;
+  border: 0 !important;
+  padding: 8px !important;
+  min-height: 0 !important;
+  color: #e8eaf2 !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+}
+.vv-saveMenu > button[aria-pressed]:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+.vv-saveEmpty {
+  padding: 4px 8px;
+  font-size: 13px;
+}
+.vv-saveManage {
+  margin-top: 4px;
+  padding: 9px 8px;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  color: #c4b5fd;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 0 0 9px 9px;
+}
+.vv-saveManage:hover {
+  color: #fff;
+}
+
+.vv-comments {
+  display: grid;
+  gap: 10px;
+}
+.vv-commentsTitle {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: #fff;
+}
+.vv-comments textarea {
+  background: #131722 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 12px !important;
+  padding: 12px 14px !important;
+  color: #e8eaf2 !important;
+  font: inherit !important;
+  font-size: 14.5px !important;
+  resize: vertical;
+  min-height: 84px;
+}
+.vv-comments textarea:focus-visible {
+  outline: none;
+  border-color: #a78bfa !important;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.35);
+}
+.vv-commentActions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.vv-comments .vv-postBtn {
+  min-height: 36px;
+  padding: 0 18px;
+  border-radius: 999px;
+  background: #8b5cf6 !important;
+  border-color: #8b5cf6 !important;
+  color: #fff !important;
+  font-weight: 800;
+  width: auto !important;
+}
+.vv-comments .vv-postBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.vv-saveMenu > button.vw-listBtn.is-on {
+  color: #c4b5fd !important;
+}

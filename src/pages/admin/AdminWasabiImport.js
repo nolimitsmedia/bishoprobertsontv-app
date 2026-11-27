@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api, { uploadApi } from "../../api";
 import "./AdminWasabiImport.css";
+import "./WasabiModern.css";
 
 function fmtBytes(bytes = 0) {
   const b = Number(bytes) || 0;
@@ -19,11 +20,40 @@ function cleanKeyLabel(key = "") {
   return String(key).split("/").pop() || key;
 }
 
-// Lightweight "progress" (client-side) while importing.
-// Since the API imports server-side and returns at the end, we can show a
-// determinate bar that advances up to ~92% while waiting, then finishes on response.
 function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
+}
+
+function normalizePrefixInput(raw = "") {
+  let p = String(raw || "").trim();
+  if (!p) return "";
+
+  try {
+    if (/^https?:\/\//i.test(p)) {
+      const u = new URL(p);
+      p = (u.pathname || "").replace(/^\/+/, "");
+      if (p.includes("/")) {
+        const parts = p.split("/").filter(Boolean);
+        const last = parts[parts.length - 1] || "";
+        if (/\.[a-z0-9]{2,5}$/i.test(last)) parts.pop();
+        p = parts.join("/");
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  p = p.replace(/^\/+/, "");
+  p = p.replace(/\/{2,}/g, "/");
+  p = p.replace(/\/+$/, "");
+
+  const m = p.match(/^([^/]+)\/\1(?:\/|$)/);
+  if (m && m[1]) {
+    p = p.replace(new RegExp(`^${m[1]}/${m[1]}`), m[1]);
+    p = p.replace(/\/{2,}/g, "/").replace(/\/+$/, "");
+  }
+
+  return p;
 }
 
 export default function AdminWasabiImport() {
@@ -31,18 +61,19 @@ export default function AdminWasabiImport() {
 
   const [prefix, setPrefix] = useState("drm");
   const [q, setQ] = useState("");
+
+  // DB index pagination
+  const LIMIT = 200; // 5,000 / 200 = 25 pages, smooth
+
   const [items, setItems] = useState([]);
-  const [nextCursor, setNextCursor] = useState(null);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
   const [selected, setSelected] = useState(() => new Set());
   const [selectAllPage, setSelectAllPage] = useState(false);
-
-  // preview becomes optional/manual (to avoid timeouts)
-  const [preview, setPreview] = useState(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewErr, setPreviewErr] = useState("");
 
   // import settings
   const [visibility, setVisibility] = useState("private");
@@ -50,15 +81,33 @@ export default function AdminWasabiImport() {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
 
+  // sort
+  const [sortByDate, setSortByDate] = useState("newest"); // newest | oldest
+
+  // Imported filter/counters
+  const [importedFilter, setImportedFilter] = useState("all"); // all | imported | not_imported
+  const [importedCount, setImportedCount] = useState(0);
+  const [notImportedCount, setNotImportedCount] = useState(0);
+
+  // Duplicate behavior
+  const [dupMode, setDupMode] = useState("skip"); // safest default // skip | replace
+
+  // Index status
+  const [indexStatus, setIndexStatus] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+
+  // Scroll container
+  const tableWrapRef = useRef(null);
+
   /* -----------------------------
      Toast (no deps) + actions
   ------------------------------ */
   const [toast, setToast] = useState({
     open: false,
-    type: "success", // success | error | info
+    type: "success",
     message: "",
     sticky: false,
-    actions: null, // [{ label, onClick, variant }]
+    actions: null,
   });
 
   const toastTimerRef = useRef(null);
@@ -71,7 +120,6 @@ export default function AdminWasabiImport() {
 
   function showToast(type, message, ms = 3500, opts = {}) {
     const { sticky = false, actions = null } = opts || {};
-
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ open: true, type, message, sticky, actions });
 
@@ -97,20 +145,17 @@ export default function AdminWasabiImport() {
     pct: 0,
     label: "",
   });
-
   const progressTimerRef = useRef(null);
 
   function startProgress(label = "Importing…") {
     if (progressTimerRef.current) clearInterval(progressTimerRef.current);
     setProgress({ active: true, pct: 3, label });
 
-    // Smoothly move toward 92% while waiting for server response.
     progressTimerRef.current = setInterval(() => {
       setProgress((p) => {
         if (!p.active) return p;
         const current = Number(p.pct || 0);
         if (current >= 92) return p;
-        // Ease-out: smaller steps as it gets higher.
         const step = current < 40 ? 6 : current < 70 ? 3 : 1.2;
         return { ...p, pct: clamp(current + step, 0, 92) };
       });
@@ -120,12 +165,8 @@ export default function AdminWasabiImport() {
   function finishProgress(finalLabel = "Done") {
     if (progressTimerRef.current) clearInterval(progressTimerRef.current);
     progressTimerRef.current = null;
-
     setProgress((p) => ({ ...p, active: true, pct: 100, label: finalLabel }));
-    // small delay then hide
-    setTimeout(() => {
-      setProgress({ active: false, pct: 0, label: "" });
-    }, 900);
+    setTimeout(() => setProgress({ active: false, pct: 0, label: "" }), 900);
   }
 
   function stopProgress() {
@@ -140,83 +181,151 @@ export default function AdminWasabiImport() {
     };
   }, []);
 
-  async function fetchObjects({ reset = false } = {}) {
+  async function fetchIndexStatus() {
+    try {
+      const safePrefix = normalizePrefixInput(prefix);
+      const r = await api.get(
+        `/admin/wasabi/index/status?prefix=${encodeURIComponent(safePrefix)}&_=${Date.now()}`,
+      );
+      if (r?.data?.ok) setIndexStatus(r.data.status || null);
+    } catch {
+      // ignore
+    }
+  }
+
+  async function fetchIndexPage({ reset = false, offsetOverride = null } = {}) {
     setLoading(true);
     setErr("");
+
     try {
-      const cursor = reset ? "" : nextCursor || "";
+      const safePrefix = normalizePrefixInput(prefix);
+      const off = reset
+        ? 0
+        : offsetOverride != null
+          ? Number(offsetOverride)
+          : offset;
+
       const url =
-        `/admin/wasabi/objects?prefix=${encodeURIComponent(prefix)}` +
-        `&type=mp4&limit=50` +
-        (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "") +
+        `/admin/wasabi/index?prefix=${encodeURIComponent(safePrefix)}` +
+        `&sort=${encodeURIComponent(sortByDate)}` +
+        `&limit=${LIMIT}` +
+        `&offset=${off}` +
+        `&imported=${encodeURIComponent(importedFilter)}` +
         (q.trim() ? `&q=${encodeURIComponent(q.trim())}` : "") +
         `&_=${Date.now()}`;
 
       const res = await api.get(url);
       if (!res?.data?.ok)
-        throw new Error(res?.data?.message || "Failed to load objects");
+        throw new Error(res?.data?.message || "Failed to load index");
 
       const list = Array.isArray(res.data.items) ? res.data.items : [];
+      const t = Number(res.data.total || 0);
+
+      setTotal(t);
+      setOffset(off);
+      setImportedCount(Number(res.data.imported_count || 0));
+      setNotImportedCount(Number(res.data.not_imported_count || 0));
+
       setItems((prev) => (reset ? list : [...prev, ...list]));
-      setNextCursor(res.data.next_cursor || null);
+
+      // normalize visible input if needed
+      if (safePrefix !== prefix) {
+        setPrefix(safePrefix);
+        showToast("info", `Prefix corrected to "${safePrefix}"`);
+      }
+
+      return { ok: true, items: list, total: t, offset: off };
     } catch (e) {
       setErr(e?.response?.data?.message || e?.message || "Server error");
       if (reset) {
         setItems([]);
-        setNextCursor(null);
+        setTotal(0);
+        setOffset(0);
+        setImportedCount(0);
+        setNotImportedCount(0);
       }
+      return { ok: false, items: [], total: 0, offset: 0 };
     } finally {
       setLoading(false);
     }
   }
 
-  async function loadPreviewManual() {
-    setPreviewLoading(true);
-    setPreviewErr("");
+  async function syncNow() {
+    if (syncing) return;
+    setSyncing(true);
+    setErr("");
+
+    showToast("info", "Syncing Wasabi → index…", 999999, { sticky: true });
+
     try {
-      const res = await api.get(
-        `/admin/wasabi/preview?prefix=${encodeURIComponent(prefix)}&_=${Date.now()}`,
-      );
-      if (!res?.data?.ok)
-        throw new Error(res?.data?.message || "Preview failed");
-      setPreview(res.data);
-      showToast(
-        "success",
-        `Preview loaded. MP4: ${res.data?.counts?.mp4 ?? 0}, PNG: ${res.data?.counts?.png ?? 0}`,
-      );
+      const safePrefix = normalizePrefixInput(prefix);
+      const r = await uploadApi.post(`/admin/wasabi/index/sync`, {
+        prefix: safePrefix,
+      });
+      if (!r?.data?.ok) throw new Error(r?.data?.message || "Sync failed");
+
+      showToast("success", `Sync complete. Indexed ${r.data.indexed} item(s).`);
+      await fetchIndexStatus();
+
+      // Reload list after sync
+      setItems([]);
+      setSelected(new Set());
+      setSelectAllPage(false);
+      setImportResult(null);
+      await fetchIndexPage({ reset: true });
+      if (tableWrapRef.current) tableWrapRef.current.scrollTop = 0;
     } catch (e) {
-      setPreview(null);
-      const msg =
-        e?.response?.data?.message ||
-        e?.message ||
-        "Preview timed out. You can still import normally.";
-      setPreviewErr(msg);
-      showToast("error", msg);
+      const msg = e?.response?.data?.message || e?.message || "Sync failed";
+      showToast("error", msg, 6000);
+      setErr(msg);
+      await fetchIndexStatus();
     } finally {
-      setPreviewLoading(false);
+      setSyncing(false);
     }
   }
 
+  // Initial load / prefix change
   useEffect(() => {
-    // prefix changes: refresh list, selection, and clear preview
     setItems([]);
-    setNextCursor(null);
+    setTotal(0);
+    setOffset(0);
     setSelected(new Set());
     setSelectAllPage(false);
     setImportResult(null);
 
-    setPreview(null);
-    setPreviewErr("");
-    setPreviewLoading(false);
+    fetchIndexStatus();
+    fetchIndexPage({ reset: true });
 
-    fetchObjects({ reset: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefix]);
+  }, [prefix, sortByDate, importedFilter]);
+
+  function runSearchReset() {
+    setItems([]);
+    setTotal(0);
+    setOffset(0);
+    setSelected(new Set());
+    setSelectAllPage(false);
+    fetchIndexPage({ reset: true });
+  }
+
+  const displayedItems = useMemo(() => {
+    // already sorted on backend; just return
+    return Array.isArray(items) ? items : [];
+  }, [items]);
 
   const selectedCount = selected.size;
-  const pageKeys = useMemo(() => items.map((x) => x.key), [items]);
 
-  function toggleKey(key) {
+  function toggleKey(key, meta = {}) {
+    const already = meta?.alreadyImported === true;
+
+    if (already) {
+      if (dupMode === "skip") {
+        showToast("error", "This file was already imported. (Mode: Skip)");
+        return;
+      }
+      showToast("info", "Already imported — will REPLACE on import.");
+    }
+
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
@@ -229,8 +338,28 @@ export default function AdminWasabiImport() {
     setSelectAllPage(on);
     setSelected((prev) => {
       const next = new Set(prev);
-      if (on) pageKeys.forEach((k) => next.add(k));
-      else pageKeys.forEach((k) => next.delete(k));
+
+      if (on) {
+        displayedItems.forEach((it) => {
+          if (it?.alreadyImported && dupMode === "skip") return;
+          next.add(it.key);
+        });
+
+        if (dupMode === "skip") {
+          const skippedDup = displayedItems.filter(
+            (it) => it?.alreadyImported,
+          ).length;
+          if (skippedDup > 0) {
+            showToast(
+              "info",
+              `Skipped ${skippedDup} already-imported file(s) while selecting page (Mode: Skip).`,
+            );
+          }
+        }
+      } else {
+        displayedItems.forEach((it) => next.delete(it.key));
+      }
+
       return next;
     });
   }
@@ -240,6 +369,42 @@ export default function AdminWasabiImport() {
     setSelectAllPage(false);
   }
 
+  async function loadMore() {
+    if (loading || syncing || importing) return;
+    if (items.length >= total) return;
+
+    const nextOff = offset + LIMIT;
+    await fetchIndexPage({ reset: false, offsetOverride: nextOff });
+  }
+
+  // Infinite scroll (optional)
+  useEffect(() => {
+    const el = tableWrapRef.current;
+    if (!el) return;
+
+    let ticking = false;
+    const onScroll = async () => {
+      if (ticking) return;
+      ticking = true;
+
+      requestAnimationFrame(async () => {
+        ticking = false;
+        if (loading || syncing || importing) return;
+        if (items.length >= total) return;
+
+        const nearBottom =
+          el.scrollTop + el.clientHeight >= el.scrollHeight - 120;
+        if (!nearBottom) return;
+
+        await loadMore();
+      });
+    };
+
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, syncing, importing, items.length, total, offset]);
+
   async function doImport() {
     if (!selectedCount || importing) return;
 
@@ -247,7 +412,6 @@ export default function AdminWasabiImport() {
     setImportResult(null);
     startProgress(`Importing ${selectedCount} file(s)…`);
 
-    // Sticky toast while importing (with progress bar)
     showToast("info", `Importing ${selectedCount} selected…`, 999999, {
       sticky: true,
       actions: [
@@ -264,16 +428,13 @@ export default function AdminWasabiImport() {
         keys: Array.from(selected),
         visibility,
         default_title_mode: "filename_no_ext",
+        mode: dupMode, // skip | replace
       };
 
-      if (String(categoryId || "").trim()) {
+      if (String(categoryId || "").trim())
         body.category_id = Number(categoryId);
-      }
 
-      // ✅ IMPORTANT FIX:
-      // Use uploadApi (timeout: 0) so large Wasabi→Bunny imports don't fail at 15s
       const res = await uploadApi.post(`/admin/wasabi/import`, body);
-
       if (!res?.data?.ok)
         throw new Error(res?.data?.message || "Import failed");
 
@@ -282,62 +443,41 @@ export default function AdminWasabiImport() {
       const imported = Number(res.data.imported || 0);
       const skipped = Number(res.data.skipped || 0);
       const errors = Number(res.data.errors || 0);
+      const replaced = Number(res.data.replaced || 0);
 
       finishProgress(errors > 0 ? "Imported with errors" : "Import complete");
 
-      // After import: show action toast w/ buttons
-      if (errors > 0) {
-        showToast(
-          "error",
-          `Imported ${imported}. Skipped ${skipped}. Errors ${errors}.`,
-          999999,
-          {
-            sticky: true,
-            actions: [
-              {
-                label: "Continue Import",
-                variant: "primary",
-                onClick: () => {
-                  // keep page, let them import more (no navigation)
-                  hideToast();
-                },
-              },
-              {
-                label: "Back to Videos",
-                variant: "ghost",
-                onClick: () => nav("/admin/content/videos"),
-              },
-            ],
-          },
-        );
-      } else {
-        showToast(
-          "success",
-          `Import complete: ${imported} imported${skipped ? `, ${skipped} skipped` : ""}.`,
-          999999,
-          {
-            sticky: true,
-            actions: [
-              {
-                label: "Continue Import",
-                variant: "primary",
-                onClick: () => {
-                  hideToast();
-                },
-              },
-              {
-                label: "Back to Videos",
-                variant: "ghost",
-                onClick: () => nav("/admin/content/videos"),
-              },
-            ],
-          },
-        );
-      }
+      const extra = replaced ? ` • Replaced: ${replaced}` : "";
 
-      // Optional: clear selection after success so user doesn’t re-import same list
-      // (server already skips duplicates, but this makes UX cleaner)
+      showToast(
+        errors > 0 ? "error" : "success",
+        errors > 0
+          ? `Imported ${imported}. Skipped ${skipped}. Errors ${errors}.${extra}`
+          : `Import complete: ${imported} imported${skipped ? `, ${skipped} skipped` : ""}.${extra}`,
+        999999,
+        {
+          sticky: true,
+          actions: [
+            {
+              label: "Continue Import",
+              variant: "primary",
+              onClick: hideToast,
+            },
+            {
+              label: "Back to Videos",
+              variant: "ghost",
+              onClick: () => nav("/admin/content/videos"),
+            },
+          ],
+        },
+      );
+
       clearSelection();
+
+      // Refresh current page list to update "Imported" badges
+      setItems([]);
+      setOffset(0);
+      await fetchIndexPage({ reset: true });
     } catch (e) {
       stopProgress();
       const msg = e?.response?.data?.message || e?.message || "Import failed";
@@ -346,11 +486,7 @@ export default function AdminWasabiImport() {
       showToast("error", msg, 999999, {
         sticky: true,
         actions: [
-          {
-            label: "Continue Import",
-            variant: "primary",
-            onClick: () => hideToast(),
-          },
+          { label: "Continue Import", variant: "primary", onClick: hideToast },
           {
             label: "Back to Videos",
             variant: "ghost",
@@ -363,13 +499,7 @@ export default function AdminWasabiImport() {
     }
   }
 
-  function runSearchReset() {
-    setItems([]);
-    setNextCursor(null);
-    setSelected(new Set());
-    setSelectAllPage(false);
-    fetchObjects({ reset: true });
-  }
+  const canLoadMore = items.length < total;
 
   return (
     <div className="wasabi-page">
@@ -397,7 +527,6 @@ export default function AdminWasabiImport() {
             </button>
           </div>
 
-          {/* Progress bar (only while importing/progress active) */}
           {progress.active ? (
             <div className="wasabi-toast__progress">
               <div className="wasabi-toast__progressLabel">
@@ -413,7 +542,6 @@ export default function AdminWasabiImport() {
             </div>
           ) : null}
 
-          {/* Actions */}
           {Array.isArray(toast.actions) && toast.actions.length ? (
             <div className="wasabi-toast__actions">
               {toast.actions.map((a, idx) => (
@@ -440,8 +568,8 @@ export default function AdminWasabiImport() {
           <div className="wasabi-kicker">ADMIN</div>
           <h1 className="wasabi-title">Wasabi Import</h1>
           <div className="wasabi-sub">
-            Preview and import MP4 files directly from the client’s Wasabi
-            bucket.
+            This screen uses a local index (DB) so search + newest sorting
+            always shows everything.
           </div>
         </div>
       </div>
@@ -453,35 +581,39 @@ export default function AdminWasabiImport() {
             <input
               value={prefix}
               onChange={(e) => setPrefix(e.target.value)}
+              onBlur={() => setPrefix((p) => normalizePrefixInput(p))}
               placeholder="drm"
             />
-            <div className="wasabi-hint">
-              Example: <b>drm</b> (we’ll treat it as <b>drm/</b>)
-            </div>
 
-            <div className="wasabi-actionsRow">
+            <div className="wasabi-actionsRow" style={{ marginTop: 10 }}>
               <button
                 className="wasabi-btn wasabi-btn--ghost"
-                onClick={loadPreviewManual}
-                disabled={previewLoading}
                 type="button"
+                onClick={syncNow}
+                disabled={syncing || importing}
+                title="Scan Wasabi and update the DB index"
               >
-                {previewLoading
-                  ? "Loading Preview…"
-                  : "Load Preview (optional)"}
+                {syncing ? "Syncing…" : "Sync from Wasabi"}
               </button>
 
-              {preview?.counts ? (
-                <>
-                  <div className="wasabi-pill">MP4: {preview.counts.mp4}</div>
-                  <div className="wasabi-pill">PNG: {preview.counts.png}</div>
-                </>
-              ) : null}
+              <div
+                className="wasabi-pill"
+                title="Total indexed files for this prefix (last sync)"
+              >
+                Indexed: {indexStatus?.synced_count ?? "—"}
+              </div>
+
+              <div className="wasabi-pill" title="Last sync time">
+                Last sync:{" "}
+                {indexStatus?.last_sync_at
+                  ? new Date(indexStatus.last_sync_at).toLocaleString()
+                  : "—"}
+              </div>
             </div>
 
-            {previewErr ? (
+            {indexStatus?.last_error ? (
               <div className="wasabi-error" style={{ marginTop: 10 }}>
-                {previewErr}
+                Last sync error: {indexStatus.last_error}
               </div>
             ) : null}
           </div>
@@ -491,7 +623,7 @@ export default function AdminWasabiImport() {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="e.g. Bishop 1130am"
+              placeholder="e.g. BRTV-123125_1"
               onKeyDown={(e) => {
                 if (e.key === "Enter") runSearchReset();
               }}
@@ -499,7 +631,7 @@ export default function AdminWasabiImport() {
             <button
               className="wasabi-btn wasabi-btn--ghost"
               onClick={runSearchReset}
-              disabled={loading}
+              disabled={loading || syncing}
               style={{ marginTop: 10 }}
               type="button"
             >
@@ -535,6 +667,61 @@ export default function AdminWasabiImport() {
                 />
               </div>
             </div>
+
+            <div style={{ marginTop: 12 }}>
+              <div className="wasabi-miniLabel">Sort by date</div>
+              <select
+                value={sortByDate}
+                onChange={(e) => setSortByDate(e.target.value)}
+                disabled={importing}
+              >
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+              </select>
+            </div>
+
+            <div style={{ marginTop: 12 }}>
+              <div className="wasabi-miniLabel">Show items</div>
+              <select
+                value={importedFilter}
+                onChange={(e) => setImportedFilter(e.target.value)}
+                disabled={importing}
+              >
+                <option value="all">All Wasabi videos</option>
+                <option value="not_imported">Not imported only</option>
+                <option value="imported">Imported only</option>
+              </select>
+              <div className="wasabi-hint" style={{ marginTop: 6 }}>
+                Imported: <b>{importedCount}</b> • Not imported:{" "}
+                <b>{notImportedCount}</b>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 12 }}>
+              <div className="wasabi-miniLabel">
+                If the message is already on the site
+              </div>
+              <select
+                value={dupMode}
+                onChange={(e) => setDupMode(e.target.value)}
+                disabled={importing}
+              >
+                <option value="skip">Skip (recommended — no duplicates)</option>
+                <option value="replace">
+                  Re-import into the existing message
+                </option>
+                <option value="new">Import as new (allow duplicates)</option>
+              </select>
+              <div className="wasabi-hint" style={{ marginTop: 6 }}>
+                A file counts as already on the site when it was imported
+                before, or when a message has the same date in its title
+                (BRTV-042626 = 4-26-26). Either way, a message whose video
+                FAILED gets this file put into it. Skip leaves working messages
+                alone; Re-import puts the file into them again (they keep their
+                title and details); “Import as new” always creates a new
+                message.
+              </div>
+            </div>
           </div>
         </div>
 
@@ -551,23 +738,29 @@ export default function AdminWasabiImport() {
 
           <div className="wasabi-toolbarRight">
             <div className="wasabi-selected">
+              Showing: <b>{items.length}</b> / <b>{total}</b> • Imported:{" "}
+              <b>{importedCount}</b> • Not imported: <b>{notImportedCount}</b> •
               Selected: <b>{selectedCount}</b>
             </div>
+
             <button
               className="wasabi-btn wasabi-btn--primary"
               onClick={doImport}
               disabled={!selectedCount || importing}
-              title={!selectedCount ? "Select MP4 files to import" : ""}
               type="button"
             >
-              {importing ? "Importing…" : "Import Selected"}
+              {importing
+                ? "Importing…"
+                : dupMode === "replace"
+                  ? "Import / Replace"
+                  : "Import Selected"}
             </button>
           </div>
         </div>
 
         {err ? <div className="wasabi-error">{err}</div> : null}
 
-        <div className="wasabi-tableWrap">
+        <div className="wasabi-tableWrap" ref={tableWrapRef}>
           <table className="wasabi-table">
             <thead>
               <tr>
@@ -579,30 +772,54 @@ export default function AdminWasabiImport() {
               </tr>
             </thead>
             <tbody>
-              {items.length === 0 && !loading ? (
+              {displayedItems.length === 0 && !loading && !syncing ? (
                 <tr>
                   <td colSpan={5} style={{ padding: 18, opacity: 0.8 }}>
-                    No MP4 objects found for this prefix.
+                    No MP4 objects found in the index for this prefix.
+                    <div style={{ marginTop: 10 }}>
+                      Click <b>Sync from Wasabi</b> to build the index.
+                    </div>
                   </td>
                 </tr>
               ) : null}
 
-              {items.map((it) => {
+              {displayedItems.map((it) => {
                 const on = selected.has(it.key);
+                const already = it?.alreadyImported === true;
+
                 return (
-                  <tr key={it.key} className={on ? "is-selected" : ""}>
+                  <tr
+                    key={it.key}
+                    className={`${on ? "is-selected" : ""} ${already ? "is-duplicate" : ""}`}
+                    title={already ? "Already imported" : ""}
+                  >
                     <td>
                       <input
                         type="checkbox"
                         checked={on}
-                        onChange={() => toggleKey(it.key)}
-                        disabled={importing}
+                        onChange={() =>
+                          toggleKey(it.key, { alreadyImported: already })
+                        }
+                        disabled={importing || (already && dupMode === "skip")}
+                        title={
+                          already && dupMode === "skip"
+                            ? "Already imported (blocked in Skip mode)"
+                            : ""
+                        }
                       />
                     </td>
                     <td>
                       <div className="wasabi-file">
                         <div className="wasabi-fileName">
                           {cleanKeyLabel(it.key)}
+                          {already ? (
+                            <span
+                              className="wasabi-pill"
+                              style={{ marginLeft: 10 }}
+                            >
+                              Imported
+                            </span>
+                          ) : null}
                         </div>
                         <div className="wasabi-fileKey">{it.key}</div>
                       </div>
@@ -628,13 +845,13 @@ export default function AdminWasabiImport() {
         <div className="wasabi-footer">
           <button
             className="wasabi-btn wasabi-btn--ghost"
-            onClick={() => fetchObjects({ reset: false })}
-            disabled={loading || !nextCursor || importing}
+            onClick={loadMore}
+            disabled={loading || syncing || importing || !canLoadMore}
             type="button"
           >
             {loading
               ? "Loading…"
-              : nextCursor
+              : canLoadMore
                 ? "Load more"
                 : "No more results"}
           </button>
@@ -651,10 +868,33 @@ export default function AdminWasabiImport() {
               <>
                 <div className="wasabi-resultTitle">Import complete</div>
                 <div className="wasabi-resultText">
-                  Imported: <b>{importResult.imported}</b> • Skipped:{" "}
+                  Imported: <b>{importResult.imported}</b> • Replaced:{" "}
+                  <b>{importResult.replaced || 0}</b> • Skipped:{" "}
                   <b>{importResult.skipped}</b> • Errors:{" "}
                   <b>{importResult.errors}</b>
                 </div>
+                {importResult.fixed_by_date?.length ? (
+                  <div className="wasabi-resultText">
+                    Failed messages fixed with their file:{" "}
+                    {importResult.fixed_by_date
+                      .map((f) => f.message || f.key)
+                      .join(" · ")}
+                  </div>
+                ) : null}
+                {importResult.skipped_same_date?.length ? (
+                  <div className="wasabi-resultText">
+                    Skipped — already on the site (
+                    {importResult.skipped_same_date.length}):{" "}
+                    {importResult.skipped_same_date
+                      .slice(0, 5)
+                      .map(
+                        (f) =>
+                          `${String(f.key).split("/").pop()} → ${f.message || "existing message"}`,
+                      )
+                      .join(" · ")}
+                    {importResult.skipped_same_date.length > 5 ? " …" : ""}
+                  </div>
+                ) : null}
               </>
             )}
           </div>

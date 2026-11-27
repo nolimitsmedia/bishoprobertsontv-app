@@ -1,0 +1,100 @@
+# Builds every ministry hosted on tv.nolimitsmedia.com from its profile
+# (ministries/<folder>/) and uploads it to https://tv.nolimitsmedia.com/<folder>/.
+#
+# Secrets (Settings › Secrets and variables › Actions):
+#   FTP_HOST      e.g. websrv3.nolimitsmedia.com
+#   FTP_USERNAME  an FTP account limited to the tv.nolimitsmedia.com folder
+#   FTP_PASSWORD
+# Variable (optional): FTP_ROOT — folder of tv.nolimitsmedia.com as that account
+#   sees it; "/" when the account starts in public_html (the default).
+#
+# Bishop Robertson's own GitHub Pages site (client-profile/) is not touched by
+# this workflow; it still deploys with npm run deploy.
+name: Deploy ministries to tv.nolimitsmedia.com
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "ministries/**"
+      - "src/**"
+      - "public/**"
+      - "scripts/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/deploy-ministries.yml"
+  workflow_dispatch:
+    inputs:
+      ministry:
+        description: "Folder name to deploy (leave empty for all ministries)"
+        required: false
+        default: ""
+
+concurrency:
+  group: deploy-ministries
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      list: ${{ steps.pick.outputs.list }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - id: pick
+        env:
+          ONE: ${{ github.event.inputs.ministry }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            if [ -n "$ONE" ]; then LIST=$(node scripts/plan-ministries.js --one "$ONE")
+            else LIST=$(node scripts/plan-ministries.js --all); fi
+          elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BEFORE" 2>/dev/null; then
+            LIST=$(node scripts/plan-ministries.js --all)
+          else
+            LIST=$(git diff --name-only "$BEFORE" "$AFTER" | node scripts/plan-ministries.js --changed)
+          fi
+          echo "Ministries to deploy: $LIST"
+          echo "list=$LIST" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: plan
+    if: needs.plan.outputs.list != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        ministry: ${{ fromJson(needs.plan.outputs.list) }}
+    env:
+      MINISTRY: ${{ matrix.ministry }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Build ${{ matrix.ministry }}
+        env:
+          PROFILE_DIR: ministries/${{ matrix.ministry }}
+          CI: "false" # existing lint warnings must not stop the build
+        run: npm run build
+      - name: Upload to tv.nolimitsmedia.com/${{ matrix.ministry }}/
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_ROOT: ${{ vars.FTP_ROOT || '/' }}
+        run: bash scripts/upload-ministry.sh

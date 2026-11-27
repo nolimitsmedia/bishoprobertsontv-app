@@ -1,0 +1,122 @@
+/* Organize — modern dark cards (replaces the grey "glass" panels) */
+.us-shell .org-page {
+  background: transparent !important;
+  padding: 24px clamp(16px, 2.5vw, 32px) 40px !important;
+}
+.us-shell .org-wrap {
+  max-width: none !important;
+}
+.us-shell .org-title {
+  font-size: 26px !important;
+  font-weight: 900 !important;
+  color: #fff;
+}
+.us-shell .org-sub {
+  color: #9aa2b6 !important;
+}
+.us-shell .org-main {
+  gap: 16px !important;
+}
+.us-shell .org-left,
+.us-shell .org-videosCard,
+.us-shell .org-card {
+  background: #131722 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.us-shell .org-leftTitle {
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.12em !important;
+  color: #8f97ad !important;
+}
+.us-shell .org-leftCount {
+  color: #9aa2b6 !important;
+}
+.us-shell .org-catList {
+  gap: 2px !important;
+}
+.us-shell .org-catItem {
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  border-radius: 10px !important;
+  padding: 9px 12px !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+.us-shell .org-catItem:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+.us-shell .org-catItem.is-active {
+  background: linear-gradient(
+    90deg,
+    rgba(139, 92, 246, 0.28),
+    rgba(139, 92, 246, 0.06)
+  ) !important;
+  box-shadow: inset 3px 0 0 #8b5cf6 !important;
+}
+.us-shell .org-catName {
+  color: #fff !important;
+  font-size: 14px !important;
+}
+.us-shell .org-catMeta {
+  color: #9aa2b6 !important;
+  font-size: 12.5px !important;
+}
+.us-shell .org-videosTitle {
+  font-size: 17px !important;
+  font-weight: 800 !important;
+  color: #fff;
+}
+.us-shell .org-table tbody tr:nth-child(odd) {
+  background: transparent !important;
+}
+.us-shell .org-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+.us-shell .org-table td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07) !important;
+  padding: 10px 8px !important;
+}
+.us-shell .org-videoTitle {
+  font-weight: 700;
+}
+.us-shell .org-iconBtn {
+  width: 30px !important;
+  height: 30px !important;
+  border-radius: 8px !important;
+  background: #171c29 !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  color: #e8eaf2 !important;
+}
+.us-shell .org-iconBtn:hover:not(:disabled) {
+  border-color: rgba(167, 139, 250, 0.6) !important;
+}
+.us-shell .org-btn {
+  border-radius: 10px !important;
+  font-weight: 700 !important;
+}
+.us-shell .org-btn--primary {
+  background: #8b5cf6 !important;
+  border-color: #8b5cf6 !important;
+  color: #fff !important;
+}
+.us-shell .org-btn--ghost,
+.us-shell .org-btn--sm {
+  background: #171c29 !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  color: #e8eaf2 !important;
+}
+.us-shell .org-statusBadge,
+.us-shell .org-accessBadge {
+  font-weight: 800 !important;
+}
+.us-shell .org-iconBtn:focus-visible,
+.us-shell .org-btn:focus-visible,
+.us-shell .org-catItem:focus-visible {
+  outline: 2px solid #c4b5fd !important;
+  outline-offset: 2px;
+}

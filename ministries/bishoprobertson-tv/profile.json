@@ -1,0 +1,13 @@
+{
+  "site_name": "BishopRobertson.TV",
+  "short_name": "BRTV",
+  "description": "Watch sermons, live services and teachings from Bishop Daniel Robertson, Jr., Senior Pastor of Mt. Gilead Full Gospel International Ministries in Richmond, Virginia.",
+  "app_description": "Watch sermons, live services and teachings from Bishop Daniel Robertson, Jr.",
+  "site_url": "https://tv.nolimitsmedia.com/bishoprobertson-tv",
+  "api_url": "https://bishoprobertsontv-app-backend.onrender.com",
+  "theme_color": "#030104",
+  "background_color": "#030104",
+  "timezone": "America/New_York",
+  "lang": "en",
+  "community_channels": "bishoprobertsontv,techsupport"
+}

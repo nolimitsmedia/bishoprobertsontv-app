@@ -1,0 +1,706 @@
+/* Phase 5: video, spacer, quote and FAQ blocks (public site and editor).
+   Colors inherit from the section so section themes apply. */
+
+.bx-video {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #000;
+}
+.bx-video.is-vertical {
+  max-width: 420px;
+  margin: 0 auto;
+}
+.bx-video iframe,
+.bx-video video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+.bx-spacer {
+  display: flex;
+  align-items: center;
+}
+.bx-divider {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid currentColor;
+  opacity: 0.2;
+}
+
+.bx-quote {
+  margin: 0;
+  padding: 8px 4px;
+}
+.bx-quote.align-center {
+  text-align: center;
+}
+.bx-quote blockquote {
+  margin: 0;
+}
+.bx-quote blockquote p {
+  margin: 0;
+  font-size: 1.25em;
+  line-height: 1.55;
+  font-style: italic;
+  white-space: pre-line;
+}
+.bx-quote blockquote p::before {
+  content: "\201C";
+}
+.bx-quote blockquote p::after {
+  content: "\201D";
+}
+.bx-quote figcaption {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  text-align: left;
+}
+.bx-quote.align-center figcaption {
+  justify-content: center;
+}
+.bx-quote figcaption > span {
+  display: grid;
+}
+.bx-quoteRole {
+  opacity: 0.75;
+  font-size: 0.92em;
+}
+.bx-quotePhoto {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+
+.bx-faq {
+  display: grid;
+  gap: 8px;
+}
+.bx-faqItem {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  padding: 0 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.bx-faqItem > summary {
+  cursor: pointer;
+  padding: 14px 0;
+  font-weight: 700;
+  list-style-position: inside;
+}
+.bx-faqItem > summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.bx-faqAnswer {
+  padding: 0 0 16px;
+  line-height: 1.65;
+  opacity: 0.9;
+  white-space: pre-line;
+}
+
+/* editor controls */
+.bx-editor {
+  display: grid;
+  gap: 10px;
+}
+.bx-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 14px;
+}
+.bx-row > .bx-field {
+  flex: 1 1 180px;
+}
+.bx-field {
+  display: grid;
+  gap: 5px;
+}
+.bx-field > label,
+.bx-field > .bx-label {
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.bx-hint {
+  font-size: 12px;
+  opacity: 0.7;
+  line-height: 1.45;
+}
+.bx-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  padding-bottom: 8px;
+}
+.bx-photoRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.bx-editorPreview {
+  max-width: 480px;
+}
+.bx-faqEdit {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+.bx-faqEditHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.bx-faqEditActions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+/* Elementor-style elements: heading, image, divider, video gallery */
+.bx-heading {
+  margin: 0;
+  line-height: 1.2;
+}
+.bx-heading a {
+  color: inherit;
+  text-decoration: none;
+}
+.bx-image {
+  margin: 0;
+}
+.bx-image img {
+  max-width: 100%;
+  height: auto;
+  display: inline-block;
+  border-radius: inherit;
+}
+.bx-divider2 {
+  margin: 10px auto;
+  height: 0;
+}
+.bx-vgrid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(var(--bx-cols, 3), minmax(0, 1fr));
+}
+.bx-vgrid--loading {
+  min-height: 120px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.bx-vcard {
+  display: grid;
+  gap: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+.bx-vthumb {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #111;
+}
+.bx-vthumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.25s ease;
+}
+.bx-vcard:hover .bx-vthumb img,
+.bx-vcard:focus-visible .bx-vthumb img {
+  transform: scale(1.04);
+}
+.bx-vcard:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+  border-radius: 12px;
+}
+.bx-vplay {
+  position: absolute;
+  inset: auto auto 10px 10px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 13px;
+}
+.bx-vtitle {
+  font-weight: 700;
+  font-size: 0.95em;
+  line-height: 1.35;
+}
+@media (max-width: 1024px) {
+  .bx-vgrid--c3,
+  .bx-vgrid--c4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .bx-vgrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- Release 1.2 Part C elements ---- */
+/* Form */
+.bx-form {
+  display: grid;
+  gap: 14px;
+  max-width: 640px;
+  margin: 0 auto;
+  text-align: left;
+}
+.bx-formField {
+  display: grid;
+  gap: 6px;
+}
+.bx-formField > label {
+  font-weight: 700;
+  font-size: 0.95em;
+}
+.bx-formField input:not([type="checkbox"]),
+.bx-formField textarea,
+.bx-formField select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 12px;
+  border-radius: 10px;
+  font: inherit;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+}
+.bx-formField input:focus-visible,
+.bx-formField textarea:focus-visible,
+.bx-formField select:focus-visible,
+.bx-formCheck input:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+.bx-formField [aria-invalid="true"] {
+  border-color: #f87171;
+}
+.bx-formCheck {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-weight: 600;
+}
+.bx-formErr {
+  margin: 0;
+  color: #fca5a5;
+  font-size: 0.9em;
+}
+.bx-formHp {
+  position: absolute !important;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+.bx-formBtn {
+  justify-self: start;
+}
+.bx-formNote {
+  margin: 0;
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+.bx-formDone {
+  padding: 18px;
+  border-radius: 12px;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.5);
+  text-align: center;
+  font-weight: 700;
+}
+/* Icon, Icon list */
+.bx-icon {
+  line-height: 0;
+}
+.bx-icon a {
+  display: inline-block;
+  color: inherit;
+}
+.bx-iconList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  text-align: left;
+}
+.bx-iconList li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.bx-iconList a {
+  color: inherit;
+}
+/* Carousel: Image slider, Testimonials */
+.bx-carousel {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+}
+.bx-carTrack {
+  display: flex;
+  transition: transform 0.45s ease;
+}
+.bx-carSlide {
+  flex: 0 0 100%;
+  min-width: 0;
+}
+.bx-carSlide > img {
+  display: block;
+  width: 100%;
+  height: var(--bx-car-h, 420px);
+  object-fit: cover;
+}
+.bx-carBtn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+}
+.bx-carPrev {
+  left: 10px;
+}
+.bx-carNext {
+  right: 10px;
+}
+.bx-carDots {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 10px;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+.bx-carDots button {
+  width: 11px;
+  height: 11px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: transparent;
+  cursor: pointer;
+}
+.bx-carDots button.is-on {
+  background: #fff;
+}
+.bx-carPause {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  border: 0;
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+}
+.bx-carBtn:focus-visible,
+.bx-carDots button:focus-visible,
+.bx-carPause:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bx-carTrack {
+    transition: none;
+  }
+}
+/* Testimonials */
+.bx-testiGrid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(var(--bx-cols, 3), minmax(0, 1fr));
+}
+.bx-testi {
+  margin: 0;
+  padding: 20px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  display: grid;
+  gap: 14px;
+}
+.bx-testi blockquote {
+  margin: 0;
+  font-size: 1.05em;
+  line-height: 1.55;
+}
+.bx-testi figcaption {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.bx-testi figcaption img {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.bx-testi figcaption span {
+  display: grid;
+}
+.bx-testi small {
+  opacity: 0.75;
+}
+.bx-carousel .bx-testi {
+  margin: 0 56px 34px;
+}
+@media (max-width: 1024px) {
+  .bx-testiGrid.bx-vgrid--c3,
+  .bx-testiGrid.bx-vgrid--c4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .bx-testiGrid {
+    grid-template-columns: 1fr;
+  }
+  .bx-carousel .bx-testi {
+    margin: 0 8px 34px;
+  }
+}
+/* Countdown */
+.bx-countdown {
+  text-align: center;
+}
+.bx-cdTitle {
+  font-weight: 800;
+  margin-bottom: 10px;
+}
+.bx-cdBoxes {
+  display: inline-flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.bx-cdBox {
+  display: grid;
+  min-width: 72px;
+  padding: 10px 8px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.bx-cdNum {
+  font-size: 2em;
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.bx-cdLabel {
+  font-size: 0.75em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.75;
+}
+.bx-countdown--done .bx-cdLink {
+  font-weight: 800;
+  font-size: 1.2em;
+  color: inherit;
+}
+/* Map, Embed */
+.bx-map,
+.bx-embed {
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.bx-map iframe,
+.bx-embed iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+/* Social icons */
+.bx-social {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.bx-social a {
+  display: grid;
+  place-items: center;
+  color: inherit;
+  text-decoration: none;
+}
+.bx-social--circle a {
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+}
+.bx-social--square a {
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+}
+.bx-social a:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+.bx-social a:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+/* editor: icon picker */
+.bx-iconGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
+  gap: 4px;
+}
+.bx-iconGrid button {
+  display: grid;
+  place-items: center;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #1c1a26;
+  color: #e5e7eb;
+  cursor: pointer;
+}
+.bx-iconGrid button.is-on {
+  background: #6d28d9;
+  border-color: #a78bfa;
+}
+
+/* Fix: the same global form rule affected the Form element (full-width checkbox,
+   extra gaps, blue full-width button). The Form styles itself completely. */
+.bx-form .bx-formField input:not([type="checkbox"]),
+.bx-form .bx-formField textarea,
+.bx-form .bx-formField select {
+  display: block;
+  width: 100%;
+  margin: 0;
+}
+.bx-form .bx-formCheck input[type="checkbox"] {
+  display: inline-block;
+  width: auto;
+  margin: 0;
+  padding: 0;
+  flex: 0 0 auto;
+}
+.bx-form .bx-formBtn,
+.bx-form .bx-formBtn:hover {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  margin: 0;
+  padding: 13px 28px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--accent, #7c3aed);
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+.bx-form .bx-formBtn:hover {
+  filter: brightness(1.1);
+}
+.bx-form .bx-formBtn:focus-visible {
+  outline: 3px solid #a78bfa;
+  outline-offset: 2px;
+}
+.bx-form .bx-formBtn:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+.bx-form .bx-formHp input {
+  display: block;
+  width: auto;
+  margin: 0;
+}
+
+/* Home hero settings: where the banner's messages come from */
+.bx-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(139, 92, 246, 0.14);
+  border: 1px solid rgba(167, 139, 250, 0.45);
+  color: #e8eaf2;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.bx-note a {
+  color: #c4b5fd;
+  font-weight: 700;
+}
+
+/* Forms made in the page editor: full width of their column (they shrank to
+   ~240px inside Columns) and shown as a card (Nov 2026). */
+.bx-form {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 28px;
+  border-radius: 20px;
+  background: #10121b;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  gap: 16px;
+}
+.bx-form .bx-formField input:not([type="checkbox"]),
+.bx-form .bx-formField select {
+  min-height: 48px;
+  border-radius: 12px;
+  box-sizing: border-box;
+}
+.bx-form .bx-formField textarea {
+  min-height: 140px;
+  border-radius: 12px;
+  box-sizing: border-box;
+}
+/* full-width button, the same size on hover (the older hover rule set
+   width:auto, so the button shrank away from the pointer and clicks missed) */
+.bx-form .bx-formBtn,
+.bx-form .bx-formBtn:hover {
+  width: 100%;
+  min-height: 50px;
+  border-radius: 999px;
+  font-size: 15.5px;
+}
+@media (max-width: 560px) {
+  .bx-form {
+    padding: 20px;
+  }
+}

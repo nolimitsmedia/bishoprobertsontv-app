@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import "./PublicHeader.css";
 import LoginModal from "./LoginModal";
 import SignupModal from "./SignupModal";
+import { SITE } from "../config/site";
 
 export default function PublicHeader() {
   const [authed, setAuthed] = useState(false);
@@ -27,9 +28,7 @@ export default function PublicHeader() {
       <header className="public-header">
         <div className="public-header-container">
           <div className="public-logo">
-            <Link to="/">
-              Bishop<span>TV</span>
-            </Link>
+            <Link to="/">{SITE.name}</Link>
           </div>
 
           <nav className="public-nav">

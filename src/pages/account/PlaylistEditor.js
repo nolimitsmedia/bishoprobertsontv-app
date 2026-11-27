@@ -3,6 +3,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import api from "../../api";
 import "./PlaylistEditor.css";
+import { confirmDialog } from "../../components/ui/Dialogs";
 
 /** Reorder playlist videos by ID */
 async function putReorder(playlistId, order) {
@@ -64,7 +65,7 @@ export default function PlaylistEditor() {
       } catch (e) {
         if (!alive) return;
         setErr(
-          e?.response?.data?.message || e.message || "Failed to load playlist"
+          e?.response?.data?.message || e.message || "Failed to load playlist",
         );
       } finally {
         if (alive) setLoading(false);
@@ -122,7 +123,7 @@ export default function PlaylistEditor() {
   }
 
   async function removeVideo(videoId) {
-    if (!window.confirm("Remove this video from the playlist?")) return;
+    if (!(await confirmDialog("Remove this video from the playlist?"))) return;
     try {
       await api.delete(`/playlists/${pl.id}/videos/${videoId}`);
       setPl((prev) => ({

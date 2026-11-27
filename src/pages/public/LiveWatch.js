@@ -68,6 +68,8 @@ export default function LiveWatch() {
 
   // chat
   const [chat, setChat] = useState([]);
+  const [chatErr, setChatErr] = useState(""); // Release 2.3: reason a message wasn't sent
+  const [moderator, setModerator] = useState(false); // staff can delete messages
   const [msg, setMsg] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -109,22 +111,42 @@ export default function LiveWatch() {
   /* ----- load chat history ----- */
   useEffect(() => {
     if (!id) return;
+    // Release 2.3: secured history (skips deleted messages); older API as fallback
     api
-      .get(`/live/events/${id}/chat?limit=200`)
-      .then((r) => setChat(r.data?.items || []))
-      .catch(() => {});
+      .get(`/live-chat/events/${id}/messages`)
+      .then((r) => setChat(Array.isArray(r.data?.items) ? r.data.items : []))
+      .catch(() =>
+        api
+          .get(`/live/events/${id}/chat?limit=200`)
+          .then((r) => setChat(r.data?.items || []))
+          .catch(() => {}),
+      );
+    if (localStorage.getItem("token"))
+      api
+        .get("/live-chat/me")
+        .then((r) => setModerator(!!r.data?.moderator))
+        .catch(() => {});
   }, [id]);
 
   /* ----- socket join ----- */
   useEffect(() => {
     if (!id) return;
-    const s = io(apiOrigin(), { transports: ["websocket"] });
+    // signed-in members post under their account name (the server checks the token)
+    const s = io(apiOrigin(), {
+      transports: ["websocket"],
+      auth: { token: localStorage.getItem("token") || "" },
+    });
     socketRef.current = s;
 
     s.emit("chat:join", { eventId: Number(id), name: reg.name || "Viewer" });
     s.on("chat:new", (m) => {
-      setChat((prev) => [...prev, m]);
+      setChat((prev) =>
+        prev.some((x) => Number(x.id) === Number(m.id)) ? prev : [...prev, m],
+      );
     });
+    s.on("chat:deleted", ({ id: gone }) =>
+      setChat((prev) => prev.filter((x) => Number(x.id) !== Number(gone))),
+    );
 
     return () => {
       s.disconnect();
@@ -151,7 +173,7 @@ export default function LiveWatch() {
       }
       if (!playbackUrl || showGate) return;
       const hls = await attachHls(videoRef.current, playbackUrl, () =>
-        setError("Playback error. Please refresh.")
+        setError("Playback error. Please refresh."),
       );
       if (hls) hlsRef.current = hls;
     })();
@@ -185,6 +207,7 @@ export default function LiveWatch() {
     const text = msg.trim();
     if (!text) return;
     setSending(true);
+    setChatErr("");
     socketRef.current?.emit(
       "chat:message",
       {
@@ -194,9 +217,10 @@ export default function LiveWatch() {
       },
       (ack) => {
         setSending(false);
-        if (!ack?.ok) return alert("Message failed to send.");
+        if (!ack?.ok)
+          return setChatErr(ack?.error || "Message failed to send.");
         setMsg("");
-      }
+      },
     );
   }
 
@@ -333,6 +357,27 @@ export default function LiveWatch() {
                     </span>
                   </div>
                   <div className="lw-bubble-text">{m.message}</div>
+                  {moderator ? (
+                    <button
+                      type="button"
+                      className="lw-del"
+                      aria-label={`Delete message from ${m.name || "Viewer"}`}
+                      onClick={async () => {
+                        try {
+                          await api.delete(
+                            `/live-chat/events/${id}/messages/${m.id}`,
+                          );
+                          setChat((prev) =>
+                            prev.filter((x) => Number(x.id) !== Number(m.id)),
+                          );
+                        } catch {
+                          setChatErr("Could not delete that message.");
+                        }
+                      }}
+                    >
+                      Delete
+                    </button>
+                  ) : null}
                 </div>
               ))
             )}
@@ -343,6 +388,8 @@ export default function LiveWatch() {
               className="lw-input"
               placeholder={showGate ? "Register to chat…" : "Say something…"}
               value={msg}
+              maxLength={500}
+              aria-label="Chat message"
               disabled={showGate || sending}
               onChange={(e) => setMsg(e.target.value)}
               onKeyDown={(e) => (e.key === "Enter" ? sendMessage() : null)}
@@ -355,6 +402,11 @@ export default function LiveWatch() {
               Send
             </button>
           </div>
+          {chatErr ? (
+            <p className="lw-chat-err" role="alert">
+              {chatErr}
+            </p>
+          ) : null}
         </div>
       </div>
     </div>
@@ -447,6 +499,9 @@ function Styles() {
 
       /* CHAT */
       .lw-chat { display:flex; flex-direction:column; padding: 0; overflow:hidden; }
+      .lw-del { margin-top: 4px; border: 0; background: none; color: #fca5a5; font: inherit; font-size: 12px; padding: 0; cursor: pointer; }
+      .lw-del:focus-visible { outline: 2px solid #a78bfa; outline-offset: 2px; }
+      .lw-chat-err { margin: 0; padding: 0 12px 10px; color: #fca5a5; font-size: 13px; }
       .lw-chat-head {
         padding: 14px 16px;
         border-bottom: 1px solid #e5e7eb;

@@ -1,0 +1,9 @@
+/* Responsive navigation manager; no changes to other admin pages. */
+@media (max-width: 850px) {
+  .brtv-navigation-editor-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+.brtv-navigation-editor-grid > * {
+  min-width: 0;
+}

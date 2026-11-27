@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import api from "../../api";
 // import "./Videos.css";
 import "./Collections.css";
+import SeriesPanel from "../../components/admin/SeriesPanel";
 
 /* ------------ small helpers/styles ------------ */
 const injectedStyles = `
@@ -127,7 +128,7 @@ export default function CollectionDetail() {
           setVisibility(row.visibility || "public");
           setSlug(row.slug || "");
           setFeaturedCategoryId(
-            row.featured_category_id ? String(row.featured_category_id) : ""
+            row.featured_category_id ? String(row.featured_category_id) : "",
           );
         }
 
@@ -150,7 +151,7 @@ export default function CollectionDetail() {
         } catch {
           // fallback for private playlists: ask membership per video
           const results = await Promise.allSettled(
-            vlist.map((v) => api.get(`/playlists/for-video/${v.id}`))
+            vlist.map((v) => api.get(`/playlists/for-video/${v.id}`)),
           );
           results.forEach((r, idx) => {
             if (r.status === "fulfilled") {
@@ -226,7 +227,7 @@ export default function CollectionDetail() {
   /* ---------- membership actions ---------- */
   const inThis = useMemo(
     () => allVideos.filter((v) => memberIds.has(String(v.id))),
-    [allVideos, memberIds]
+    [allVideos, memberIds],
   );
 
   const canAdd = useMemo(() => {
@@ -236,7 +237,7 @@ export default function CollectionDetail() {
     return base.filter(
       (v) =>
         v.title?.toLowerCase().includes(q) ||
-        v.description?.toLowerCase().includes(q)
+        v.description?.toLowerCase().includes(q),
     );
   }, [allVideos, memberIds, searchAdd]);
 
@@ -429,6 +430,9 @@ export default function CollectionDetail() {
           </div>
         )}
       </div>
+
+      {/* Series page settings (show this collection as a series) */}
+      <SeriesPanel collectionId={id} videos={allVideos} />
 
       {/* ==================== Videos in this playlist ==================== */}
       <div className="section">

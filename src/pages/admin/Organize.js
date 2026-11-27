@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import api from "../../api";
 import "./Organize.css";
+import "./OrganizeModern.css";
 
 function normalizeAccessLabel(v) {
   const x = String(v || "").toLowerCase();
@@ -453,7 +454,9 @@ export default function Organize() {
       }
     } catch (e) {
       setErr(
-        e?.response?.data?.message || e?.message || "Failed to load categories."
+        e?.response?.data?.message ||
+          e?.message ||
+          "Failed to load categories.",
       );
       setCategories([]);
     } finally {
@@ -482,7 +485,7 @@ export default function Organize() {
       setVideos(list);
     } catch (e) {
       setVideosErr(
-        e?.response?.data?.message || e?.message || "Failed to load videos."
+        e?.response?.data?.message || e?.message || "Failed to load videos.",
       );
       setVideos([]);
     } finally {
@@ -503,7 +506,7 @@ export default function Organize() {
 
   const selectedCategory = useMemo(
     () => categories.find((c) => c.id === selectedCatId) || null,
-    [categories, selectedCatId]
+    [categories, selectedCatId],
   );
 
   // filtered lists
@@ -605,7 +608,7 @@ export default function Organize() {
       console.error("Reorder save error:", e);
       showToast(
         "error",
-        e?.response?.data?.message || e?.message || "Failed to save order."
+        e?.response?.data?.message || e?.message || "Failed to save order.",
       );
     } finally {
       setSavingOrder(false);
@@ -621,19 +624,19 @@ export default function Organize() {
         `/admin/organize/videos/${video.id}/visibility`,
         {
           is_published: next,
-        }
+        },
       );
       if (!res?.data?.ok)
         throw new Error(res?.data?.message || "Update failed.");
 
       const updated = res.data.video || res.data;
       setVideos((prev) =>
-        prev.map((v) => (v.id === video.id ? { ...v, ...updated } : v))
+        prev.map((v) => (v.id === video.id ? { ...v, ...updated } : v)),
       );
     } catch (e) {
       showToast(
         "error",
-        e?.response?.data?.message || e?.message || "Failed to update video."
+        e?.response?.data?.message || e?.message || "Failed to update video.",
       );
     } finally {
       setTogglingIds((m) => {
@@ -676,8 +679,8 @@ export default function Organize() {
                 {savingOrder
                   ? "Saving…"
                   : orderDirty
-                  ? "Save order"
-                  : "Order saved"}
+                    ? "Save order"
+                    : "Order saved"}
               </button>
             )}
           </div>
@@ -891,7 +894,7 @@ export default function Organize() {
                       <tbody>
                         {filteredVideos.map((v) => {
                           const actualIdx = videos.findIndex(
-                            (x) => x.id === v.id
+                            (x) => x.id === v.id,
                           );
 
                           const rowDraggable = !isVideoFilterActive;
@@ -964,7 +967,7 @@ export default function Organize() {
                               <td>
                                 <span className="org-accessBadge">
                                   {normalizeAccessLabel(
-                                    v.access || v.visibility || "public"
+                                    v.access || v.visibility || "public",
                                   )}
                                 </span>
                               </td>
@@ -1016,8 +1019,8 @@ export default function Organize() {
                                   {togglingIds[v.id]
                                     ? "Updating…"
                                     : v.is_published
-                                    ? "Hide"
-                                    : "Publish"}
+                                      ? "Hide"
+                                      : "Publish"}
                                 </button>
                               </td>
                             </tr>

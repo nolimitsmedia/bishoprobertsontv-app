@@ -2,7 +2,11 @@
 import React, { useMemo, useState } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
 import api from "../../api";
-import "./Login.css";
+import AuthShell, {
+  AuthField,
+  PasswordInput,
+} from "../../components/auth/AuthShell";
+import { SITE } from "../../config/site";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -18,15 +22,31 @@ export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  function safeInternalRedirect(url) {
+    const value = String(url || "").trim();
+    if (!value) return "/";
+
+    // Keep redirects inside the React app only.
+    if (/^https?:\/\//i.test(value) || value.startsWith("//")) return "/";
+    return value.startsWith("/") ? value : `/${value}`;
+  }
+
   function appendResumeTime(url, resumeSeconds) {
+    const target = safeInternalRedirect(url);
     const t = Number(resumeSeconds);
-    if (!Number.isFinite(t) || t <= 0) return url || "/";
+    if (!Number.isFinite(t) || t <= 0) return target || "/";
 
-    // If already has t=, don't add again
-    if (String(url || "").includes("t=")) return url;
-
-    const hasQuery = String(url || "").includes("?");
-    return `${url}${hasQuery ? "&" : "?"}t=${Math.floor(t)}`;
+    try {
+      const [path, hash = ""] = target.split("#");
+      const [base, query = ""] = path.split("?");
+      const qs = new URLSearchParams(query);
+      if (!qs.has("t")) qs.set("t", String(Math.floor(t)));
+      const out = `${base}?${qs.toString()}`;
+      return hash ? `${out}#${hash}` : out;
+    } catch {
+      const hasQuery = target.includes("?");
+      return `${target}${hasQuery ? "&" : "?"}t=${Math.floor(t)}`;
+    }
   }
 
   function computeRedirect(user) {
@@ -91,10 +111,8 @@ export default function Login() {
       // Compute redirect target
       const redirectTo = computeRedirect(user);
 
-      // Clear pendingPath if we used it
-      if (redirectTo === localStorage.getItem("pendingPath")) {
-        localStorage.removeItem("pendingPath");
-      }
+      // Clear any stale protected-route redirect after a successful login.
+      localStorage.removeItem("pendingPath");
 
       navigate(redirectTo, { replace: true });
     } catch (err) {
@@ -116,116 +134,86 @@ export default function Login() {
   }, [email, password]);
 
   return (
-    <div className="auth-wrap">
-      <div className="auth-grid">
-        <div className="auth-card card">
-          <div className="auth-head">
-            <h1 className="auth-title">Sign in</h1>
-            <div className="auth-sub">
-              Use your email and password to access your account.
-            </div>
-          </div>
-
-          {error ? <div className="auth-alert">{error}</div> : null}
-
-          <form onSubmit={onSubmit} className="auth-form" autoComplete="on">
-            <label className="auth-label">
-              Email
-              <input
-                className="auth-input"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="username"
-                placeholder="Enter your email"
-                required
-                autoFocus
-                inputMode="email"
-              />
-            </label>
-
-            <label className="auth-label">
-              Password
-              <div className="auth-input-wrap">
-                <input
-                  className="auth-input"
-                  type={showPw ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="current-password"
-                  placeholder="Enter your password"
-                  required
-                  onKeyUp={(e) =>
-                    setCapsOn(e.getModifierState?.("CapsLock") || false)
-                  }
-                />
-
-                <button
-                  type="button"
-                  className="auth-eye"
-                  onClick={() => setShowPw((s) => !s)}
-                  aria-label={showPw ? "Hide password" : "Show password"}
-                  title={showPw ? "Hide password" : "Show password"}
-                >
-                  {showPw ? "🙈" : "👁️"}
-                </button>
-              </div>
-              {capsOn ? (
-                <div className="auth-hint warn">Caps Lock is on</div>
-              ) : (
-                <div className="auth-hint"> </div>
-              )}
-            </label>
-
-            <div className="auth-row">
-              <label className="auth-check">
-                <input
-                  type="checkbox"
-                  checked={remember}
-                  onChange={(e) => setRemember(e.target.checked)}
-                />
-                <span>Remember me</span>
-              </label>
-
-              <Link to="/forgot" className="auth-link">
-                Forgot password?
-              </Link>
-            </div>
-
-            <button
-              className="auth-btn primary"
-              disabled={submitting || !canSubmit}
-              aria-busy={submitting ? "true" : "false"}
-            >
-              {submitting ? (
-                <span className="auth-btn-spin">
-                  <span className="auth-spinner" aria-hidden="true" />
-                  Signing in…
-                </span>
-              ) : (
-                "Sign in"
-              )}
-            </button>
-          </form>
-
-          <div className="auth-foot">
-            Don’t have an account? <Link to="/free-account">Create one</Link>
-          </div>
+    <AuthShell
+      headline="Every message. Every service. Anywhere."
+      points={[
+        "Watch the full library of messages, on any device",
+        "Join the live services and get a reminder before they start",
+        "Pick up where you left off, and keep your own playlists",
+      ]}
+      title="Sign in"
+      subtitle="Welcome back. Sign in to continue watching."
+    >
+      {error ? (
+        <div className="as-alert" role="alert">
+          {error}
         </div>
-
-        <aside className="auth-aside">
-          <div className="auth-aside-inner">
-            <div className="auth-aside-badge">Member Access</div>
-            <h2>Welcome back</h2>
-            <p>Access your library and manage your playlist.</p>
-
-            <div className="auth-aside-foot">
-              <span className="auth-dot" />
-              <span>Tip: Use “Remember me” on trusted devices only.</span>
-            </div>
-          </div>
-        </aside>
-      </div>
-    </div>
+      ) : null}
+      <form
+        onSubmit={onSubmit}
+        className="as-form"
+        autoComplete="on"
+        noValidate
+      >
+        <AuthField label="Email">
+          <input
+            className="as-input"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="username"
+            placeholder="you@example.com"
+            required
+            autoFocus
+            inputMode="email"
+          />
+        </AuthField>
+        <AuthField label="Password" hint={capsOn ? "Caps Lock is on" : ""}>
+          <PasswordInput
+            show={showPw}
+            onToggle={() => setShowPw((v) => !v)}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            placeholder="Your password"
+            required
+            onKeyUp={(e) =>
+              setCapsOn(e.getModifierState?.("CapsLock") || false)
+            }
+          />
+        </AuthField>
+        <div className="as-row">
+          <label className="as-check">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+            />
+            <span>Remember me</span>
+          </label>
+          <Link to="/forgot" className="as-link">
+            Forgot password?
+          </Link>
+        </div>
+        <button
+          className="as-btn"
+          disabled={submitting || !canSubmit}
+          aria-busy={submitting ? "true" : "false"}
+        >
+          {submitting ? (
+            <>
+              <span className="as-spinner" aria-hidden="true" />
+              Signing in…
+            </>
+          ) : (
+            "Sign in"
+          )}
+        </button>
+        <div className="as-divider">New to {SITE.name}?</div>
+        <Link to="/free-account" className="as-btn as-btn--ghost">
+          Create a free account
+        </Link>
+      </form>
+    </AuthShell>
   );
 }

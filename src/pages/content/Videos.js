@@ -1,10 +1,22 @@
-// src/pages/admin/Videos.js
-import React, { useEffect, useMemo, useRef, useState } from "react";
+// src/pages/content/Videos.js
+import React, {
+  Suspense,
+  lazy,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import api from "../../api";
-import UploadVideosModal from "../../components/UploadVideosModal";
-import DefaultThumb from "../../assets/BishopRobertsonTVLogo.png";
+// Play button in the ministry's brand color (no thumbnail).
+import { DEFAULT_THUMB as DefaultThumb } from "../../lib/brand";
 import "./Videos.css";
+import "./VideosModern.css";
+
+const UploadVideosModal = lazy(
+  () => import("../../components/UploadVideosModal"),
+);
 
 /* ---------- scoped styles ---------- */
 const injectedStyles = `
@@ -125,6 +137,14 @@ const injectedStyles = `
 .videos-page .search--with-icon { padding-left:32px!important; }
 
 .videos-page .table-footer { padding: 12px 16px; color:#64748b; font-size: 12px; }
+.videos-page .pager {
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding: 12px 16px; border-top:1px solid rgba(255,255,255,.12);
+  color:#cbd5e1; flex-wrap:wrap;
+}
+.videos-page .pager-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.videos-page .pager select { height:34px; border-radius:8px; padding:0 10px; }
+.videos-page .pager button:disabled { opacity:.45; cursor:not-allowed; color: #fff!important; }
 
 /* ✅ Select icons (Status chevron + Sort icon) */
 .videos-page select.search {
@@ -140,7 +160,7 @@ const injectedStyles = `
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M6 8l4 4 4-4' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 .videos-page select.search.select-sort {
-  background-image: url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M7 4v12' stroke='%2364748b' stroke-width='2' stroke-linecap='round'/%3E%3Cpath d='M4.5 6.5L7 4l2.5 2.5' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M13 16V4' stroke='%2364748b' stroke-width='2' stroke-linecap='round'/%3E%3Cpath d='M10.5 13.5L13 16l2.5-2.5' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M7 4v12' stroke='%2364748b' stroke-width='2' stroke-linecap='round'/%3E%3Cpath d='M4.5 6.5L7 4l2.5 2.5' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M13 16V4' stroke='%2364748b' stroke-width='2' stroke-linecap='round'/%3E%3Cpath d='M10.5 13.5L13 16l2.5-2.5' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 
 /* Confirm dialog */
@@ -425,6 +445,106 @@ function StatusBadge({ video }) {
   );
 }
 
+function getProviderState(video) {
+  const provider = String(video?.provider || "").toLowerCase();
+  const status = String(video?.processing_status || "").toLowerCase();
+  if (provider === "bunny_stream" && video?.bunny_video_id) {
+    if (status === "ready")
+      return { label: "BUNNY STREAM", className: "badge-provider-ready" };
+    if (status === "error" || status === "failed")
+      return { label: "BUNNY ERROR", className: "badge-provider-error" };
+    return {
+      label: "BUNNY PROCESSING",
+      className: "badge-provider-processing",
+    };
+  }
+  if (status === "migrating" || status === "migration_pending") {
+    return { label: "MIGRATING", className: "badge-provider-processing" };
+  }
+  return { label: "STORAGE", className: "badge-provider-storage" };
+}
+
+function ProviderBadge({ video }) {
+  const state = getProviderState(video);
+  return (
+    <span className={`provider-badge ${state.className}`}>{state.label}</span>
+  );
+}
+
+function isBunnyStreamVideo(video) {
+  return (
+    String(video?.provider || "").toLowerCase() === "bunny_stream" &&
+    !!video?.bunny_video_id
+  );
+}
+
+function readBunnyEncodeProgress(video) {
+  const status = String(video?.processing_status || "").toLowerCase();
+  if (status === "ready") return 100;
+  if (status === "error" || status === "failed") return 0;
+
+  const md = video?.metadata || {};
+  const migration = md?.bunny_stream_migration || {};
+  const candidates = [
+    video?.migration_progress,
+    video?.encode_progress,
+    migration?.encode_progress,
+    migration?.encodeProgress,
+  ];
+
+  for (const value of candidates) {
+    const n = Number(value);
+    if (Number.isFinite(n)) return Math.max(0, Math.min(100, Math.round(n)));
+  }
+
+  return isBunnyStreamVideo(video) ? 5 : 0;
+}
+
+// Bunny Stream could not encode the copy: it can be retried from the original
+function isFailedStreamVideo(video) {
+  if (!isBunnyStreamVideo(video)) return false;
+  const status = String(video?.processing_status || "").toLowerCase();
+  return status === "error" || status === "failed";
+}
+
+function shouldPollBunnyStatus(video) {
+  if (!isBunnyStreamVideo(video)) return false;
+  const status = String(video?.processing_status || "").toLowerCase();
+  return status !== "ready" && status !== "error" && status !== "failed";
+}
+
+function MigrationProgressBar({ video, override }) {
+  if (!isBunnyStreamVideo(video)) return null;
+
+  const status = String(video?.processing_status || "").toLowerCase();
+  const progress = Number.isFinite(Number(override))
+    ? Number(override)
+    : readBunnyEncodeProgress(video);
+  const pct = Math.max(0, Math.min(100, Math.round(progress)));
+
+  if (status === "ready") return null;
+  if (status === "error" || status === "failed") {
+    return (
+      <div className="migration-progress-text error">Migration failed</div>
+    );
+  }
+
+  return (
+    <div
+      className="migration-progress-wrap"
+      title={`Bunny Stream processing: ${pct}%`}
+    >
+      <div className="migration-progress-top">
+        <span>Processing</span>
+        <strong>{pct}%</strong>
+      </div>
+      <div className="migration-progress-track">
+        <div className="migration-progress-fill" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
 function ConfirmDialog({
   open,
   title = "Are you sure?",
@@ -656,8 +776,12 @@ export default function VideosPage() {
   const [catMap, setCatMap] = useState(new Map());
 
   const [q, setQ] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [sortBy, setSortBy] = useState("newest");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [total, setTotal] = useState(0);
 
   const [uploadOpen, setUploadOpen] = useState(false);
   const [rowMenu, setRowMenu] = useState(null);
@@ -692,78 +816,296 @@ export default function VideosPage() {
   const [selected, setSelected] = useState(() => new Set());
   const [bulkAction, setBulkAction] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [migrationProgress, setMigrationProgress] = useState({});
 
-  async function load() {
-    setLoading(true);
+  // Performance: keep category lookup and page results cached during the session
+  // so back/next/search changes feel instant while the fresh request completes.
+  const pageCacheRef = useRef(new Map());
+  const categoriesLoadedRef = useRef(false);
+  const loadSeqRef = useRef(0);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQ(q.trim()), 350);
+    return () => clearTimeout(timer);
+  }, [q]);
+
+  // Fill in missing video durations from Bunny (runs on the server; we poll)
+  const [durSyncing, setDurSyncing] = useState(false);
+  async function syncDurations() {
+    setMoreOpen(false);
+    setDurSyncing(true);
+    showToast("info", "Syncing durations from Bunny…", 120000);
     try {
-      const [v, c] = await Promise.allSettled([
-        api.get("/videos", { params: { limit: 200 } }),
-        api.get("/categories?mine=1"),
-      ]);
+      await api.post("/admin/videos/durations/sync", {});
+      let st = null;
+      for (let i = 0; i < 150; i += 1) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const { data } = await api.get("/admin/videos/durations");
+        st = data;
+        if (!data?.running) break;
+      }
+      const r = st?.result || {};
+      const parts = [`Updated ${r.updated || 0}`];
+      if (r.still_processing)
+        parts.push(`${r.still_processing} still processing at Bunny`);
+      if (r.not_on_bunny) parts.push(`${r.not_on_bunny} not found on Bunny`);
+      if (r.no_bunny_id) parts.push(`${r.no_bunny_id} not Bunny videos`);
+      if (r.failed) parts.push(`${r.failed} failed`);
+      showToast(
+        r.failed ? "error" : "success",
+        `Durations: ${parts.join(" · ")}`,
+        8000,
+      );
+      load({ silent: true });
+    } catch (e) {
+      showToast(
+        "error",
+        e?.response?.data?.error || "Duration sync could not start.",
+        6000,
+      );
+    } finally {
+      setDurSyncing(false);
+    }
+  }
 
-      const arr =
-        v.status === "fulfilled"
-          ? Array.isArray(v.value.data)
-            ? v.value.data
-            : v.value.data?.items || []
+  // Retry a failed Bunny Stream migration (Bunny fetches the original again)
+  async function retryMigration(v) {
+    setRowMenu(null);
+    showToast("info", "Retrying the Bunny Stream migration…", 30000);
+    try {
+      const { data } = await api.post(`/bunny/stream/retry/${v.id}`, {});
+      showToast(
+        "success",
+        data?.relinked
+          ? "Fixed: linked back to its first Bunny Stream upload, which plays fine."
+          : "Bunny is fetching the original again. It will show as ready when encoding finishes.",
+        7000,
+      );
+      load({ silent: true });
+    } catch (e) {
+      showToast("error", e?.response?.data?.message || "Retry failed.", 8000);
+    }
+  }
+  const [reimporting, setReimporting] = useState(false);
+  async function reimportFailedFromWasabi() {
+    setMoreOpen(false);
+    setReimporting(true);
+    showToast("info", "Re-importing failed messages from Wasabi…", 300000);
+    try {
+      const { data } = await api.post(
+        "/bunny/stream/replace-failed-from-wasabi",
+        {},
+      );
+      const unmatched = Array.isArray(data?.unmatched) ? data.unmatched : [];
+      const failed = Array.isArray(data?.failed) ? data.failed : [];
+      const parts = [
+        `Started ${data?.started || 0} of ${data?.found || 0} from Wasabi — they switch over when Bunny is ready`,
+      ];
+      if (unmatched.length)
+        parts.push(
+          `${unmatched.length} without a known Wasabi file (${unmatched
+            .map((u) => u.title)
+            .slice(0, 3)
+            .join(
+              ", ",
+            )}${unmatched.length > 3 ? "…" : ""}) — use "From Wasabi" on their edit page`,
+        );
+      if (failed.length) parts.push(`${failed.length} could not start`);
+      showToast(
+        unmatched.length || failed.length ? "error" : "success",
+        parts.join(" · "),
+        12000,
+      );
+      load({ silent: true });
+    } catch (e) {
+      showToast(
+        "error",
+        e?.response?.data?.message || "Re-import failed.",
+        8000,
+      );
+    } finally {
+      setReimporting(false);
+    }
+  }
+  const [retryingAll, setRetryingAll] = useState(false);
+  async function retryAllFailed() {
+    setMoreOpen(false);
+    setRetryingAll(true);
+    showToast("info", "Retrying failed Bunny Stream migrations…", 300000);
+    try {
+      const { data } = await api.post("/bunny/stream/retry-failed", {});
+      const failed = Array.isArray(data?.failed) ? data.failed : [];
+      const parts = [`Retried ${data?.retried || 0} of ${data?.found || 0}`];
+      if (failed.length)
+        parts.push(
+          `${failed.length} could not be retried (${failed
+            .map((f) => f.title)
+            .slice(0, 3)
+            .join(
+              ", ",
+            )}${failed.length > 3 ? "…" : ""}) — use "Migrate to Bunny Storage" for those`,
+        );
+      showToast(failed.length ? "error" : "success", parts.join(" · "), 10000);
+      load({ silent: true });
+    } catch (e) {
+      showToast("error", e?.response?.data?.message || "Retry failed.", 8000);
+    } finally {
+      setRetryingAll(false);
+    }
+  }
+
+  async function load({ silent = false } = {}) {
+    const seq = ++loadSeqRef.current;
+    const params = {
+      page,
+      limit: pageSize,
+      sort: sortBy,
+    };
+    if (debouncedQ) params.search = debouncedQ;
+    if (statusFilter) params.status = statusFilter;
+
+    const cacheKey = JSON.stringify(params);
+    const cached = pageCacheRef.current.get(cacheKey);
+
+    // Show cached rows immediately when available, then refresh in background.
+    if (cached) {
+      setItems(cached.items || []);
+      setTotal(Number(cached.total || 0));
+    }
+
+    if (!silent && !cached) setLoading(true);
+
+    try {
+      const requests = [api.get("/videos", { params })];
+      if (!categoriesLoadedRef.current) {
+        requests.push(api.get("/categories?mine=1"));
+      }
+
+      const [v, c] = await Promise.allSettled(requests);
+      if (seq !== loadSeqRef.current) return;
+
+      const payload = v.status === "fulfilled" ? v.value.data : {};
+      const arr = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.items)
+          ? payload.items
           : [];
 
-      setItems(arr);
+      const nextTotal = Number(payload?.total ?? arr.length ?? 0);
+      const safeTotal = Number.isFinite(nextTotal) ? nextTotal : arr.length;
 
-      if (c.status === "fulfilled") {
+      pageCacheRef.current.set(cacheKey, { items: arr, total: safeTotal });
+      // Prevent unbounded cache growth on long admin sessions.
+      if (pageCacheRef.current.size > 30) {
+        const firstKey = pageCacheRef.current.keys().next().value;
+        pageCacheRef.current.delete(firstKey);
+      }
+
+      setItems(arr);
+      setTotal(safeTotal);
+
+      if (c && c.status === "fulfilled") {
         const list = c.value.data || [];
         const m = new Map();
         for (const cat of list) m.set(Number(cat.id), cat.name);
         setCatMap(m);
+        categoriesLoadedRef.current = true;
       }
     } catch (err) {
       console.error("load videos error:", err);
+      if (!cached) {
+        setItems([]);
+        setTotal(0);
+      }
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) setLoading(false);
     }
   }
 
   useEffect(() => {
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, pageSize, sortBy, statusFilter, debouncedQ]);
 
-  const filteredSorted = useMemo(() => {
-    let list = [...items];
-    const query = q.trim().toLowerCase();
-    if (query) {
-      list = list.filter(
-        (v) =>
-          (v.title || "").toLowerCase().includes(query) ||
-          (v.description || "").toLowerCase().includes(query),
-      );
-    }
+  useEffect(() => {
+    setPage(1);
+  }, [pageSize, sortBy, statusFilter, debouncedQ]);
 
-    if (statusFilter === "published")
-      list = list.filter((v) => pickPublished(v));
-    if (statusFilter === "unpublished")
-      list = list.filter((v) => !pickPublished(v));
+  const bunnyProcessingIds = useMemo(
+    () =>
+      items
+        .filter((v) => shouldPollBunnyStatus(v))
+        .map((v) => Number(v.id))
+        .filter((id) => Number.isFinite(id)),
+    [items],
+  );
+  // re-run the status poll only when the SET of processing videos changes
+  const bunnyProcessingKey = bunnyProcessingIds.join(",");
 
-    if (sortBy === "newest") {
-      list.sort(
-        (a, b) =>
-          // new Date(b.created_at || b.created || 0) -
-          // new Date(a.created_at || a.created || 0)
-          new Date(pickPublishedAt(b) || b.created_at || b.created || 0) -
-          new Date(pickPublishedAt(a) || a.created_at || a.created || 0),
-      );
-    } else if (sortBy === "oldest") {
-      list.sort(
-        (a, b) =>
-          // new Date(a.created_at || a.created || 0) -
-          // new Date(b.created_at || b.created || 0)
-          new Date(pickPublishedAt(a) || a.created_at || a.created || 0) -
-          new Date(pickPublishedAt(b) || b.created_at || b.created || 0),
-      );
-    } else if (sortBy === "title") {
-      list.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
-    }
-    return list;
-  }, [items, q, statusFilter, sortBy]);
+  useEffect(() => {
+    const processingIds = bunnyProcessingKey
+      ? bunnyProcessingKey.split(",").map(Number)
+      : [];
+    if (!processingIds.length) return undefined;
+
+    let cancelled = false;
+
+    const syncBunnyStatus = async () => {
+      try {
+        const res = await api.post("/bunny/stream/status-bulk", {
+          ids: processingIds,
+        });
+        const results = Array.isArray(res?.data?.results)
+          ? res.data.results
+          : [];
+
+        if (cancelled || !results.length) return;
+
+        const returnedVideos = new Map();
+        const progressPatch = {};
+
+        results.forEach((r) => {
+          if (r?.video?.id != null) {
+            returnedVideos.set(String(r.video.id), r.video);
+          }
+          if (r?.id != null && Number.isFinite(Number(r.progress))) {
+            progressPatch[String(r.id)] = Math.max(
+              0,
+              Math.min(100, Math.round(Number(r.progress))),
+            );
+          }
+        });
+
+        if (returnedVideos.size) {
+          setItems((prev) =>
+            prev.map((item) =>
+              returnedVideos.has(String(item.id))
+                ? { ...item, ...returnedVideos.get(String(item.id)) }
+                : item,
+            ),
+          );
+        }
+
+        if (Object.keys(progressPatch).length) {
+          setMigrationProgress((prev) => ({ ...prev, ...progressPatch }));
+        }
+      } catch (e) {
+        console.warn("Bunny Stream status sync failed:", e?.message || e);
+      }
+    };
+
+    if (document.visibilityState === "visible") syncBunnyStatus();
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") syncBunnyStatus();
+    }, 15000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [bunnyProcessingKey]);
+
+  const filteredSorted = useMemo(() => items, [items]);
 
   useEffect(() => {
     const ids = new Set(items.map((x) => String(x.id)));
@@ -793,6 +1135,12 @@ export default function VideosPage() {
   }, [visibleIds, selected]);
 
   const selectedCount = selected.size;
+  const totalPages = Math.max(1, Math.ceil((Number(total) || 0) / pageSize));
+  const pageStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const pageEnd = Math.min(
+    total,
+    (page - 1) * pageSize + filteredSorted.length,
+  );
 
   const toggleSelectOne = (id) => {
     const key = String(id);
@@ -816,6 +1164,11 @@ export default function VideosPage() {
     });
   };
 
+  const refreshAfterMutation = async () => {
+    pageCacheRef.current.clear();
+    await load({ silent: false });
+  };
+
   async function doBulk(action) {
     const ids = Array.from(selected);
     if (!ids.length) {
@@ -827,18 +1180,51 @@ export default function VideosPage() {
       setBulkBusy(true);
       setBanner(null);
       try {
-        const ops =
-          action === "publish"
-            ? ids.map((id) => api.post(`/videos/${id}/publish`))
-            : action === "unpublish"
-              ? ids.map((id) => api.post(`/videos/${id}/unpublish`))
-              : ids.map((id) => api.delete(`/videos/${id}`));
+        let results = [];
+        let ok = 0;
+        let bad = 0;
 
-        const results = await Promise.allSettled(ops);
-        const ok = results.filter((r) => r.status === "fulfilled").length;
-        const bad = results.length - ok;
+        if (action === "migrate") {
+          setMigrationProgress((prev) => {
+            const next = { ...prev };
+            ids.forEach((id) => {
+              next[String(id)] = Math.max(Number(next[String(id)] || 0), 5);
+            });
+            return next;
+          });
 
-        await load();
+          const res = await api.post("/bunny/stream/migrate-bulk", { ids });
+          results = res?.data?.results || [];
+          setMigrationProgress((prev) => {
+            const next = { ...prev };
+            results.forEach((r) => {
+              if (r?.id != null && r?.ok) next[String(r.id)] = 10;
+            });
+            return next;
+          });
+          ok = Number(res?.data?.migrated || 0);
+          bad = Number(res?.data?.failed || 0);
+        } else if (action === "restore-storage") {
+          const res = await api.post("/bunny/stream/restore-storage-bulk", {
+            ids,
+          });
+          results = res?.data?.results || [];
+          ok = Number(res?.data?.restored || 0);
+          bad = Number(res?.data?.failed || 0);
+        } else {
+          const ops =
+            action === "publish"
+              ? ids.map((id) => api.post(`/videos/${id}/publish`))
+              : action === "unpublish"
+                ? ids.map((id) => api.post(`/videos/${id}/unpublish`))
+                : ids.map((id) => api.delete(`/videos/${id}`));
+
+          results = await Promise.allSettled(ops);
+          ok = results.filter((r) => r.status === "fulfilled").length;
+          bad = results.length - ok;
+        }
+
+        await refreshAfterMutation();
 
         setSelected(new Set());
 
@@ -848,6 +1234,13 @@ export default function VideosPage() {
           showToast("success", `Unpublished ${ok} video(s).`);
         if (action === "delete")
           showToast("success", `Deleted ${ok} video(s).`);
+        if (action === "migrate")
+          showToast(
+            "success",
+            `Started Bunny Stream migration for ${ok} video(s).`,
+          );
+        if (action === "restore-storage")
+          showToast("success", `Restored ${ok} video(s) to Bunny Storage.`);
 
         if (bad) {
           showToast("error", `${bad} item(s) failed. Check console.`);
@@ -876,6 +1269,38 @@ export default function VideosPage() {
       return;
     }
 
+    if (action === "migrate") {
+      setConfirm({
+        open: true,
+        title: `Migrate ${ids.length} video(s) to Bunny Stream?`,
+        message:
+          "This keeps the same video records, titles, categories, thumbnails, premium settings, and frontend URLs. Only playback will switch to Bunny Stream after processing.",
+        danger: false,
+        confirmText: "Migrate",
+        onConfirm: async () => {
+          setConfirm((c) => ({ ...c, open: false }));
+          await run();
+        },
+      });
+      return;
+    }
+
+    if (action === "restore-storage") {
+      setConfirm({
+        open: true,
+        title: `Restore ${ids.length} video(s) to Bunny Storage?`,
+        message:
+          "This switches Bunny Stream video records back to their saved original Bunny Storage source URL. Use this if Bunny Stream playback has an issue and you need to roll back.",
+        danger: false,
+        confirmText: "Restore",
+        onConfirm: async () => {
+          setConfirm((c) => ({ ...c, open: false }));
+          await run();
+        },
+      });
+      return;
+    }
+
     await run();
   }
 
@@ -893,7 +1318,7 @@ export default function VideosPage() {
         setConfirm((c) => ({ ...c, open: false }));
         try {
           await api.delete(`/videos/${video.id}`);
-          await load();
+          await refreshAfterMutation();
           showToast("success", "Video deleted.");
         } catch (err) {
           console.error("delete error:", err);
@@ -912,7 +1337,7 @@ export default function VideosPage() {
     try {
       if (makePublished) await api.post(`/videos/${video.id}/publish`);
       else await api.post(`/videos/${video.id}/unpublish`);
-      await load();
+      await refreshAfterMutation();
       showToast(
         "success",
         makePublished ? "Video published." : "Video unpublished.",
@@ -921,6 +1346,85 @@ export default function VideosPage() {
       console.error("publish/unpublish error:", e);
       showToast("error", e?.response?.data?.message || "Action failed.");
     }
+  }
+
+  function askMigrate(video) {
+    setRowMenu(null);
+
+    if (isBunnyStreamVideo(video)) {
+      showToast("error", "This video is already on Bunny Stream.");
+      return;
+    }
+
+    setConfirm({
+      open: true,
+      title: "Migrate to Bunny Stream?",
+      message: `“${video.title || "Untitled"}” will keep the same record, title, category, thumbnail, premium setting, and frontend page. Only playback will switch to Bunny Stream after processing.`,
+      danger: false,
+      confirmText: "Migrate",
+      onConfirm: async () => {
+        setConfirm((c) => ({ ...c, open: false }));
+        try {
+          setBulkBusy(true);
+          setMigrationProgress((prev) => ({
+            ...prev,
+            [String(video.id)]: Math.max(
+              Number(prev[String(video.id)] || 0),
+              5,
+            ),
+          }));
+          await api.post(`/bunny/stream/migrate/${video.id}`);
+          setMigrationProgress((prev) => ({ ...prev, [String(video.id)]: 10 }));
+          await refreshAfterMutation();
+          showToast("success", "Bunny Stream migration started.");
+        } catch (err) {
+          console.error("migrate error:", err);
+          showToast(
+            "error",
+            err?.response?.data?.message || "Migration failed.",
+          );
+        } finally {
+          setBulkBusy(false);
+        }
+      },
+    });
+  }
+
+  function askRestoreToStorage(video) {
+    setRowMenu(null);
+
+    if (!isBunnyStreamVideo(video)) {
+      showToast(
+        "error",
+        "This video is already using Bunny Storage/local playback.",
+      );
+      return;
+    }
+
+    setConfirm({
+      open: true,
+      title: "Restore to Bunny Storage?",
+      message: `“${video.title || "Untitled"}” will switch back to the saved original Bunny Storage source URL. Use this rollback only if Bunny Stream playback has an issue.`,
+      danger: false,
+      confirmText: "Restore",
+      onConfirm: async () => {
+        setConfirm((c) => ({ ...c, open: false }));
+        try {
+          setBulkBusy(true);
+          await api.post(`/bunny/stream/restore-storage/${video.id}`);
+          await refreshAfterMutation();
+          showToast("success", "Video restored to Bunny Storage.");
+        } catch (err) {
+          console.error("restore storage error:", err);
+          showToast(
+            "error",
+            err?.response?.data?.message || "Restore to Bunny Storage failed.",
+          );
+        } finally {
+          setBulkBusy(false);
+        }
+      },
+    });
   }
 
   const DefaultThumbCard = ({ durSec }) => (
@@ -933,7 +1437,7 @@ export default function VideosPage() {
   );
 
   return (
-    <div className="videos-page">
+    <div className="videos-page vp-modern">
       <style dangerouslySetInnerHTML={{ __html: injectedStyles }} />
 
       {toast && (
@@ -974,12 +1478,15 @@ export default function VideosPage() {
           flexWrap: "wrap",
         }}
       >
-        <h2
-          style={{ margin: 0, fontWeight: 800, fontSize: 28 }}
-          className="video-main-title"
-        >
-          Videos
-        </h2>
+        <div className="vp-titleWrap">
+          <h2
+            style={{ margin: 0, fontWeight: 800, fontSize: 28 }}
+            className="video-main-title"
+          >
+            Videos
+          </h2>
+          <p className="vp-subtitle">Upload, manage, and publish your videos</p>
+        </div>
 
         <div
           style={{
@@ -1003,6 +1510,34 @@ export default function VideosPage() {
                 onClick={() => alert("Export CSV (todo)")}
               >
                 Export CSV
+              </button>
+
+              <button
+                className="menu-item"
+                onClick={syncDurations}
+                disabled={durSyncing}
+              >
+                {durSyncing
+                  ? "Syncing durations…"
+                  : "Sync durations from Bunny"}
+              </button>
+              <button
+                className="menu-item"
+                onClick={retryAllFailed}
+                disabled={retryingAll}
+              >
+                {retryingAll
+                  ? "Retrying failed migrations…"
+                  : "Retry failed migrations"}
+              </button>
+              <button
+                className="menu-item"
+                onClick={reimportFailedFromWasabi}
+                disabled={reimporting}
+              >
+                {reimporting
+                  ? "Re-importing from Wasabi…"
+                  : "Re-import failed from Wasabi"}
               </button>
 
               <Link
@@ -1049,6 +1584,7 @@ export default function VideosPage() {
             <option value="">Status</option>
             <option value="published">Published</option>
             <option value="unpublished">Unpublished</option>
+            <option value="needs_reupload">Needs re-upload</option>
           </select>
 
           <select
@@ -1065,10 +1601,10 @@ export default function VideosPage() {
 
       <div className="table-card">
         {/* ✅ Bulk Actions BAR (moved to top of table area) */}
-        <div className="bulkbar">
+        <div className={`bulkbar${selectedCount ? " is-active" : ""}`}>
           <div className="bulkbar-left">
-            <div className="bulkbar-title">
-              Bulk actions {selectedCount ? `(${selectedCount} selected)` : ""}
+            <div className="bulkbar-title" aria-live="polite">
+              {selectedCount ? `✓ ${selectedCount} selected` : "Bulk actions"}
             </div>
             <div className="bulkbar-tip">
               Tip: select rows using the checkboxes.
@@ -1085,6 +1621,8 @@ export default function VideosPage() {
               <option value="">Choose…</option>
               <option value="publish">Publish</option>
               <option value="unpublish">Unpublish</option>
+              <option value="migrate">Migrate to Bunny Stream</option>
+              <option value="restore-storage">Migrate to Bunny Storage</option>
               <option value="delete">Delete</option>
             </select>
 
@@ -1167,7 +1705,12 @@ export default function VideosPage() {
                   const showDefault = !thumb || !!thumbErrors[v.id];
 
                   return (
-                    <tr key={v.id}>
+                    <tr
+                      key={v.id}
+                      className={
+                        selected.has(String(v.id)) ? "is-selected" : ""
+                      }
+                    >
                       <td>
                         <input
                           type="checkbox"
@@ -1194,6 +1737,7 @@ export default function VideosPage() {
                                 src={thumb}
                                 alt=""
                                 loading="lazy"
+                                decoding="async"
                                 onError={() =>
                                   setThumbErrors((prev) => ({
                                     ...prev,
@@ -1209,19 +1753,26 @@ export default function VideosPage() {
                             </div>
                           )}
 
-                          <Link
-                            to={editHref}
-                            className="row-title"
-                            title="Edit video"
-                            style={{
-                              minWidth: 0,
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {title}
-                          </Link>
+                          <div style={{ minWidth: 0, display: "grid", gap: 6 }}>
+                            <Link
+                              to={editHref}
+                              className="row-title"
+                              title="Edit video"
+                              style={{
+                                minWidth: 0,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {title}
+                            </Link>
+                            <ProviderBadge video={v} />
+                            <MigrationProgressBar
+                              video={v}
+                              override={migrationProgress[String(v.id)]}
+                            />
+                          </div>
                         </div>
                       </td>
 
@@ -1270,6 +1821,45 @@ export default function VideosPage() {
                               onClick={() => rowPublish(v, false)}
                             >
                               Unpublish
+                            </button>
+                            {isFailedStreamVideo(v) ? (
+                              <>
+                                <button
+                                  className="menu-item"
+                                  onClick={() =>
+                                    navigate(
+                                      `${editHref}${editHref.includes("?") ? "&" : "?"}replace=1`,
+                                    )
+                                  }
+                                >
+                                  Replace video file
+                                </button>
+                                <button
+                                  className="menu-item"
+                                  onClick={() => retryMigration(v)}
+                                >
+                                  Retry Bunny Stream migration
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                className="menu-item"
+                                disabled={isBunnyStreamVideo(v)}
+                                onClick={() => askMigrate(v)}
+                              >
+                                {isBunnyStreamVideo(v)
+                                  ? "Already on Bunny Stream"
+                                  : "Migrate to Bunny Stream"}
+                              </button>
+                            )}
+                            <button
+                              className="menu-item"
+                              disabled={!isBunnyStreamVideo(v)}
+                              onClick={() => askRestoreToStorage(v)}
+                            >
+                              {isBunnyStreamVideo(v)
+                                ? "Migrate to Bunny Storage"
+                                : "Already on Bunny Storage"}
                             </button>
                             <button
                               className="menu-item danger"
@@ -1334,6 +1924,7 @@ export default function VideosPage() {
                           src={thumb}
                           alt=""
                           loading="lazy"
+                          decoding="async"
                           onError={() =>
                             setThumbErrors((prev) => ({
                               ...prev,
@@ -1353,6 +1944,11 @@ export default function VideosPage() {
                       </Link>
                       <div className="sub">
                         <StatusBadge video={v} />
+                        <ProviderBadge video={v} />
+                        <MigrationProgressBar
+                          video={v}
+                          override={migrationProgress[String(v.id)]}
+                        />
                         <span>• {pickCategoryName(v, catMap)}</span>
                         <span>• {pickPriceLabel(v)}</span>
                         <span>• {formatDate(v.created_at || v.created)}</span>
@@ -1395,6 +1991,45 @@ export default function VideosPage() {
                           >
                             Unpublish
                           </button>
+                          {isFailedStreamVideo(v) ? (
+                            <>
+                              <button
+                                className="menu-item"
+                                onClick={() =>
+                                  navigate(
+                                    `${editHref}${editHref.includes("?") ? "&" : "?"}replace=1`,
+                                  )
+                                }
+                              >
+                                Replace video file
+                              </button>
+                              <button
+                                className="menu-item"
+                                onClick={() => retryMigration(v)}
+                              >
+                                Retry Bunny Stream migration
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              className="menu-item"
+                              disabled={isBunnyStreamVideo(v)}
+                              onClick={() => askMigrate(v)}
+                            >
+                              {isBunnyStreamVideo(v)
+                                ? "Already on Bunny Stream"
+                                : "Migrate to Bunny Stream"}
+                            </button>
+                          )}
+                          <button
+                            className="menu-item"
+                            disabled={!isBunnyStreamVideo(v)}
+                            onClick={() => askRestoreToStorage(v)}
+                          >
+                            {isBunnyStreamVideo(v)
+                              ? "Migrate to Bunny Storage"
+                              : "Already on Bunny Storage"}
+                          </button>
                           <button
                             className="menu-item danger"
                             onClick={() => askDelete(v)}
@@ -1411,16 +2046,54 @@ export default function VideosPage() {
           </div>
         )}
 
-        <div className="table-footer">
-          Displaying {filteredSorted.length} • Selected {selectedCount}
+        <div className="pager">
+          <div>
+            Displaying {pageStart}–{pageEnd} of {total} • Selected{" "}
+            {selectedCount}
+          </div>
+          <div className="pager-actions">
+            <span>Rows</span>
+            <select
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value) || 25)}
+              disabled={loading || bulkBusy}
+            >
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+            <button
+              className="btn ghost"
+              style={{ height: 34, minWidth: 80 }}
+              disabled={loading || page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Previous
+            </button>
+            <span>
+              Page {page} of {totalPages}
+            </span>
+            <button
+              className="btn ghost"
+              style={{ height: 34, minWidth: 80, color: "#fff!important" }}
+              disabled={loading || page >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 
-      <UploadVideosModal
-        open={uploadOpen}
-        onClose={() => setUploadOpen(false)}
-        onDone={load}
-      />
+      {uploadOpen ? (
+        <Suspense fallback={null}>
+          <UploadVideosModal
+            open={uploadOpen}
+            onClose={() => setUploadOpen(false)}
+            onDone={refreshAfterMutation}
+          />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

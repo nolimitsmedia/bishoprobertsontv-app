@@ -1,5 +1,6 @@
 // RenderBlocksV2.jsx
 import React from "react";
+import sanitizeHtml from "../utils/sanitizeHtml";
 
 /* ---------- helpers ---------- */
 function pxPad(str = "") {
@@ -22,8 +23,8 @@ function AlignRow({ align = "left", children }) {
     align === "center"
       ? "center"
       : align === "right"
-      ? "flex-end"
-      : "flex-start";
+        ? "flex-end"
+        : "flex-start";
   return (
     <div style={{ display: "flex", justifyContent: justify }}>{children}</div>
   );
@@ -47,7 +48,10 @@ function RichText({ node }) {
     textAlign: node.style?.align || "left",
   };
   return (
-    <div style={style} dangerouslySetInnerHTML={{ __html: node.html || "" }} />
+    <div
+      style={style}
+      dangerouslySetInnerHTML={{ __html: sanitizeHtml(node.html || "") }}
+    />
   );
 }
 
@@ -95,7 +99,9 @@ function Btn({ node }) {
 
 function Live({ node }) {
   if (node.html) {
-    return <div dangerouslySetInnerHTML={{ __html: node.html }} />;
+    return (
+      <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(node.html) }} />
+    );
   }
   if (node.url) {
     return (

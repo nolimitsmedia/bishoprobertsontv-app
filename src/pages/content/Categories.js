@@ -1,6 +1,7 @@
 // src/pages/content/Categories.js
 import React, { useEffect, useState } from "react";
 import api from "../../api";
+import { confirmDialog } from "../../components/ui/Dialogs";
 
 function slugify(s) {
   return String(s || "")
@@ -65,7 +66,7 @@ export default function CategoriesPage() {
   }
 
   async function remove(id) {
-    if (!window.confirm("Delete this category?")) return;
+    if (!(await confirmDialog("Delete this category?"))) return;
     try {
       await api.delete(`/categories/${id}`);
       await load();

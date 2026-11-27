@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import api from "../../api";
 import ImgHead from "../../assets/bishopimage.png";
 import DefaultThumb from "../../assets/BishopRobertsonTVLogo.png";
+import HomeBanner from "../../assets/brtv-home-banner.png"; // ✅ hero background
 
 // use the same channel id / handle you use in LivePage.jsx
 const CHANNEL_ID = "gworrdns";
@@ -41,30 +42,6 @@ function normalizeItems(data) {
   if (Array.isArray(data.videos)) return data.videos;
   if (Array.isArray(data.rows)) return data.rows;
   return [];
-}
-
-function pickVideoSrc(v) {
-  if (!v || typeof v !== "object") return null;
-
-  const raw =
-    v.video_url ||
-    v.videoUrl ||
-    v.stream_url ||
-    v.streamUrl ||
-    v.playback_url ||
-    v.playbackUrl ||
-    v.file_url ||
-    v.fileUrl ||
-    v.url ||
-    v.src ||
-    v.source ||
-    v?.metadata?.video_url ||
-    v?.metadata?.videoUrl ||
-    v?.metadata?.stream_url ||
-    v?.metadata?.playback_url ||
-    null;
-
-  return absUrl(raw);
 }
 
 /* ---------- shared helpers for countdown ---------- */
@@ -157,42 +134,531 @@ function CircularSpinner({ size = 44, label = "Loading…" }) {
   );
 }
 
+/* -----------------------------------------
+   Home Builder Model (matches AdminPageEditor)
+----------------------------------------- */
+const HOME_DEFAULTS = {
+  hero: {
+    kicker: "Apostolic Teaching • Breakthrough Living",
+    title: "Experience the Message Without Limits",
+    sub: "Stream life-changing revelation and prophetic teaching directly from Bishop Robertson.",
+    cta_text: "Start Watching",
+    cta_href: "/catalog",
+    background_url: "",
+  },
+  join: {
+    eyebrow: "The Connection",
+    title: "DRM",
+    sub: '"You become who you connect to!" - DRM',
+    cta_text: "Join Now",
+    cta_href: "/signup",
+  },
+  watch_more: {
+    title: "Go Deeper Into The Word",
+    sub: "Stream powerful teachings anytime, anywhere.",
+    cta_text: "Browse Catalog",
+    cta_href: "/catalog",
+  },
+  about: {
+    name: "Bishop Robertson",
+    text: "A leader, pioneer, and prophetic voice for over five decades. Bishop Robertson continues to deliver revelation and impartation that transforms lives across the world.",
+    avatar_url: "",
+  },
+  extra_sections: [],
+};
+
+function isObj(v) {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+function uid() {
+  try {
+    if (typeof crypto !== "undefined" && crypto?.randomUUID)
+      return crypto.randomUUID();
+  } catch (_) {}
+  return `id_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
+}
+
+function themeDefaults(theme) {
+  const t = String(theme || "default");
+  if (t === "dark") {
+    return {
+      bg: "rgba(255,255,255,0.04)",
+      border: "rgba(255,255,255,0.10)",
+      text: "#ffffff",
+    };
+  }
+  if (t === "purple") {
+    return {
+      bg: "rgba(124,58,237,0.12)",
+      border: "rgba(124,58,237,0.25)",
+      text: "#ffffff",
+    };
+  }
+  if (t === "blue") {
+    return {
+      bg: "rgba(59,130,246,0.10)",
+      border: "rgba(59,130,246,0.22)",
+      text: "#ffffff",
+    };
+  }
+  if (t === "light") {
+    return {
+      bg: "rgba(255,255,255,0.92)",
+      border: "rgba(0,0,0,0.10)",
+      text: "#0b0d12",
+    };
+  }
+  return {
+    bg: "rgba(255,255,255,0.03)",
+    border: "rgba(255,255,255,0.08)",
+    text: "#ffffff",
+  };
+}
+
+function shadowCss(v) {
+  const s = String(v || "md");
+  if (s === "none") return "none";
+  if (s === "sm") return "0 6px 18px rgba(0,0,0,0.25)";
+  if (s === "lg") return "0 18px 60px rgba(0,0,0,0.45)";
+  return "0 10px 30px rgba(0,0,0,0.35)";
+}
+
+function deepMergeHomeDefaults(incoming) {
+  const src = isObj(incoming) ? incoming : {};
+  return {
+    ...HOME_DEFAULTS,
+    hero: { ...HOME_DEFAULTS.hero, ...(src.hero || {}) },
+    join: { ...HOME_DEFAULTS.join, ...(src.join || {}) },
+    watch_more: { ...HOME_DEFAULTS.watch_more, ...(src.watch_more || {}) },
+    about: { ...HOME_DEFAULTS.about, ...(src.about || {}) },
+    extra_sections: Array.isArray(src.extra_sections) ? src.extra_sections : [],
+  };
+}
+
+function clampNum(n, min, max) {
+  const v = Number(n);
+  if (Number.isNaN(v)) return min;
+  return Math.max(min, Math.min(max, v));
+}
+
+function normalizeSpacing(v) {
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  if (/^\d+(\.\d+)?$/.test(s)) return `${s}px`;
+  return s;
+}
+
+function defaultSectionStyle(theme = "default") {
+  return {
+    padding: "",
+    margin: "",
+    max_width: "",
+    bg_color: "",
+    text_color: "",
+    title_color: "",
+    border_color: "",
+    border_width: "",
+    radius: 14,
+    shadow: "soft", // none | soft | strong
+    align: "left",
+    content_gap: "",
+    font_size: "",
+    line_height: "",
+    show_title: true,
+    title_tag: "h3",
+    title_size: 22,
+    title_weight: 800,
+    bg_image_url: "",
+    bg_image_fit: "cover",
+    bg_image_pos: "center",
+    overlay: 0.0,
+    overlay_color: "",
+    overlay_opacity: "",
+    img_radius: 12,
+    img_shadow: "none",
+  };
+}
+
+function ensureSectionShape(s) {
+  const sec = isObj(s) ? s : {};
+  const layout = String(sec.layout || "card"); // card | full | highlight | two_columns
+  const theme = String(sec.theme || "default"); // default | dark | purple | blue | light
+  const styles = isObj(sec.styles) ? sec.styles : {};
+
+  const baseStyle = defaultSectionStyle(theme);
+
+  const rawBlocks = Array.isArray(sec.blocks) ? sec.blocks : [];
+  const blocks = rawBlocks
+    .map((b) => (isObj(b) ? b : {}))
+    .map((b) => ({
+      id: String(b.id || uid()),
+      type: String(b.type || "richtext"),
+      ...b,
+    }));
+
+  return {
+    id: String(sec.id || uid()),
+    title: String(sec.title || ""),
+    html: String(sec.html || ""),
+    layout,
+    theme,
+    left_html: String(
+      sec.left_html || (layout === "two_columns" ? sec.html || "" : ""),
+    ),
+    right_html: String(sec.right_html || ""),
+    blocks,
+    styles: {
+      ...baseStyle,
+      ...styles,
+      padding: normalizeSpacing(styles.padding ?? baseStyle.padding),
+      margin: normalizeSpacing(styles.margin ?? baseStyle.margin),
+      max_width: String(styles.max_width ?? baseStyle.max_width ?? ""),
+      border_width: String(styles.border_width ?? baseStyle.border_width ?? ""),
+      content_gap: normalizeSpacing(
+        styles.content_gap ?? baseStyle.content_gap,
+      ),
+      font_size: String(styles.font_size ?? baseStyle.font_size ?? ""),
+      line_height: String(styles.line_height ?? baseStyle.line_height ?? ""),
+      overlay_color: String(
+        styles.overlay_color ?? baseStyle.overlay_color ?? "",
+      ),
+      overlay_opacity: String(
+        styles.overlay_opacity ?? baseStyle.overlay_opacity ?? "",
+      ),
+      radius: clampNum(styles.radius ?? baseStyle.radius, 0, 60),
+      title_size: clampNum(styles.title_size ?? baseStyle.title_size, 10, 64),
+      title_weight: clampNum(
+        styles.title_weight ?? baseStyle.title_weight,
+        200,
+        900,
+      ),
+      overlay: Math.max(
+        0,
+        Math.min(0.9, Number(styles.overlay ?? baseStyle.overlay) || 0),
+      ),
+      img_radius: clampNum(styles.img_radius ?? baseStyle.img_radius, 0, 60),
+    },
+  };
+}
+
+function safeHtml(html) {
+  // minimal guard: ensure string + fix relative /uploads URLs (React runs on :5001)
+  const raw = String(html || "");
+  const base = (api?.defaults?.baseURL || "").replace(/\/api\/?$/i, "");
+  if (!base) return { __html: raw };
+
+  const fixed = raw
+    .replace(/(src=\")\/uploads\//g, `$1${base}/uploads/`)
+    .replace(/(src=\')\/uploads\//g, `$1${base}/uploads/`)
+    .replace(/(href=\")\/uploads\//g, `$1${base}/uploads/`)
+    .replace(/(href=\')\/uploads\//g, `$1${base}/uploads/`);
+
+  return { __html: fixed };
+}
+
+/* -----------------------------------------
+   Public Home content loader (content_json)
+----------------------------------------- */
+async function fetchHomeContentJson() {
+  // Try a few common shapes/endpoints without breaking anything if missing.
+  const tries = [
+    // ✅ primary for this backend (pagesPublic.js mounted at /api/pages)
+    { path: "/pages/home" },
+
+    // legacy / back-compat paths (older builds)
+    { path: "/public/pages/home" },
+    { path: "/pages/public/home" },
+    { path: "/public/pages", params: { slug: "home" } },
+    { path: "/public/page", params: { slug: "home" } },
+  ];
+
+  for (const t of tries) {
+    const r = await safeGet(t.path, { params: t.params });
+    if (!r.ok) continue;
+
+    const d = r.data || {};
+    const page = d.page || d.data?.page || d.result?.page || null;
+
+    const cj =
+      page?.content_json ||
+      d?.content_json ||
+      d?.page?.content_json ||
+      d?.data?.content_json ||
+      null;
+
+    if (cj && isObj(cj)) return cj;
+
+    // Sometimes endpoint returns list of pages
+    const items = Array.isArray(d.pages)
+      ? d.pages
+      : Array.isArray(d.items)
+        ? d.items
+        : null;
+    if (Array.isArray(items)) {
+      const home = items.find(
+        (x) => String(x?.slug || "").toLowerCase() === "home",
+      );
+      if (home?.content_json && isObj(home.content_json))
+        return home.content_json;
+    }
+  }
+
+  return null;
+}
+
 export default function Home() {
+  const [homeModel, setHomeModel] = useState(() => deepMergeHomeDefaults(null));
+  const [homeLoading, setHomeLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      setHomeLoading(true);
+      try {
+        const cj = await fetchHomeContentJson();
+        if (cancelled) return;
+
+        if (cj && isObj(cj)) {
+          setHomeModel(deepMergeHomeDefaults(cj));
+        } else {
+          // keep defaults
+          setHomeModel(deepMergeHomeDefaults(null));
+        }
+      } finally {
+        if (!cancelled) setHomeLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <main className="home-root">
-      <HeaderHero />
-      <JoinStrip />
-      <FeaturedHighlight />
-      <LatestTeaching />
-      <WatchMoreCTA />
-      <AboutSection />
+      <HomeSections model={homeModel} loading={homeLoading} />
+      <Spacer />
     </main>
+  );
+}
+
+/* ---------------------------------------------------------
+   Home is now builder-driven (Option A)
+   We normalize legacy home fields into builder blocks so older data still works.
+--------------------------------------------------------- */
+function normalizeHomeSections(model) {
+  const m = isObj(model) ? model : {};
+  const extraRaw = Array.isArray(m.extra_sections) ? m.extra_sections : [];
+  const extra = extraRaw.map(ensureSectionShape);
+
+  const hasCore = extra.some((s) =>
+    (Array.isArray(s.blocks) ? s.blocks : []).some(
+      (b) => String(b?.type || "") === "home_hero",
+    ),
+  );
+  if (hasCore) return extra;
+
+  const hero = m.hero || HOME_DEFAULTS.hero;
+  const join = m.join || HOME_DEFAULTS.join;
+  const cta = m.watch_more || HOME_DEFAULTS.watch_more;
+  const about = m.about || HOME_DEFAULTS.about;
+
+  const core = [
+    {
+      id: "core-hero",
+      title: "Hero",
+      layout: "full",
+      theme: "default",
+      blocks: [
+        {
+          id: uid(),
+          type: "home_hero",
+          kicker: hero.kicker || "",
+          title: hero.title || "",
+          sub: hero.sub || "",
+          cta_text: hero.cta_text || "Start Watching",
+          cta_href: hero.cta_href || "/catalog",
+          background_url: hero.background_url || "",
+        },
+      ],
+    },
+    {
+      id: "core-join",
+      title: "Join Strip",
+      layout: "full",
+      theme: "default",
+      blocks: [
+        {
+          id: uid(),
+          type: "home_join",
+          eyebrow: join.eyebrow || "",
+          title: join.title || "",
+          sub: join.sub || "",
+          cta_text: join.cta_text || "Join Now",
+          cta_href: join.cta_href || "/signup",
+        },
+      ],
+    },
+    {
+      id: "core-featured-live",
+      title: "Featured Live Highlight",
+      layout: "full",
+      theme: "default",
+      blocks: [{ id: uid(), type: "featured_live", show: true }],
+    },
+    {
+      id: "core-latest-teaching",
+      title: "Latest Teaching",
+      layout: "full",
+      theme: "default",
+      blocks: [{ id: uid(), type: "latest_teaching", show: true }],
+    },
+    {
+      id: "core-cta",
+      title: "Watch More CTA",
+      layout: "full",
+      theme: "default",
+      blocks: [
+        {
+          id: uid(),
+          type: "home_cta",
+          title: cta.title || "",
+          sub: cta.sub || "",
+          cta_text: cta.cta_text || "Browse Catalog",
+          cta_href: cta.cta_href || "/catalog",
+        },
+      ],
+    },
+    {
+      id: "core-about",
+      title: "About Section",
+      layout: "full",
+      theme: "default",
+      blocks: [
+        {
+          id: uid(),
+          type: "home_about",
+          name: about.name || "",
+          text: about.text || "",
+          avatar_url: about.avatar_url || "",
+        },
+      ],
+    },
+  ].map(ensureSectionShape);
+
+  return [...core, ...extra];
+}
+
+function HomeSections({ model, loading }) {
+  const sections = useMemo(() => normalizeHomeSections(model), [model]);
+
+  if (!sections.length) return null;
+
+  return (
+    <>
+      {sections.map((sec) => {
+        const blocks = Array.isArray(sec.blocks) ? sec.blocks : [];
+        const first = blocks[0] || null;
+        const t = String(first?.type || "");
+
+        if (t === "home_hero") {
+          const heroModel = {
+            kicker: first.kicker || "",
+            title: first.title || "",
+            sub: first.sub || "",
+            cta_text: first.cta_text || "",
+            cta_href: first.cta_href || "",
+            background_url: first.background_url || "",
+          };
+          return (
+            <HeaderHero key={sec.id} model={heroModel} loading={loading} />
+          );
+        }
+
+        if (t === "home_join") {
+          const joinModel = {
+            eyebrow: first.eyebrow || "",
+            title: first.title || "",
+            sub: first.sub || "",
+            cta_text: first.cta_text || "",
+            cta_href: first.cta_href || "",
+          };
+          return <JoinStrip key={sec.id} model={joinModel} />;
+        }
+
+        if (t === "featured_live") {
+          if (first.show === false) return null;
+          return <FeaturedHighlight key={sec.id} />;
+        }
+
+        if (t === "latest_teaching") {
+          if (first.show === false) return null;
+          return <LatestTeaching key={sec.id} />;
+        }
+
+        if (t === "home_cta") {
+          const ctaModel = {
+            title: first.title || "",
+            sub: first.sub || "",
+            cta_text: first.cta_text || "",
+            cta_href: first.cta_href || "",
+          };
+          return (
+            <WatchMoreCTA key={sec.id} model={ctaModel} loading={loading} />
+          );
+        }
+
+        if (t === "home_about") {
+          const aboutModel = {
+            name: first.name || "",
+            text: first.text || "",
+            avatar_url: first.avatar_url || "",
+          };
+          return (
+            <AboutSection key={sec.id} model={aboutModel} loading={loading} />
+          );
+        }
+
+        return <BuilderSection key={sec.id} sec={sec} />;
+      })}
+    </>
   );
 }
 
 /* ---------------------------------------------------------
    1) HEADER + HERO
 --------------------------------------------------------- */
-function HeaderHero() {
+function HeaderHero({ model, loading }) {
+  const m = model || HOME_DEFAULTS.hero;
+
+  const bg =
+    absUrl(m.background_url) ||
+    (m.background_url ? m.background_url : null) ||
+    HomeBanner;
+
   return (
-    <section className="hero-section">
+    <section className="hero-section" style={{ backgroundImage: `url(${bg})` }}>
       <div className="hero-overlay" />
 
       <div className="hero-content">
-        <div className="hero-kicker">
-          Apostolic Teaching • Breakthrough Living
-        </div>
+        <div className="hero-kicker">{m.kicker || ""}</div>
 
-        <h1 className="hero-title">Experience the Message Without Limits</h1>
+        <h1 className="hero-title">{m.title || ""}</h1>
 
-        <p className="hero-sub">
-          Stream life-changing revelation and prophetic teaching directly from
-          Bishop Robertson.
-        </p>
+        <p className="hero-sub">{m.sub || ""}</p>
 
-        <Link className="hero-cta" to="/catalog">
-          Start Watching
+        <Link className="hero-cta" to={m.cta_href || "/catalog"}>
+          {m.cta_text || "Start Watching"}
         </Link>
+
+        {/* keeps layout stable; only shows when truly loading */}
+        {loading ? (
+          <div style={{ marginTop: 12, opacity: 0.85 }}>
+            <CircularSpinner size={28} label="Loading home content…" />
+          </div>
+        ) : null}
       </div>
     </section>
   );
@@ -201,18 +667,20 @@ function HeaderHero() {
 /* ---------------------------------------------------------
    2) JOIN STRIP
 --------------------------------------------------------- */
-function JoinStrip() {
+function JoinStrip({ model }) {
+  const m = model || HOME_DEFAULTS.join;
+
   return (
     <section className="join-strip">
       <div className="join-inner">
         <div>
-          <h5>The Connection</h5>
-          <h2 className="join-title">DRM</h2>
-          <p className="join-sub">"You become who you connect to!" - DRM</p>
+          <h5>{m.eyebrow || ""}</h5>
+          <h2 className="join-title">{m.title || ""}</h2>
+          <p className="join-sub">{m.sub || ""}</p>
         </div>
 
-        <Link to="/signup" className="join-btn">
-          Join Now
+        <Link to={m.cta_href || "/signup"} className="join-btn">
+          {m.cta_text || "Join Now"}
         </Link>
       </div>
     </section>
@@ -228,10 +696,8 @@ function FeaturedHighlight() {
   const [showWatch, setShowWatch] = useState(false);
   const [liveOngoing, setLiveOngoing] = useState(false);
 
-  // ✅ spinner for Live Stream section while loading
   const [loadingLive, setLoadingLive] = useState(true);
 
-  // ✅ keep refs to avoid stale values inside the 15s refresh loop
   const nextLiveAtRef = useRef(null);
   const liveOngoingRef = useRef(false);
 
@@ -497,11 +963,44 @@ function FeaturedHighlight() {
 }
 
 /* ---------------------------------------------------------
-   4) LATEST TEACHING — Featured video + Grid
+   4) LATEST TEACHING — Cards only (no big banner)
+   - Order: latest → oldest by publish date
+   - Click goes to /watch/:id (gated handled on watch page)
 --------------------------------------------------------- */
 function LatestTeaching() {
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // robust publish date picker
+  function getPublishTime(v) {
+    const raw =
+      v?.published_at ||
+      v?.publish_date ||
+      v?.publishedAt ||
+      v?.publishedAtUtc ||
+      v?.publish_at ||
+      v?.created_at ||
+      v?.createdAt ||
+      v?.updated_at ||
+      v?.updatedAt ||
+      v?.metadata?.published_at ||
+      v?.metadata?.publish_date ||
+      v?.metadata?.publishedAt ||
+      null;
+
+    if (!raw) return 0;
+
+    const d = new Date(raw);
+    if (!Number.isNaN(d.getTime())) return d.getTime();
+
+    // handle "YYYY-MM-DD HH:mm:ss"
+    if (typeof raw === "string") {
+      const d2 = new Date(raw.replace(" ", "T"));
+      if (!Number.isNaN(d2.getTime())) return d2.getTime();
+    }
+
+    return 0;
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -509,11 +1008,9 @@ function LatestTeaching() {
     (async () => {
       setLoading(true);
       try {
-        // Try public endpoint first (your Home uses this),
-        // then fall back to the other public endpoint your Catalog supports.
         const tries = [
-          { path: "/public/videos", params: { limit: 8 } },
-          { path: "/videos/public", params: { limit: 8 } },
+          { path: "/public/videos", params: { limit: 12 } },
+          { path: "/videos/public", params: { limit: 12 } },
         ];
 
         let items = [];
@@ -524,7 +1021,11 @@ function LatestTeaching() {
           if (Array.isArray(items) && items.length) break;
         }
 
-        if (!cancelled) setVideos(Array.isArray(items) ? items : []);
+        const sorted = (Array.isArray(items) ? items : [])
+          .slice()
+          .sort((a, b) => getPublishTime(b) - getPublishTime(a));
+
+        if (!cancelled) setVideos(sorted);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -533,25 +1034,8 @@ function LatestTeaching() {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const featured = videos[0] || null;
-  const rest = videos.slice(1);
-
-  const featuredThumb = useMemo(() => {
-    if (!featured) return DefaultThumb;
-    const raw =
-      featured.thumbnail_url ||
-      featured?.metadata?.thumbnail_vertical_url ||
-      featured?.metadata?.thumbnail_url ||
-      null;
-    return absUrl(raw) || DefaultThumb;
-  }, [featured]);
-
-  const featuredSrc = useMemo(() => {
-    if (!featured) return null;
-    return pickVideoSrc(featured);
-  }, [featured]);
 
   return (
     <section className="latest-section">
@@ -570,117 +1054,51 @@ function LatestTeaching() {
           No videos found yet.
         </div>
       ) : (
-        <>
-          {/* ✅ Featured block (this is what fills your blank area) */}
-          <div className="latest-featured">
-            {featuredSrc ? (
-              <div className="latest-featured-player">
-                <video
-                  src={featuredSrc}
-                  poster={featuredThumb}
-                  controls
-                  playsInline
-                  preload="metadata"
-                  controlsList="nodownload"
-                  disablePictureInPicture
-                  onContextMenu={(e) => e.preventDefault()}
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    borderRadius: 14,
-                    background: "rgba(0,0,0,0.35)",
-                  }}
-                />
-              </div>
-            ) : (
+        <div className="latest-grid">
+          {videos.map((v) => {
+            const rawThumb =
+              v.thumbnail_url ||
+              v?.metadata?.thumbnail_vertical_url ||
+              v?.metadata?.thumbnail_url ||
+              null;
+
+            const thumbSrc = absUrl(rawThumb) || DefaultThumb;
+            const isDefaultThumb = !absUrl(rawThumb);
+
+            return (
               <Link
-                to={`/watch/${featured.id}`}
-                className="latest-featured-fallback"
+                key={v.id}
+                to={`/watch/${v.id}`}
+                className="latest-card hover-card"
               >
-                <img
-                  src={featuredThumb}
-                  alt={featured.title || "Latest Video"}
-                  onError={(e) => {
-                    e.currentTarget.onerror = null;
-                    e.currentTarget.src = DefaultThumb;
-                  }}
-                  style={{
-                    width: "100%",
-                    borderRadius: 14,
-                    display: "block",
-                  }}
-                />
-                <div className="latest-featured-overlay">
-                  <span className="latest-featured-play">▶</span>
+                <div
+                  className={
+                    "latest-thumb" + (isDefaultThumb ? " is-default-thumb" : "")
+                  }
+                >
+                  <img
+                    src={thumbSrc}
+                    alt={v.title || "Video"}
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = DefaultThumb;
+                    }}
+                  />
+                  <div className="hover-play">
+                    <span>▶</span>
+                  </div>
+                </div>
+
+                <div className="latest-meta">
+                  <h4 className="latest-video-title">{v.title}</h4>
+                  <p className="latest-category">
+                    {v.category_name || v?.category?.name || ""}
+                  </p>
                 </div>
               </Link>
-            )}
-
-            <div className="latest-featured-meta">
-              <h4 className="latest-video-title">
-                {featured.title || "Latest Teaching"}
-              </h4>
-              <p className="latest-category">
-                {featured.category_name || featured?.category?.name || ""}
-              </p>
-              <Link
-                to={`/watch/${featured.id}`}
-                className="latest-featured-btn"
-              >
-                Watch Now
-              </Link>
-            </div>
-          </div>
-
-          {/* Grid */}
-          <div className="latest-grid">
-            {rest.map((v) => {
-              const rawThumb =
-                v.thumbnail_url ||
-                v?.metadata?.thumbnail_vertical_url ||
-                v?.metadata?.thumbnail_url ||
-                null;
-
-              const thumbSrc = absUrl(rawThumb) || DefaultThumb;
-              const isDefaultThumb = !absUrl(rawThumb);
-
-              return (
-                <Link
-                  key={v.id}
-                  to={`/watch/${v.id}`}
-                  className="latest-card hover-card"
-                >
-                  <div
-                    className={
-                      "latest-thumb" +
-                      (isDefaultThumb ? " is-default-thumb" : "")
-                    }
-                  >
-                    <img
-                      src={thumbSrc}
-                      alt={v.title || "Video"}
-                      onError={(e) => {
-                        e.currentTarget.onerror = null;
-                        e.currentTarget.src = DefaultThumb;
-                      }}
-                    />
-
-                    <div className="hover-play">
-                      <span>▶</span>
-                    </div>
-                  </div>
-
-                  <div className="latest-meta">
-                    <h4 className="latest-video-title">{v.title}</h4>
-                    <p className="latest-category">
-                      {v.category_name || v?.category?.name || ""}
-                    </p>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </>
+            );
+          })}
+        </div>
       )}
     </section>
   );
@@ -689,14 +1107,16 @@ function LatestTeaching() {
 /* ---------------------------------------------------------
    5) WATCH MORE CTA
 --------------------------------------------------------- */
-function WatchMoreCTA() {
+function WatchMoreCTA({ model }) {
+  const m = model || HOME_DEFAULTS.watch_more;
+
   return (
     <section className="cta-section">
-      <h3 className="cta-title">Go Deeper Into The Word</h3>
-      <p className="cta-sub">Stream powerful teachings anytime, anywhere.</p>
+      <h3 className="cta-title">{m.title || ""}</h3>
+      <p className="cta-sub">{m.sub || ""}</p>
 
-      <Link to="/catalog" className="cta-button">
-        Browse Catalog
+      <Link to={m.cta_href || "/catalog"} className="cta-button">
+        {m.cta_text || "Browse Catalog"}
       </Link>
     </section>
   );
@@ -705,19 +1125,400 @@ function WatchMoreCTA() {
 /* ---------------------------------------------------------
    6) ABOUT SECTION
 --------------------------------------------------------- */
-function AboutSection() {
+function AboutSection({ model }) {
+  const m = model || HOME_DEFAULTS.about;
+  const avatar =
+    absUrl(m.avatar_url) || (m.avatar_url ? m.avatar_url : null) || ImgHead;
+
   return (
     <section className="about-section">
-      <img src={ImgHead} className="about-avatar" alt="Bishop Robertson" />
+      <img
+        src={avatar}
+        className="about-avatar"
+        alt={m.name || "Bishop Robertson"}
+      />
 
       <div className="about-content">
-        <h4 className="about-name">Bishop Robertson</h4>
-        <p className="about-text">
-          A leader, pioneer, and prophetic voice for over five decades. Bishop
-          Robertson continues to deliver revelation and impartation that
-          transforms lives across the world.
-        </p>
+        <h4 className="about-name">{m.name || ""}</h4>
+        <p className="about-text">{m.text || ""}</p>
       </div>
     </section>
   );
+}
+
+/* ---------------------------------------------------------
+   7) EXTRA SECTIONS (Builder)
+   - Reflects AdminPageEditor: layout/theme/styles/html/left_html/right_html
+   - Keeps your existing layout intact by using lightweight inline styling
+--------------------------------------------------------- */
+function ExtraSections({ sections, loading }) {
+  const list = useMemo(() => {
+    const arr = Array.isArray(sections) ? sections : [];
+    return arr.map(ensureSectionShape).filter((s) => {
+      const hasContent =
+        String(s.html || "").trim() ||
+        String(s.left_html || "").trim() ||
+        String(s.right_html || "").trim() ||
+        (Array.isArray(s.blocks) && s.blocks.length);
+      // Allow title-only sections if show_title is true
+      const hasTitle = !!String(s.title || "").trim() && !!s.styles?.show_title;
+      return hasContent || hasTitle;
+    });
+  }, [sections]);
+
+  if (!list.length) return null;
+
+  return (
+    <section style={{ paddingBottom: 10 }}>
+      {loading ? null : null}
+
+      {list.map((sec) => (
+        <BuilderSection key={sec.id} sec={sec} />
+      ))}
+    </section>
+  );
+}
+
+function renderBlocks(sec, st) {
+  const blocks = Array.isArray(sec.blocks) ? sec.blocks : [];
+  if (!blocks.length) return null;
+
+  return (
+    <div
+      className="brtv-blocks"
+      style={{
+        display: "grid",
+        gap: clampNum(
+          String(st.content_gap || "").trim()
+            ? Number(String(st.content_gap).replace(/[^0-9.]/g, "")) || 18
+            : 18,
+          0,
+          60,
+        ),
+        fontSize: String(st.font_size || "").trim() || undefined,
+        lineHeight: String(st.line_height || "").trim() || undefined,
+      }}
+    >
+      {blocks.map((b) => {
+        const type = String(b.type || "richtext");
+
+        // hero / banner
+        if (type === "hero") {
+          const bg = absUrl(b.bg_url || "");
+          const img = absUrl(b.image_url || "");
+          const fit = b.bg_fit || "cover";
+          const bpos = b.bg_pos || "center";
+          const height = Math.max(180, Number(b.height || 420));
+          const maxW = String(b.max_width || "1120px").trim() || "1120px";
+          const overlay = Math.max(
+            0,
+            Math.min(0.85, Number(b.overlay ?? 0.35)),
+          );
+          const align = b.align || "left";
+          const vAlign = b.v_align || "center";
+          const imgPos = b.img_pos || "right";
+          const fullBleed = !!b.full_bleed;
+
+          const justifyContent =
+            align === "center"
+              ? "center"
+              : align === "right"
+                ? "flex-end"
+                : "flex-start";
+          const alignItems =
+            vAlign === "top"
+              ? "flex-start"
+              : vAlign === "bottom"
+                ? "flex-end"
+                : "center";
+
+          const bgImage = bg
+            ? `linear-gradient(rgba(0,0,0,${overlay}), rgba(0,0,0,${overlay})), url(${bg})`
+            : `linear-gradient(rgba(0,0,0,${overlay}), rgba(0,0,0,${overlay}))`;
+
+          return (
+            <section
+              key={b.id}
+              className={`brtv-heroBlock ${fullBleed ? "is-bleed" : ""}`}
+              style={{
+                minHeight: height,
+                backgroundImage: bgImage,
+                backgroundSize: fit,
+                backgroundPosition: bpos,
+              }}
+            >
+              <div
+                className="brtv-heroInner"
+                style={{ maxWidth: fullBleed ? "1400px" : maxW }}
+              >
+                <div
+                  className="brtv-heroRow"
+                  style={{
+                    justifyContent,
+                    alignItems,
+                    flexDirection: imgPos === "left" ? "row-reverse" : "row",
+                  }}
+                >
+                  <div
+                    className="brtv-heroContent"
+                    style={{ textAlign: align }}
+                  >
+                    {!!String(b.title || "").trim() && (
+                      <h2 className="brtv-heroTitle">{b.title}</h2>
+                    )}
+                    {!!String(b.text || "").trim() && (
+                      <p className="brtv-heroText">{b.text}</p>
+                    )}
+                    {!!String(b.button_text || "").trim() && (
+                      <a className="brtv-heroBtn" href={b.button_href || "#"}>
+                        {b.button_text}
+                      </a>
+                    )}
+                  </div>
+
+                  {imgPos !== "none" && img ? (
+                    <div className="brtv-heroMedia">
+                      <img
+                        src={img}
+                        alt={b.image_alt || ""}
+                        className="brtv-heroImg"
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </section>
+          );
+        }
+
+        if (type === "grid") {
+          const cols = Math.max(1, Math.min(6, Number(b.cols) || 3));
+          const gap = Math.max(0, Number(b.gap) || 12);
+          const items = Array.isArray(b.items) ? b.items : [];
+          return (
+            <div
+              key={b.id}
+              className="brtv-grid"
+              style={{
+                display: "grid",
+                gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+                gap,
+              }}
+            >
+              {items.map((it) => (
+                <div key={it.id || `${b.id}-it`} className="brtv-gridItem">
+                  {String(it.image_url || "").trim() ? (
+                    <div className="brtv-gridImgWrap">
+                      <img
+                        alt=""
+                        src={absUrl(it.image_url) || it.image_url}
+                        className="brtv-gridImg"
+                      />
+                    </div>
+                  ) : null}
+                  {String(it.title || "").trim() ? (
+                    <div className="brtv-gridTitle">{it.title}</div>
+                  ) : null}
+                  {String(it.text || "").trim() ? (
+                    <div className="brtv-gridText">{it.text}</div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          );
+        }
+
+        if (type === "gallery") {
+          const cols = Math.max(2, Math.min(8, Number(b.cols) || 4));
+          const gap = Math.max(0, Number(b.gap) || 10);
+          const images = Array.isArray(b.images) ? b.images : [];
+          return (
+            <div
+              key={b.id}
+              className="brtv-gallery"
+              style={{
+                display: "grid",
+                gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+                gap,
+              }}
+            >
+              {images.map((im) => (
+                <a
+                  key={im.id || `${b.id}-im`}
+                  className="brtv-galleryItem"
+                  href={absUrl(im.src) || im.src}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={im.alt || ""}
+                >
+                  <img alt={im.alt || ""} src={absUrl(im.src) || im.src} />
+                </a>
+              ))}
+            </div>
+          );
+        }
+
+        // richtext (default)
+        return (
+          <div
+            key={b.id}
+            className="brtv-richtext"
+            dangerouslySetInnerHTML={safeHtml(String(b.html || ""))}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function BuilderSection({ sec }) {
+  const st = sec.styles || defaultSectionStyle(sec.theme);
+  const t = themeDefaults(sec.theme);
+
+  // Layout mapping (kept minimal so your CSS doesn’t get disrupted)
+  const isFull = sec.layout === "full";
+  const isHighlight = sec.layout === "highlight";
+  const isTwo = sec.layout === "two_columns";
+  const hasBlocks = Array.isArray(sec.blocks) && sec.blocks.length > 0;
+
+  const maxW = String(st.max_width || "").trim();
+  const wrapMaxWidth = maxW || (isFull ? "100%" : "1100px");
+
+  const pad = st.padding || (isFull ? "48px 0" : "22px 18px");
+  const mg = st.margin || (isFull ? "0" : "18px auto");
+
+  const radius = clampNum(st.radius ?? 14, 0, 60);
+
+  const bgColor =
+    String(st.bg_color || "").trim() ||
+    (isHighlight ? "rgba(154, 92, 255, 0.12)" : t.bg);
+
+  const borderColor = String(st.border_color || "").trim() || t.border;
+
+  const textColor = String(st.text_color || "").trim() || t.text;
+
+  const titleColor = String(st.title_color || "").trim() || textColor;
+
+  const overlay = Math.max(0, Math.min(0.9, Number(st.overlay ?? 0) || 0));
+
+  const bgImg =
+    absUrl(st.bg_image_url) || (st.bg_image_url ? st.bg_image_url : null);
+
+  const bgPosition = String(st.bg_image_pos || "center");
+  const bgFit = String(st.bg_image_fit || "cover");
+
+  const borderW = String(st.border_width || "").trim();
+  const overlayOpacityNumRaw =
+    String(st.overlay_opacity ?? "").trim() === ""
+      ? null
+      : Number(st.overlay_opacity);
+  const overlayOpacityNum = Number.isFinite(overlayOpacityNumRaw)
+    ? Math.max(0, Math.min(0.9, overlayOpacityNumRaw))
+    : overlay;
+
+  const overlayColor = String(st.overlay_color || "").trim();
+  const overlayLayer = overlayColor
+    ? `linear-gradient(${overlayColor}, ${overlayColor})`
+    : `linear-gradient(rgba(0,0,0,${overlayOpacityNum}), rgba(0,0,0,${overlayOpacityNum}))`;
+
+  const contentGap = String(st.content_gap || "").trim()
+    ? String(st.content_gap).trim()
+    : "12px";
+
+  const outerStyle = {
+    margin: mg,
+    maxWidth: wrapMaxWidth,
+  };
+
+  const innerStyle = {
+    position: "relative",
+    padding: pad,
+    minHeight: String(st.min_height || "").trim() || undefined,
+    height: String(st.height || "").trim() || undefined,
+    borderRadius: radius,
+    color: textColor,
+    background: bgImg ? `${overlayLayer}, url(${bgImg})` : bgColor,
+    backgroundSize: bgImg ? bgFit : undefined,
+    backgroundPosition: bgImg ? bgPosition : undefined,
+    backgroundRepeat: bgImg ? "no-repeat" : undefined,
+    border: `${borderW || "1px"} solid ${borderColor}`,
+    boxShadow: shadowCss(st.shadow),
+    textAlign: String(st.align || "left"),
+    overflow: "hidden",
+    // don’t force width changes; let Home.css do the layout
+  };
+
+  const contentMax = isFull ? "1100px" : "100%";
+
+  const Tag = String(st.title_tag || "h3");
+
+  const titleStyle = {
+    color: titleColor,
+    fontSize: clampNum(st.title_size ?? 22, 10, 64),
+    fontWeight: clampNum(st.title_weight ?? 800, 200, 900),
+    margin: 0,
+    marginBottom: contentGap,
+    letterSpacing: -0.2,
+  };
+
+  const imgRadius = clampNum(st.img_radius ?? 12, 0, 60);
+  const imgShadow =
+    st.img_shadow === "soft" ? "0 14px 50px rgba(0,0,0,0.45)" : "none";
+
+  const scopedCss = `
+    #sec-${sec.id} img {
+      border-radius: ${imgRadius}px;
+      box-shadow: ${imgShadow};
+    }
+    #sec-${sec.id} a { color: inherit; }
+  `;
+
+  return (
+    <div style={outerStyle}>
+      <div id={`sec-${sec.id}`} style={innerStyle}>
+        <style>{scopedCss}</style>
+
+        <div
+          style={{
+            maxWidth: contentMax,
+            margin: "0 auto",
+            fontSize: String(st.font_size || "").trim() || undefined,
+            lineHeight: String(st.line_height || "").trim() || undefined,
+          }}
+        >
+          {st.show_title !== false && String(sec.title || "").trim() ? (
+            <Tag style={titleStyle}>{sec.title}</Tag>
+          ) : null}
+
+          {hasBlocks ? (
+            renderBlocks(sec, st)
+          ) : isTwo ? (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 18,
+                alignItems: "start",
+              }}
+            >
+              <div
+                style={{ minWidth: 0 }}
+                dangerouslySetInnerHTML={safeHtml(sec.left_html || "")}
+              />
+              <div
+                style={{ minWidth: 0 }}
+                dangerouslySetInnerHTML={safeHtml(sec.right_html || "")}
+              />
+            </div>
+          ) : (
+            <div dangerouslySetInnerHTML={safeHtml(sec.html || "")} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Spacer() {
+  return <div className="spacer" />;
 }

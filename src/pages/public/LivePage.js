@@ -2,6 +2,8 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import api from "../../api";
 import "./LivePage.css";
+import { SITE } from "../../config/site";
+import { siteDefaults } from "../../lib/siteContent";
 
 const DEBUG = false;
 
@@ -591,7 +593,9 @@ export default function LivePage() {
 
   return (
     <div className="live-wrapper">
-      <h1 className="live-title">Bishop Robertson Live Stream</h1>
+      <h1 className="live-title">
+        {siteDefaults().labels?.live_title || `${SITE.name} Live`}
+      </h1>
 
       <div className={`live-status ${isOnline ? "online" : "offline"}`}>
         {isOnline ? "🔴 LIVE NOW" : "⚪ Offline"}
@@ -627,7 +631,7 @@ export default function LivePage() {
                 frameBorder="0"
                 allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
                 allowFullScreen
-                title="Bishop Robertson Live Player"
+                title={`${SITE.name} live player`}
               />
             ) : (
               <div className="live-player live-player-offline">

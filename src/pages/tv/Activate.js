@@ -1,6 +1,6 @@
 // src/pages/tv/Activate.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import api from "../../api";
 
 const CODE_LEN = 6;
@@ -37,15 +37,13 @@ const CSS = `
 `;
 
 export default function TvActivate() {
-  const nav = useNavigate();
-
   const [vals, setVals] = useState(Array(CODE_LEN).fill(""));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [linked, setLinked] = useState(null); // {device}
 
   const refs = useRef(
-    Array.from({ length: CODE_LEN }, () => React.createRef())
+    Array.from({ length: CODE_LEN }, () => React.createRef()),
   );
 
   // focus first box on mount
@@ -114,7 +112,7 @@ export default function TvActivate() {
       setLinked(data?.device || { name: "TV App" });
     } catch (e2) {
       setErr(
-        e2?.response?.data?.message || "Invalid or expired code. Try again."
+        e2?.response?.data?.message || "Invalid or expired code. Try again.",
       );
       setLinked(null);
     } finally {

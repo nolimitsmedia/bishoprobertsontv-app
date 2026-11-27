@@ -14,6 +14,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import sanitizeHtml from "../utils/sanitizeHtml";
 
 /* ---------------------------------- schema --------------------------------- */
 
@@ -352,7 +353,7 @@ function buildBgShorthand(
   color = "",
   url = "",
   position = "center",
-  size = "cover"
+  size = "cover",
 ) {
   const parts = [];
   if (color) parts.push(color);
@@ -418,8 +419,8 @@ function buildImageFromEl(div) {
     stDiv["text-align"] === "center"
       ? "center"
       : stDiv["text-align"] === "right"
-      ? "right"
-      : "left";
+        ? "right"
+        : "left";
   n.align = align;
   return n;
 }
@@ -444,8 +445,8 @@ function buildButtonFromEl(div) {
     stDiv["text-align"] === "center"
       ? "center"
       : stDiv["text-align"] === "right"
-      ? "right"
-      : "left";
+        ? "right"
+        : "left";
   n.align = align;
   return n;
 }
@@ -599,7 +600,7 @@ function migrateToV2(value) {
       const peeled = peelSection(html);
       if (peeled) {
         const st = parseStyleString(
-          (peeled.attrs.match(/\sstyle="([^"]*)"/i) || [, ""])[1]
+          (peeled.attrs.match(/\sstyle="([^"]*)"/i) || [, ""])[1],
         );
         // preserve background shorthand if present
         section.style.background = st["background"] || section.style.background;
@@ -611,7 +612,7 @@ function migrateToV2(value) {
       }
 
       const tmp = document.createElement("div");
-      tmp.innerHTML = html;
+      tmp.innerHTML = sanitizeHtml(html); // cleaned: even a hidden element runs image error handlers
 
       let contentRoot = tmp;
       if (tmp.childElementCount === 1) {
@@ -911,7 +912,7 @@ function TextView({ node }) {
         borderRadius: radius,
         ...PxPad(pad),
       }}
-      dangerouslySetInnerHTML={{ __html: node.html || "" }}
+      dangerouslySetInnerHTML={{ __html: sanitizeHtml(node.html || "") }}
     />
   );
 }
@@ -923,8 +924,8 @@ function ImageView({ node }) {
     node.align === "center"
       ? "center"
       : node.align === "right"
-      ? "flex-end"
-      : "flex-start";
+        ? "flex-end"
+        : "flex-start";
   const radius = node.radius ? Number(node.radius) : undefined;
   return (
     <div style={{ display: "flex", justifyContent: justify }}>
@@ -954,8 +955,8 @@ function ButtonView({ node }) {
     node.align === "center"
       ? "center"
       : node.align === "right"
-      ? "flex-end"
-      : "flex-start";
+        ? "flex-end"
+        : "flex-start";
   return (
     <div style={{ display: "flex", justifyContent: justify }}>
       <a
@@ -982,8 +983,8 @@ function DividerView({ node }) {
     node.align === "center"
       ? "center"
       : node.align === "right"
-      ? "flex-end"
-      : "flex-start";
+        ? "flex-end"
+        : "flex-start";
   const thickness = Number(node.thickness || 1);
   return (
     <div
@@ -1018,8 +1019,8 @@ function IconView({ node }) {
     node.align === "center"
       ? "center"
       : node.align === "right"
-      ? "flex-end"
-      : "flex-start";
+        ? "flex-end"
+        : "flex-start";
   return (
     <div style={{ display: "flex", justifyContent: justify }}>
       <span style={{ fontSize: size, lineHeight: 1, color }}>
@@ -1060,7 +1061,7 @@ function GalleryView({ node }) {
           <div key={img.id} className="be-empty" style={{ minHeight: 60 }}>
             Image URL
           </div>
-        )
+        ),
       )}
     </div>
   );
@@ -1075,7 +1076,7 @@ function CarouselView({ node }) {
 
   const go = (d) =>
     setIdx((i) =>
-      images.length ? (i + d + images.length) % images.length : 0
+      images.length ? (i + d + images.length) % images.length : 0,
     );
 
   return (
@@ -1141,7 +1142,9 @@ function AccordionView({ node }) {
           {open === i && (
             <div
               className="be-acc-body"
-              dangerouslySetInnerHTML={{ __html: it.html || "<p>…</p>" }}
+              dangerouslySetInnerHTML={{
+                __html: sanitizeHtml(it.html || "<p>…</p>"),
+              }}
             />
           )}
         </div>
@@ -1171,7 +1174,7 @@ function TabsView({ node }) {
         <div className="be-tabpanel" style={{ borderRadius: radius }}>
           <div
             dangerouslySetInnerHTML={{
-              __html: items[active].html || "<p>…</p>",
+              __html: sanitizeHtml(items[active].html || "<p>…</p>"),
             }}
           />
         </div>
@@ -1185,8 +1188,8 @@ function VideoView({ node }) {
     node.align === "center"
       ? "center"
       : node.align === "right"
-      ? "flex-end"
-      : "flex-start";
+        ? "flex-end"
+        : "flex-start";
   const radius = node.radius ? Number(node.radius) : undefined;
   const w = node.width || "100%";
   const h = node.height || "";
@@ -1256,8 +1259,8 @@ function FormView({ node }) {
     node.align === "center"
       ? "center"
       : node.align === "right"
-      ? "flex-end"
-      : "flex-start";
+        ? "flex-end"
+        : "flex-start";
   const w = node.width ? Number(node.width) : undefined;
   const gap = Number(node.gap || 10);
   return (
@@ -1317,7 +1320,7 @@ function LiveView({ node }) {
     return (
       <div
         className="be-live"
-        dangerouslySetInnerHTML={{ __html: node.html }}
+        dangerouslySetInnerHTML={{ __html: sanitizeHtml(node.html) }}
       />
     );
   }
@@ -2047,7 +2050,7 @@ function Inspector({ node, onChange, onDelete, onUpload }) {
                 onChange={(v) =>
                   update({
                     images: (node.images || []).map((x) =>
-                      x.id === img.id ? { ...x, url: v } : x
+                      x.id === img.id ? { ...x, url: v } : x,
                     ),
                   })
                 }
@@ -2074,7 +2077,7 @@ function Inspector({ node, onChange, onDelete, onUpload }) {
                       }
                       update({
                         images: (node.images || []).map((x) =>
-                          x.id === img.id ? { ...x, url } : x
+                          x.id === img.id ? { ...x, url } : x,
                         ),
                       });
                     }}
@@ -2087,7 +2090,7 @@ function Inspector({ node, onChange, onDelete, onUpload }) {
                   onClick={() =>
                     update({
                       images: (node.images || []).filter(
-                        (x) => x.id !== img.id
+                        (x) => x.id !== img.id,
                       ),
                     })
                   }
@@ -2102,7 +2105,7 @@ function Inspector({ node, onChange, onDelete, onUpload }) {
                 onChange={(v) =>
                   update({
                     images: (node.images || []).map((x) =>
-                      x.id === img.id ? { ...x, alt: v } : x
+                      x.id === img.id ? { ...x, alt: v } : x,
                     ),
                   })
                 }
@@ -2162,7 +2165,7 @@ function Inspector({ node, onChange, onDelete, onUpload }) {
                 onChange={(v) =>
                   update({
                     images: (node.images || []).map((x) =>
-                      x.id === img.id ? { ...x, url: v } : x
+                      x.id === img.id ? { ...x, url: v } : x,
                     ),
                   })
                 }
@@ -2189,7 +2192,7 @@ function Inspector({ node, onChange, onDelete, onUpload }) {
                       }
                       update({
                         images: (node.images || []).map((x) =>
-                          x.id === img.id ? { ...x, url } : x
+                          x.id === img.id ? { ...x, url } : x,
                         ),
                       });
                     }}
@@ -2202,7 +2205,7 @@ function Inspector({ node, onChange, onDelete, onUpload }) {
                   onClick={() =>
                     update({
                       images: (node.images || []).filter(
-                        (x) => x.id !== img.id
+                        (x) => x.id !== img.id,
                       ),
                     })
                   }
@@ -2217,7 +2220,7 @@ function Inspector({ node, onChange, onDelete, onUpload }) {
                 onChange={(v) =>
                   update({
                     images: (node.images || []).map((x) =>
-                      x.id === img.id ? { ...x, alt: v } : x
+                      x.id === img.id ? { ...x, alt: v } : x,
                     ),
                   })
                 }
@@ -2261,7 +2264,7 @@ function Inspector({ node, onChange, onDelete, onUpload }) {
                 onChange={(v) =>
                   update({
                     items: (node.items || []).map((x) =>
-                      x.id === it.id ? { ...x, title: v } : x
+                      x.id === it.id ? { ...x, title: v } : x,
                     ),
                   })
                 }
@@ -2274,7 +2277,7 @@ function Inspector({ node, onChange, onDelete, onUpload }) {
                 onChange={(e) =>
                   update({
                     items: (node.items || []).map((x) =>
-                      x.id === it.id ? { ...x, html: e.target.value } : x
+                      x.id === it.id ? { ...x, html: e.target.value } : x,
                     ),
                   })
                 }
@@ -2330,7 +2333,7 @@ function Inspector({ node, onChange, onDelete, onUpload }) {
                 onChange={(v) =>
                   update({
                     items: (node.items || []).map((x) =>
-                      x.id === it.id ? { ...x, label: v } : x
+                      x.id === it.id ? { ...x, label: v } : x,
                     ),
                   })
                 }
@@ -2343,7 +2346,7 @@ function Inspector({ node, onChange, onDelete, onUpload }) {
                 onChange={(e) =>
                   update({
                     items: (node.items || []).map((x) =>
-                      x.id === it.id ? { ...x, html: e.target.value } : x
+                      x.id === it.id ? { ...x, html: e.target.value } : x,
                     ),
                   })
                 }
@@ -2511,7 +2514,7 @@ function Inspector({ node, onChange, onDelete, onUpload }) {
                 onChange={(e) =>
                   update({
                     fields: (node.fields || []).map((x) =>
-                      x.id === f.id ? { ...x, type: e.target.value } : x
+                      x.id === f.id ? { ...x, type: e.target.value } : x,
                     ),
                   })
                 }
@@ -2531,7 +2534,7 @@ function Inspector({ node, onChange, onDelete, onUpload }) {
                 onChange={(v) =>
                   update({
                     fields: (node.fields || []).map((x) =>
-                      x.id === f.id ? { ...x, label: v } : x
+                      x.id === f.id ? { ...x, label: v } : x,
                     ),
                   })
                 }
@@ -2543,7 +2546,7 @@ function Inspector({ node, onChange, onDelete, onUpload }) {
                 onChange={(v) =>
                   update({
                     fields: (node.fields || []).map((x) =>
-                      x.id === f.id ? { ...x, name: v } : x
+                      x.id === f.id ? { ...x, name: v } : x,
                     ),
                   })
                 }
@@ -2555,7 +2558,7 @@ function Inspector({ node, onChange, onDelete, onUpload }) {
                 onChange={(v) =>
                   update({
                     fields: (node.fields || []).map((x) =>
-                      x.id === f.id ? { ...x, placeholder: v, options: v } : x
+                      x.id === f.id ? { ...x, placeholder: v, options: v } : x,
                     ),
                   })
                 }
@@ -2570,7 +2573,7 @@ function Inspector({ node, onChange, onDelete, onUpload }) {
                     fields: (node.fields || []).map((x) =>
                       x.id === f.id
                         ? { ...x, required: e.target.value === "yes" }
-                        : x
+                        : x,
                     ),
                   })
                 }
@@ -2654,7 +2657,7 @@ function Inspector({ node, onChange, onDelete, onUpload }) {
 
 export default function BlocksEditorV2({ value, onChange, onUpload }) {
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
 
   const normalizedProp = useMemo(() => {
@@ -2685,7 +2688,7 @@ export default function BlocksEditorV2({ value, onChange, onUpload }) {
   const [selectedId, setSelectedId] = useState("");
   const selectedNode = useMemo(
     () => findNode(doc.root, selectedId),
-    [doc, selectedId]
+    [doc, selectedId],
   );
 
   function handleDropInto(e, targetNode) {
@@ -2738,7 +2741,7 @@ export default function BlocksEditorV2({ value, onChange, onUpload }) {
         src.container.splice(
           0,
           src.container.length,
-          ...moveWithin(src.container, active.id, over.id)
+          ...moveWithin(src.container, active.id, over.id),
         );
         return next;
       }

@@ -2,6 +2,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import api from "../../api";
 import "./LiveStreaming.css";
+import "./LiveStreamingModern.css";
+import { chooseDialog } from "../../components/ui/Dialogs";
+import { SITE } from "../../config/site";
 
 /* ---------------------------- helpers ---------------------------- */
 function fmtSince(sec) {
@@ -69,7 +72,7 @@ function openCenteredPopup(url, title = "Connect", w = 520, h = 700) {
   const popup = window.open(
     url,
     title,
-    `scrollbars=yes,width=${w},height=${h},top=${top},left=${left},noopener,noreferrer`
+    `scrollbars=yes,width=${w},height=${h},top=${top},left=${left},noopener,noreferrer`,
   );
 
   return popup;
@@ -170,15 +173,15 @@ const styles = {
   },
 
   card: {
-    background: "#fff",
-    border: "1px solid #e5e7eb",
+    background: "#131722",
+    border: "1px solid rgba(255,255,255,.1)",
     borderRadius: 12,
     padding: 16,
   },
 
   statTitle: {
     fontSize: 12,
-    color: "#6b7280",
+    color: "#9aa2b6",
     textTransform: "uppercase",
     marginBottom: 8,
   },
@@ -210,7 +213,7 @@ const styles = {
     width: 46,
     height: 26,
     borderRadius: 999,
-    background: on ? "#4ade80" : "#e5e7eb",
+    background: on ? "#34d399" : "#2b3142",
     transition: "background .2s",
     cursor: "pointer",
   }),
@@ -222,7 +225,7 @@ const styles = {
     width: 20,
     height: 20,
     borderRadius: "50%",
-    background: "#fff",
+    background: "#131722",
     transition: "left .2s",
   }),
 
@@ -269,7 +272,7 @@ const styles = {
     placeItems: "center",
     cursor: "pointer",
     boxShadow: "0 6px 20px rgba(0,0,0,.35)",
-    color: "#3f1770",
+    color: "#ffffff",
   },
 
   btnRow: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 },
@@ -278,9 +281,9 @@ const styles = {
     alignItems: "center",
     gap: 8,
     padding: "10px 14px",
-    border: "1px solid #e5e7eb",
+    border: "1px solid rgba(255,255,255,.1)",
     borderRadius: 8,
-    background: "#fff",
+    background: "#131722",
     cursor: "pointer",
     fontWeight: 600,
   },
@@ -296,7 +299,7 @@ const styles = {
   },
   modal: {
     width: "min(820px, 92vw)",
-    background: "#fff",
+    background: "#131722",
     borderRadius: 12,
     padding: 18,
   },
@@ -308,21 +311,21 @@ const styles = {
   },
   modalTitle: { fontWeight: 800, fontSize: 18 },
   modalClose: {
-    border: "1px solid #e5e7eb",
+    border: "1px solid rgba(255,255,255,.1)",
     padding: "8px 10px",
     borderRadius: 8,
-    background: "#fff",
+    background: "#131722",
     cursor: "pointer",
   },
 
   inputRow: { position: "relative" },
   input: {
     width: "100%",
-    border: "1px solid #e5e7eb",
+    border: "1px solid rgba(255,255,255,.1)",
     borderRadius: 8,
     padding: "12px 44px 12px 12px",
     fontFamily: "monospace",
-    background: "#f8fafc",
+    background: "#171c29",
   },
   copyBtn: {
     position: "absolute",
@@ -330,9 +333,9 @@ const styles = {
     top: 8,
     padding: "0 10px",
     height: 30,
-    border: "1px solid #e5e7eb",
+    border: "1px solid rgba(255,255,255,.1)",
     borderRadius: 6,
-    background: "#fff",
+    background: "#131722",
     cursor: "pointer",
   },
 
@@ -349,16 +352,20 @@ const styles = {
     gap: 10,
     fontSize: 14,
     background:
-      type === "error" ? "#fee2e2" : type === "info" ? "#e0f2fe" : "#dcfce7",
+      type === "error"
+        ? "rgba(248,113,113,.14)"
+        : type === "info"
+          ? "rgba(56,189,248,.14)"
+          : "rgba(52,211,153,.14)",
     color:
-      type === "error" ? "#b91c1c" : type === "info" ? "#075985" : "#166534",
+      type === "error" ? "#fca5a5" : type === "info" ? "#7dd3fc" : "#6ee7b7",
   }),
   toastDot: (type) => ({
     width: 8,
     height: 8,
     borderRadius: "50%",
     background:
-      type === "error" ? "#b91c1c" : type === "info" ? "#0284c7" : "#16a34a",
+      type === "error" ? "#fca5a5" : type === "info" ? "#38bdf8" : "#34d399",
   }),
   toastCloseBtn: {
     marginLeft: "auto",
@@ -381,8 +388,8 @@ const styles = {
     width: 34,
     height: 34,
     borderRadius: 8,
-    border: "1px solid #e5e7eb",
-    background: "#fff",
+    border: "1px solid rgba(255,255,255,.1)",
+    background: "#131722",
     cursor: "pointer",
     fontSize: 18,
     lineHeight: "34px",
@@ -395,7 +402,7 @@ const styles = {
     gridTemplateColumns: "28px 1fr auto auto",
     alignItems: "center",
     gap: 10,
-    border: "1px solid #e5e7eb",
+    border: "1px solid rgba(255,255,255,.1)",
     borderRadius: 10,
     padding: "10px 12px",
   },
@@ -405,26 +412,26 @@ const styles = {
     borderRadius: 8,
     display: "grid",
     placeItems: "center",
-    background: "#eff6ff",
-    color: "#1d4ed8",
+    background: "rgba(139,92,246,.16)",
+    color: "#c4b5fd",
     fontWeight: 900,
   },
   pubName: { fontWeight: 800 },
-  pubSub: { fontSize: 12, color: "#6b7280", marginTop: 2 },
+  pubSub: { fontSize: 12, color: "#9aa2b6", marginTop: 2 },
   pill: (on) => ({
     padding: "4px 10px",
     borderRadius: 999,
     fontSize: 12,
     fontWeight: 800,
-    background: on ? "#dcfce7" : "#e5e7eb",
-    color: on ? "#166534" : "#6b7280",
+    background: on ? "rgba(52,211,153,.14)" : "#2b3142",
+    color: on ? "#6ee7b7" : "#9aa2b6",
   }),
   pubMenuBtn: {
     width: 36,
     height: 36,
     borderRadius: 10,
-    border: "1px solid #e5e7eb",
-    background: "#fff",
+    border: "1px solid rgba(255,255,255,.1)",
+    background: "#131722",
     cursor: "pointer",
     fontSize: 18,
     lineHeight: "36px",
@@ -438,7 +445,7 @@ const styles = {
     gap: 12,
   },
   tile: {
-    background: "#6366f1",
+    background: "#8b5cf6",
     borderRadius: 10,
     padding: 18,
     color: "#fff",
@@ -455,7 +462,7 @@ const styles = {
   addStepWrap: { display: "grid", gridTemplateColumns: "260px 1fr", gap: 18 },
 
   leftPane: {
-    borderRight: "1px solid #e5e7eb",
+    borderRight: "1px solid rgba(255,255,255,.1)",
     paddingRight: 14,
     display: "grid",
     gap: 10,
@@ -469,18 +476,18 @@ const styles = {
     width: "100%",
     padding: "12px 14px",
     borderRadius: 10,
-    border: "1px solid #e5e7eb",
+    border: "1px solid rgba(255,255,255,.1)",
     cursor: "pointer",
     fontWeight: 900,
-    background: "#6366f1",
+    background: "#8b5cf6",
     color: "#fff",
   },
   nameInput: {
     width: "100%",
-    border: "1px solid #e5e7eb",
+    border: "1px solid rgba(255,255,255,.1)",
     borderRadius: 10,
     padding: 12,
-    background: "#fff",
+    background: "#131722",
   },
   footerBar: {
     display: "flex",
@@ -490,26 +497,26 @@ const styles = {
   smallBtn: {
     padding: "10px 12px",
     borderRadius: 10,
-    border: "1px solid #e5e7eb",
-    background: "#fff",
+    border: "1px solid rgba(255,255,255,.1)",
+    background: "#131722",
     cursor: "pointer",
     fontWeight: 800,
   },
   primarySave: {
     padding: "10px 14px",
     borderRadius: 10,
-    border: "1px solid #2563eb",
-    background: "#2563eb",
+    border: "1px solid #8b5cf6",
+    background: "#8b5cf6",
     cursor: "pointer",
     fontWeight: 900,
     color: "#fff",
   },
 
   fbPanel: {
-    border: "1px solid #e5e7eb",
+    border: "1px solid rgba(255,255,255,.1)",
     borderRadius: 12,
     padding: 12,
-    background: "#f9fafb",
+    background: "#171c29",
     marginBottom: 12,
   },
   fbRow: {
@@ -521,13 +528,13 @@ const styles = {
   },
   fbLeft: { display: "grid", gap: 4 },
   fbLabel: { fontWeight: 900 },
-  fbSub: { fontSize: 12, color: "#6b7280" },
+  fbSub: { fontSize: 12, color: "#9aa2b6" },
   select: {
     width: "100%",
-    border: "1px solid #e5e7eb",
+    border: "1px solid rgba(255,255,255,.1)",
     borderRadius: 10,
     padding: 10,
-    background: "#fff",
+    background: "#131722",
   },
 };
 
@@ -555,7 +562,7 @@ function CopyInput({ label, value }) {
   return (
     <div style={{ marginBottom: 12 }}>
       {!!label && (
-        <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>
+        <div style={{ fontSize: 12, color: "#9aa2b6", marginBottom: 6 }}>
           {label}
         </div>
       )}
@@ -596,7 +603,7 @@ function StatusCard({ online, startingSince }) {
           {label}
         </span>
         {online && startingSince ? (
-          <span style={{ color: "#6b7280", fontSize: 12 }}>
+          <span style={{ color: "#9aa2b6", fontSize: 12 }}>
             {fmtSince(startingSince)}
           </span>
         ) : null}
@@ -615,7 +622,7 @@ function ViewersCard({ viewers = 0 }) {
         <div style={styles.statValue} className="brtv-publisher">
           {viewers} Online
         </div>
-        <span style={{ color: "#6b7280", fontSize: 12 }}>
+        <span style={{ color: "#9aa2b6", fontSize: 12 }}>
           0% Since last hour
         </span>
       </div>
@@ -634,7 +641,7 @@ function BroadcastCard({ mbps = 0, profile = "" }) {
           {mbps.toFixed(2)} Mbps
         </div>
         {profile ? (
-          <span style={{ color: "#6b7280", fontSize: 12 }}>{profile}</span>
+          <span style={{ color: "#9aa2b6", fontSize: 12 }}>{profile}</span>
         ) : null}
       </div>
     </div>
@@ -653,7 +660,7 @@ function RecordingCard({ recording = false }) {
           style={{
             ...styles.badge,
             background: (active ? "#ef4444" : "#6b7280") + "20",
-            color: active ? "#ef4444" : "#6b7280",
+            color: active ? "#f87171" : "#9aa2b6",
           }}
         >
           <span
@@ -829,7 +836,7 @@ export default function LiveStreaming() {
   });
   const [fbPages, setFbPages] = useState([]);
   const [fbPageId, setFbPageId] = useState("");
-  const [fbLiveTitle, setFbLiveTitle] = useState("Bishop Robertson TV - Live");
+  const [fbLiveTitle, setFbLiveTitle] = useState(`${SITE.name} - Live`);
   const [fbLiveDesc, setFbLiveDesc] = useState("");
   const [fbPrivacy, setFbPrivacy] = useState("EVERYONE"); // or "ALL_FRIENDS" etc
   const [fbLive, setFbLive] = useState({
@@ -844,7 +851,7 @@ export default function LiveStreaming() {
 
   const channel = useMemo(
     () => channels.find((c) => String(c.id) === String(selectedId)) || null,
-    [channels, selectedId]
+    [channels, selectedId],
   );
 
   const showToast = (type, message) => {
@@ -852,7 +859,7 @@ export default function LiveStreaming() {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     toastTimerRef.current = setTimeout(() => {
       setToast((prev) =>
-        prev.message === message ? { ...prev, open: false } : prev
+        prev.message === message ? { ...prev, open: false } : prev,
       );
     }, 3200);
   };
@@ -861,7 +868,7 @@ export default function LiveStreaming() {
     const id = channel?.id ? String(channel.id) : "";
     const isUuid =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-        id
+        id,
       );
 
     const url = isUuid
@@ -909,7 +916,7 @@ export default function LiveStreaming() {
       try {
         // ✅ no leading "/"
         const { data } = await api.get(
-          `streamcontrol/${encodeURIComponent(selectedId)}/stats`
+          `streamcontrol/${encodeURIComponent(selectedId)}/stats`,
         );
         if (!disposed) {
           setStats((prev) => ({
@@ -969,13 +976,13 @@ export default function LiveStreaming() {
 
       // ✅ no leading "/"
       const res = await api.get(
-        `streamcontrol/${encodeURIComponent(selectedId)}/publishers`
+        `streamcontrol/${encodeURIComponent(selectedId)}/publishers`,
       );
       const items = Array.isArray(res.data?.publishers)
         ? res.data.publishers
         : Array.isArray(res.data)
-        ? res.data
-        : [];
+          ? res.data
+          : [];
       setPublishers(items);
     } catch (e) {
       console.error("load publishers failed", e);
@@ -999,9 +1006,9 @@ export default function LiveStreaming() {
       // ✅ no leading "/"
       await api.post(
         `streamcontrol/${encodeURIComponent(
-          selectedId
+          selectedId,
         )}/publishers/${encodeURIComponent(pubId)}/toggle`,
-        { enabled: !pub.enabled }
+        { enabled: !pub.enabled },
       );
 
       showToast("success", "Publishing updated.");
@@ -1011,7 +1018,7 @@ export default function LiveStreaming() {
       if (errCode === "PUBLISHER_TOGGLE_NOT_SUPPORTED") {
         showToast(
           "info",
-          "Publisher changes are managed in StreamControl. Opening channel…"
+          "Publisher changes are managed in StreamControl. Opening channel…",
         );
         openStreamControlChannelPage();
         return;
@@ -1029,8 +1036,8 @@ export default function LiveStreaming() {
       // ✅ no leading "/"
       await api.delete(
         `streamcontrol/${encodeURIComponent(
-          selectedId
-        )}/publishers/${encodeURIComponent(pubId)}`
+          selectedId,
+        )}/publishers/${encodeURIComponent(pubId)}`,
       );
 
       showToast("success", "Publisher removed.");
@@ -1040,7 +1047,7 @@ export default function LiveStreaming() {
       if (errCode === "PUBLISHER_DELETE_NOT_SUPPORTED") {
         showToast(
           "info",
-          "Publishers are managed in StreamControl. Opening channel…"
+          "Publishers are managed in StreamControl. Opening channel…",
         );
         openStreamControlChannelPage();
         return;
@@ -1066,7 +1073,7 @@ export default function LiveStreaming() {
       if (!silent) {
         showToast(
           "success",
-          connected ? "Facebook connected." : "Facebook not connected."
+          connected ? "Facebook connected." : "Facebook not connected.",
         );
       }
       return connected;
@@ -1086,7 +1093,7 @@ export default function LiveStreaming() {
 
       const returnTo = window.location.href;
       const url = getApiAbsoluteUrl(
-        `auth/facebook/login?returnTo=${encodeURIComponent(returnTo)}`
+        `auth/facebook/login?returnTo=${encodeURIComponent(returnTo)}`,
       );
 
       const popup = openCenteredPopup(url, "Facebook Connect");
@@ -1143,8 +1150,8 @@ export default function LiveStreaming() {
       const pages = Array.isArray(res.data?.pages)
         ? res.data.pages
         : Array.isArray(res.data)
-        ? res.data
-        : [];
+          ? res.data
+          : [];
       setFbPages(pages);
       if (pages.length && !fbPageId)
         setFbPageId(String(pages[0].id || pages[0].page_id || ""));
@@ -1179,7 +1186,7 @@ export default function LiveStreaming() {
       if (!rtmp_url || !stream_key) {
         showToast(
           "error",
-          "Live created but missing RTMP URL / Stream Key from backend."
+          "Live created but missing RTMP URL / Stream Key from backend.",
         );
         return;
       }
@@ -1189,7 +1196,7 @@ export default function LiveStreaming() {
       setOverrideStreamKey(stream_key);
       showToast(
         "success",
-        "Facebook Live created. Copy RTMP URL + Stream Key."
+        "Facebook Live created. Copy RTMP URL + Stream Key.",
       );
       setEncOpen(true);
     } catch (e) {
@@ -1227,7 +1234,7 @@ export default function LiveStreaming() {
       setAddPubOpen(false);
       showToast(
         "info",
-        "Use the Facebook panel below to connect and create a live stream."
+        "Use the Facebook panel below to connect and create a live stream.",
       );
       return;
     }
@@ -1305,8 +1312,8 @@ export default function LiveStreaming() {
                 >
                   <span style={styles.knob(overrideOnline ?? stats.online)} />
                 </div>
-                <span style={{ color: "#6b7280", fontWeight: 700 }}>
-                  {overrideOnline ?? stats.online ? "On" : "Off"}
+                <span style={{ color: "#9aa2b6", fontWeight: 700 }}>
+                  {(overrideOnline ?? stats.online) ? "On" : "Off"}
                 </span>
               </div>
             </div>
@@ -1437,7 +1444,7 @@ export default function LiveStreaming() {
                     <div
                       style={{
                         fontSize: 12,
-                        color: "#6b7280",
+                        color: "#9aa2b6",
                         marginBottom: 6,
                       }}
                     >
@@ -1465,7 +1472,7 @@ export default function LiveStreaming() {
                   </div>
 
                   <div style={{ display: "grid", gap: 8 }}>
-                    <div style={{ fontSize: 12, color: "#6b7280" }}>
+                    <div style={{ fontSize: 12, color: "#9aa2b6" }}>
                       Live Title
                     </div>
                     <input
@@ -1475,7 +1482,7 @@ export default function LiveStreaming() {
                       placeholder="Live title"
                     />
 
-                    <div style={{ fontSize: 12, color: "#6b7280" }}>
+                    <div style={{ fontSize: 12, color: "#9aa2b6" }}>
                       Description (optional)
                     </div>
                     <input
@@ -1485,7 +1492,7 @@ export default function LiveStreaming() {
                       placeholder="Description"
                     />
 
-                    <div style={{ fontSize: 12, color: "#6b7280" }}>
+                    <div style={{ fontSize: 12, color: "#9aa2b6" }}>
                       Privacy
                     </div>
                     <select
@@ -1509,7 +1516,7 @@ export default function LiveStreaming() {
                     </button>
 
                     {fbLive?.rtmp_url ? (
-                      <div style={{ fontSize: 12, color: "#6b7280" }}>
+                      <div style={{ fontSize: 12, color: "#9aa2b6" }}>
                         Live Ready
                         {fbLive.live_video_id
                           ? ` (ID: ${fbLive.live_video_id})`
@@ -1577,10 +1584,23 @@ export default function LiveStreaming() {
                       <button
                         style={styles.pubMenuBtn}
                         title="Manage"
-                        onClick={() => {
-                          const action = window.prompt(
-                            'Type "toggle" to enable/disable, or "remove" to delete this publisher.\n\nIf not supported, we will open StreamControl.'
-                          );
+                        onClick={async () => {
+                          const action = await chooseDialog({
+                            title: "Manage publisher",
+                            message:
+                              "If an action is not supported, StreamControl opens instead.",
+                            options: [
+                              {
+                                value: "toggle",
+                                label: enabled ? "Disable" : "Enable",
+                              },
+                              {
+                                value: "remove",
+                                label: "Remove",
+                                danger: true,
+                              },
+                            ],
+                          });
                           if (action === "toggle") togglePublisher(p);
                           if (action === "remove") removePublisher(p);
                         }}
@@ -1623,7 +1643,7 @@ export default function LiveStreaming() {
           title="Stream Events"
           onClose={() => setEventsOpen(false)}
         >
-          <div style={{ color: "#6b7280" }}>Events will appear here soon.</div>
+          <div style={{ color: "#9aa2b6" }}>Events will appear here soon.</div>
         </Modal>
 
         <Modal
@@ -1631,7 +1651,7 @@ export default function LiveStreaming() {
           title="Fallback Video"
           onClose={() => setFallbackOpen(false)}
         >
-          <div style={{ color: "#6b7280", marginBottom: 10 }}>
+          <div style={{ color: "#9aa2b6", marginBottom: 10 }}>
             Upload a fallback video to play when offline.
           </div>
           <div
@@ -1640,7 +1660,7 @@ export default function LiveStreaming() {
               padding: 24,
               borderRadius: 12,
               textAlign: "center",
-              color: "#6b7280",
+              color: "#9aa2b6",
             }}
           >
             Drag & drop .mp4 here (UI only)
@@ -1678,7 +1698,7 @@ export default function LiveStreaming() {
                 ))}
               </div>
 
-              <div style={{ marginTop: 14, fontSize: 12, color: "#6b7280" }}>
+              <div style={{ marginTop: 14, fontSize: 12, color: "#9aa2b6" }}>
                 Note: Twitch/YouTube/RTMP/SRT are still finished in
                 StreamControl. Facebook is supported in-app.
               </div>
@@ -1704,7 +1724,7 @@ export default function LiveStreaming() {
                     <div
                       style={{
                         fontSize: 12,
-                        color: "#6b7280",
+                        color: "#9aa2b6",
                         marginBottom: 6,
                       }}
                     >
@@ -1713,12 +1733,12 @@ export default function LiveStreaming() {
                     <input
                       value={pubDisplayName}
                       onChange={(e) => setPubDisplayName(e.target.value)}
-                      placeholder="e.g. Bishop Robertson TV"
+                      placeholder={`e.g. ${SITE.name}`}
                       style={styles.nameInput}
                     />
                   </div>
 
-                  <div style={{ fontSize: 12, color: "#6b7280" }}>
+                  <div style={{ fontSize: 12, color: "#9aa2b6" }}>
                     Facebook connects inside your app. Other platforms complete
                     inside StreamControl.
                   </div>
@@ -1729,7 +1749,7 @@ export default function LiveStreaming() {
                     {req?.title}
                   </div>
                   <ul
-                    style={{ marginTop: 0, color: "#111827", lineHeight: 1.6 }}
+                    style={{ marginTop: 0, color: "#e8eaf2", lineHeight: 1.6 }}
                   >
                     {(req?.bullets || []).map((b, idx) => (
                       <li key={idx}>{b}</li>

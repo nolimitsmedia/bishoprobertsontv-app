@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../api";
+import { promptDialog } from "../../components/ui/Dialogs";
 
 /* ------------------------------ helpers ------------------------------ */
 const fmtMoney = (cents) =>
@@ -224,7 +225,7 @@ export default function Subscriptions() {
     return plans.filter(
       (p) =>
         p.title?.toLowerCase().includes(q) ||
-        p.description?.toLowerCase().includes(q)
+        p.description?.toLowerCase().includes(q),
     );
   }, [plans, search]);
 
@@ -451,8 +452,8 @@ export default function Subscriptions() {
                         {p.status === "public"
                           ? badge("PUBLIC", "#10b981")
                           : p.status === "private"
-                          ? badge("PRIVATE", "#6b7280")
-                          : badge("ARCHIVED", "#ef4444")}
+                            ? badge("PRIVATE", "#6b7280")
+                            : badge("ARCHIVED", "#ef4444")}
                       </td>
 
                       {/* NEW: Tier */}
@@ -460,8 +461,8 @@ export default function Subscriptions() {
                         {p.tier === "enterprise"
                           ? "Enterprise"
                           : p.tier === "pro"
-                          ? "Pro"
-                          : "Starter"}
+                            ? "Pro"
+                            : "Starter"}
                       </td>
 
                       {/* NEW: Features summary */}
@@ -512,7 +513,7 @@ export default function Subscriptions() {
                                     id,
                                     x: r.left + r.width - MENU_W,
                                     y: r.bottom + 8,
-                                  }
+                                  },
                             );
                           }}
                         >
@@ -584,7 +585,12 @@ export default function Subscriptions() {
           try {
             await navigator.clipboard.writeText(link);
           } catch {
-            window.prompt("Copy link", link);
+            promptDialog({
+              title: "Copy link",
+              message: "Copy this link:",
+              defaultValue: link,
+              readOnly: true,
+            });
           }
         }}
         onDelete={() => {

@@ -1,10 +1,24 @@
 // src/layout/Layout.js
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import {
+  Navigate,
+  NavLink,
+  Outlet,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import api from "../api";
 import { MENU as rawMenu } from "../config/menu";
+import {
+  areaForPath,
+  canUseArea,
+  homePathFor,
+  useAdminAccess,
+} from "../auth/adminAccess";
 import "./Layout.css";
-import Logo from "../assets/BishopRobertsonTVLogo.png";
+import "./AdminTheme.css"; // modern admin look (sidebar + all admin pages)
+import { BrandLogo } from "../lib/brand";
+import { SITE } from "../config/site";
 
 /** Normalize MENU into [{label, items:[{title,to,icon?,children?:[]}] }]. */
 function normalizeMenu(input) {
@@ -17,7 +31,12 @@ function normalizeMenu(input) {
 function RenderIcon({ icon }) {
   if (!icon) return null;
   if (React.isValidElement(icon)) return <span className="u-ico">{icon}</span>;
-  if (typeof icon === "function") {
+  // lucide-react icons are components wrapped in forwardRef (objects with
+  // $$typeof), not plain functions — accept both (icons were never shown).
+  if (
+    typeof icon === "function" ||
+    (typeof icon === "object" && icon.$$typeof)
+  ) {
     const Ico = icon;
     return (
       <span className="u-ico">
@@ -145,15 +164,40 @@ function makeChildKey(parentKey, c, ci) {
 
 export default function Layout() {
   const location = useLocation();
-  const groups = useMemo(() => normalizeMenu(rawMenu), []);
+  // Phase 8-1: show each person only the areas they can use.
+  const { access } = useAdminAccess();
+  const groups = useMemo(() => {
+    const allowed = (it) => !it?.to || canUseArea(access, areaForPath(it.to));
+    return normalizeMenu(rawMenu)
+      .map((g) => ({
+        ...g,
+        items: (g.items || [])
+          .map((it) =>
+            Array.isArray(it.children)
+              ? { ...it, children: it.children.filter(allowed) }
+              : it,
+          )
+          .filter((it) =>
+            Array.isArray(it.children) ? it.children.length > 0 : allowed(it),
+          ),
+      }))
+      .filter((g) => g.items.length > 0);
+  }, [access]);
+  const pageArea = areaForPath(location.pathname);
+  const pageAllowed = canUseArea(access, pageArea);
   const [sideOpen, setSideOpen] = useState(false); // mobile off-canvas
 
   // Drawer state for submenus
   const [openDrawers, setOpenDrawers] = useState({});
 
+  // "/admin" (Dashboard) is the parent of every admin address: only the exact
+  // page counts, so Dashboard isn't highlighted together with another item.
   const isPathActive = (to) =>
     !!to &&
-    (location.pathname === to || location.pathname.startsWith(to + "/"));
+    (location.pathname === to ||
+      (to !== "/admin" &&
+        to !== "/" &&
+        location.pathname.startsWith(to + "/")));
 
   // Close sidebar on route change (mobile) & handle ESC
   useEffect(() => setSideOpen(false), [location.pathname]);
@@ -208,7 +252,7 @@ export default function Layout() {
       <header className="us-mtop">
         {/* Logo first */}
         <NavLink to="/" className="us-mbrand" aria-label="Home">
-          <img src={Logo} alt="Bishop Robertson TV Logo" />
+          <BrandLogo name={SITE.name} />
         </NavLink>
 
         {/* Burger after logo */}
@@ -261,7 +305,7 @@ export default function Layout() {
         {/* Mobile header inside drawer */}
         <div className="us-sideTop">
           <NavLink to="/" className="pl-logo">
-            <img src={Logo} alt="Bishop Robertson TV Logo" />
+            <BrandLogo name={SITE.name} />
           </NavLink>
 
           <button
@@ -290,7 +334,7 @@ export default function Layout() {
         {/* Keep desktop brand block (hidden on mobile via CSS) */}
         <div className="us-brand us-brandDesktop">
           <NavLink to="/" className="pl-logo">
-            <img src={Logo} alt="Bishop Robertson TV Logo" />
+            <BrandLogo name={SITE.name} />
           </NavLink>
         </div>
 
@@ -410,7 +454,25 @@ export default function Layout() {
 
       <div className="us-main">
         <main className="us-content">
-          <Outlet key={location.pathname} />
+          {pageAllowed ? (
+            <Outlet key={location.pathname} />
+          ) : location.pathname.replace(/\/+$/, "") === "/admin" ? (
+            <Navigate to={homePathFor(access)} replace />
+          ) : (
+            <div
+              className="admin-noAccess"
+              role="alert"
+              style={{ padding: 32 }}
+            >
+              <h2 style={{ marginTop: 0 }}>
+                You don’t have access to this area
+              </h2>
+              <p>
+                Ask an administrator if you need it.{" "}
+                <NavLink to={homePathFor(access)}>Go to your area</NavLink>
+              </p>
+            </div>
+          )}
         </main>
       </div>
     </div>

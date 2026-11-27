@@ -13,12 +13,19 @@ function defaultApiBase() {
       return "http://localhost:5000/api";
     }
 
+    // White-label (Release 1.3): each customer's build sets its own API.
+    if (process.env.REACT_APP_API_BASE_URL)
+      return process.env.REACT_APP_API_BASE_URL;
+
     // GitHub Pages OR ANY production host → FORCE Render backend
     return "https://bishoprobertsontv-app-backend.onrender.com/api";
   }
 
   // fallback for SSR (not used)
-  return "https://bishoprobertsontv-app-backend.onrender.com/api";
+  return (
+    process.env.REACT_APP_API_BASE_URL ||
+    "https://bishoprobertsontv-app-backend.onrender.com/api"
+  );
 }
 
 /* No trailing slash / ensure /api */

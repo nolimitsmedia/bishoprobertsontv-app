@@ -1,0 +1,486 @@
+/* Admin › Video details — modern cards, pill choices, clear actions (dark theme) */
+.us-shell .us-content:not(#_) .vd-grid {
+  gap: 16px;
+}
+.us-shell .us-content:not(#_) .vd-grid .card {
+  background: #131722 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 16px !important;
+  padding: 18px !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22) !important;
+}
+.us-shell .us-content:not(#_) .vd-grid .vd-h {
+  margin: 0 0 12px;
+  font-size: 15.5px;
+  font-weight: 800;
+  color: #fff;
+}
+.us-shell .us-content:not(#_) .vd-grid .vd-label {
+  display: block;
+  margin: 12px 0 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #9aa2b6;
+  text-transform: none;
+}
+.us-shell .us-content:not(#_) .vd-grid .vd-muted {
+  color: #8f97ad;
+  font-size: 12.5px;
+}
+.us-shell .us-content:not(#_) .vd-grid .vd-breadcrumbs {
+  font-size: 15px;
+  color: #e8eaf2;
+}
+.us-shell .us-content:not(#_) .vd-grid .vd-link {
+  color: #c4b5fd;
+  text-decoration: none;
+  font-weight: 700;
+}
+.us-shell .us-content:not(#_) .vd-grid .vd-link:hover {
+  text-decoration: underline;
+}
+.us-shell .us-content:not(#_) .vd-grid .vd-thumb,
+.us-shell .us-content:not(#_) .vd-grid .vd-video {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* primary action */
+.us-shell .us-content:not(#_) .vd-grid .btn.vd-primary {
+  background: #8b5cf6;
+  border-color: #8b5cf6;
+  color: #fff;
+}
+.us-shell .us-content:not(#_) .vd-grid .btn.vd-primary:hover {
+  background: #7c4ded;
+}
+
+/* radios as pill choices (Visibility, Access); the radio stays for keyboards and screen readers */
+.us-shell .us-content:not(#_) .vd-grid .card:has(> label.radio) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.us-shell
+  .us-content:not(#_)
+  .vd-grid
+  .card:has(> label.radio)
+  > :not(label.radio) {
+  flex-basis: 100%;
+}
+.us-shell .us-content:not(#_) .vd-grid label.radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px 7px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #171c29;
+  color: #c6cbd8;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.us-shell .us-content:not(#_) .vd-grid label.radio:has(input:checked) {
+  background: rgba(139, 92, 246, 0.22);
+  border-color: rgba(167, 139, 250, 0.65);
+  color: #fff;
+}
+.us-shell .us-content:not(#_) .vd-grid label.radio:has(input:focus-visible) {
+  outline: 2px solid #c4b5fd;
+  outline-offset: 2px;
+}
+.us-shell .us-content:not(#_) .vd-grid label.radio input {
+  margin: 0;
+  accent-color: #8b5cf6;
+}
+
+/* danger zone */
+.us-shell .us-content:not(#_) .vd-grid .card.vd-danger {
+  border-color: rgba(248, 113, 113, 0.35) !important;
+  background: linear-gradient(
+    180deg,
+    rgba(248, 113, 113, 0.06),
+    #131722
+  ) !important;
+}
+.us-shell .us-content:not(#_) .vd-grid .card.vd-danger .vd-h {
+  color: #fca5a5 !important;
+}
+.us-shell .us-content:not(#_) .vd-grid .btn.vd-dangerBtn {
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.45);
+  color: #fecaca !important;
+}
+.us-shell .us-content:not(#_) .vd-grid .btn.vd-dangerBtn:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.22);
+}
+
+/* fields match the rest of the admin (this page's own style made them black) */
+.us-shell
+  .us-content:not(#_)
+  .vd-grid
+  :is(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+    textarea,
+    select
+  ) {
+  background-color: #171c29 !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  color: #e8eaf2 !important;
+  border-radius: 10px !important;
+}
+/* compact buttons that wrap (free-preview presets overflowed the card) */
+.us-shell .us-content:not(#_) .vd-grid .vd-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.us-shell .us-content:not(#_) .vd-grid .btn {
+  min-height: 34px;
+  padding: 6px 14px;
+}
+.us-shell .us-content:not(#_) .vd-grid .card .btn.ghost {
+  flex: 0 0 auto;
+}
+.us-shell .us-content:not(#_) .vd-grid .vd-presets {
+  flex-wrap: wrap;
+}
+.us-shell .us-content:not(#_) .vd-grid .vd-presets .btn {
+  flex: 1 1 52px !important;
+  width: auto !important;
+  min-width: 0 !important;
+  min-height: 32px;
+  padding: 4px 8px;
+  font-size: 13px;
+  border-radius: 999px;
+}
+
+/* Replace video file */
+.rv-box {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+  display: grid;
+  gap: 8px;
+}
+.rv-box.is-highlight {
+  border-color: rgba(167, 139, 250, 0.7);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.25);
+}
+.rv-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #fff;
+}
+.rv-hint {
+  margin: 0;
+  color: #9aa2b6;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.rv-btn {
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 0;
+  background: #8b5cf6;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.rv-btn:hover {
+  background: #7c4ded;
+}
+.rv-btn--ghost {
+  justify-self: start;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+}
+.rv-btn:focus-visible {
+  outline: 2px solid #c4b5fd;
+  outline-offset: 2px;
+}
+.rv-progressWrap {
+  display: grid;
+  gap: 6px;
+}
+.rv-progressLabel {
+  color: #e8eaf2;
+  font-size: 13px;
+  font-weight: 700;
+}
+.rv-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.rv-bar span {
+  display: block;
+  height: 100%;
+  background: #8b5cf6;
+  transition: width 0.3s ease;
+}
+.rv-status {
+  margin: 0;
+  font-size: 13px;
+  color: #c6cbd8;
+}
+.rv-status.is-ok {
+  color: #6ee7b7;
+  font-weight: 700;
+}
+.rv-status.is-error {
+  color: #fca5a5;
+}
+
+/* Bunny Stream preview (Bunny's player) */
+.vd-embed {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
+}
+.vd-embed iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.vd-video-failed {
+  padding: 18px;
+  border-radius: 12px;
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  color: #fecaca;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.rv-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.rv-wasabi {
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
+}
+.rv-saved {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: #e8eaf2;
+  font-size: 13px;
+}
+.rv-search {
+  display: flex;
+  gap: 6px;
+}
+.rv-search input {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: #0b0d14;
+  color: #e8eaf2;
+  font: inherit;
+  font-size: 13px;
+}
+.rv-search input:focus-visible {
+  outline: none;
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.3);
+}
+.rv-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  max-height: 220px;
+  overflow: auto;
+}
+.rv-results li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.rv-file {
+  color: #e8eaf2;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rv-file small {
+  color: #9aa2b6;
+  margin-left: 4px;
+}
+.rv-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.rv-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Source file (original file names + possible Wasabi files) */
+.rv-source {
+  display: grid;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.rv-sourceTitle {
+  color: #c6cbd8;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.rv-sourceList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.rv-sourceList li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.rv-sourceText {
+  display: grid;
+  min-width: 0;
+}
+.rv-sourceLabel {
+  color: #9aa2b6;
+  font-size: 11.5px;
+}
+.rv-sourceName {
+  color: #fff;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.rv-sourcePath {
+  color: #8f97ad;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rv-why {
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(248, 113, 113, 0.1);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  color: #fecaca;
+  font-size: 12.5px;
+}
+.rv-why strong {
+  color: #fff;
+  font-size: 12.5px;
+}
+.rv-whyTip {
+  color: #c6cbd8;
+}
+.rv-repair {
+  display: grid;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.rv-repair > .rv-btn {
+  justify-self: start;
+}
+
+/* Trim video */
+.tv-len {
+  color: #9aa2b6;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.tv-row {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+  flex-wrap: wrap;
+}
+.tv-field {
+  display: grid;
+  gap: 4px;
+  color: #c6cbd8;
+  font-size: 12px;
+  font-weight: 700;
+  flex: 1 1 90px;
+}
+.tv-field input {
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: #0b0d14;
+  color: #e8eaf2;
+  font: inherit;
+  font-size: 13px;
+  min-width: 0;
+}
+.tv-field input:focus-visible {
+  outline: none;
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.3);
+}
+.rv-full {
+  display: grid;
+  gap: 4px;
+}
+.rv-full > .rv-btn {
+  justify-self: start;
+}
+.tv-note {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(139, 92, 246, 0.12);
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  color: #ddd6fe;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.tv-note > .rv-btn {
+  justify-self: start;
+}

@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../../api";
-import "./Login.css"; // re-use the same styles
+import AuthShell, { AuthField } from "../../components/auth/AuthShell";
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
@@ -37,7 +37,7 @@ export default function ForgotPassword() {
       setSent(true);
     } catch (e) {
       setErr(
-        e?.response?.data?.message || e.message || "Something went wrong."
+        e?.response?.data?.message || e.message || "Something went wrong.",
       );
     } finally {
       setBusy(false);
@@ -45,54 +45,68 @@ export default function ForgotPassword() {
   }
 
   return (
-    <div className="auth-wrap">
-      <div className="auth-grid">
-        <div className="auth-card card">
-          <h1 className="auth-title">Reset your password</h1>
-
-          {sent ? (
-            <div className="auth-alert success">
-              If an account exists for <strong>{email}</strong>, a reset link
-              has been sent. Please check your inbox (and spam folder).
-            </div>
-          ) : (
-            <>
-              {err && <div className="auth-alert">{err}</div>}
-              <form className="auth-form" onSubmit={onSubmit}>
-                <label className="auth-label">
-                  Email
-                  <input
-                    className="auth-input"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                  />
-                </label>
-                <button className="auth-btn primary" disabled={busy}>
-                  {busy ? "Sending…" : "Send reset link"}
-                </button>
-              </form>
-            </>
-          )}
-
-          <div className="auth-foot">
-            <Link to="/login">Back to sign in</Link>
-          </div>
+    <AuthShell
+      headline="Forgot your password?"
+      points={[
+        "We’ll email you a secure reset link",
+        "The link expires after a while, for your safety",
+        "Need help? Use the Contact page",
+      ]}
+      title="Reset your password"
+      subtitle={
+        sent
+          ? ""
+          : "Enter the email you signed up with and we’ll send you a reset link."
+      }
+      footer={
+        <Link to="/login" className="as-link">
+          ← Back to sign in
+        </Link>
+      }
+    >
+      {sent ? (
+        <div className="as-success" role="status">
+          If an account exists for <strong>{email}</strong>, a reset link has
+          been sent. Please check your inbox (and the spam folder).
         </div>
-
-        <aside className="auth-aside">
-          <div className="auth-aside-inner">
-            <h2>Forgot your password?</h2>
-            <p>Enter your email and we’ll send you a secure reset link.</p>
-            <ul>
-              <li>Fast and secure</li>
-              <li>Link expires for safety</li>
-              <li>Contact support if you need help</li>
-            </ul>
-          </div>
-        </aside>
-      </div>
-    </div>
+      ) : (
+        <>
+          {err ? (
+            <div className="as-alert" role="alert">
+              {err}
+            </div>
+          ) : null}
+          <form className="as-form" onSubmit={onSubmit}>
+            <AuthField label="Email">
+              <input
+                className="as-input"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                autoComplete="email"
+                inputMode="email"
+                required
+                autoFocus
+              />
+            </AuthField>
+            <button
+              className="as-btn"
+              disabled={busy}
+              aria-busy={busy ? "true" : "false"}
+            >
+              {busy ? (
+                <>
+                  <span className="as-spinner" aria-hidden="true" />
+                  Sending…
+                </>
+              ) : (
+                "Send reset link"
+              )}
+            </button>
+          </form>
+        </>
+      )}
+    </AuthShell>
   );
 }

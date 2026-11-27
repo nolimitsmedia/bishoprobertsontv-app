@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import api from "../../api";
 import "./Signup.css";
+import { SITE } from "../../config/site";
 
 /* -------------------------------------------------------
    PayPal SDK env
@@ -22,13 +23,13 @@ function loadPayPalSdk() {
     if (!PAYPAL_CLIENT_ID) {
       return reject(
         new Error(
-          "Missing PayPal Client ID env (VITE_PAYPAL_CLIENT_ID / REACT_APP_PAYPAL_CLIENT_ID)."
-        )
+          "Missing PayPal Client ID env (VITE_PAYPAL_CLIENT_ID / REACT_APP_PAYPAL_CLIENT_ID).",
+        ),
       );
     }
     const s = document.createElement("script");
     s.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(
-      PAYPAL_CLIENT_ID
+      PAYPAL_CLIENT_ID,
     )}&vault=true&intent=subscription`;
     s.async = true;
     s.onload = () => resolve(window.paypal);
@@ -72,7 +73,7 @@ export default function Signup() {
     return "Starter Plan";
   }, [planCode]);
 
-  const heading = `Subscribe to BishopTV ${planLabel}`;
+  const heading = `Subscribe to ${SITE.name} ${planLabel}`;
 
   /* --------------------------------------------- */
   useEffect(() => {
@@ -92,7 +93,7 @@ export default function Signup() {
         } catch (e) {
           throw new Error(
             e?.response?.data?.message ||
-              "Could not resolve a PayPal plan for this subscription."
+              "Could not resolve a PayPal plan for this subscription.",
           );
         }
         if (!planId) throw new Error("Missing PayPal plan_id.");
@@ -140,7 +141,7 @@ export default function Signup() {
                 setErr(
                   e?.response?.data?.message ||
                     e.message ||
-                    "Could not finalize subscription."
+                    "Could not finalize subscription.",
                 );
               }
             },
@@ -181,7 +182,7 @@ export default function Signup() {
       }, 50);
     } catch (e) {
       setErr(
-        e?.response?.data?.message || e.message || "Something went wrong."
+        e?.response?.data?.message || e.message || "Something went wrong.",
       );
     } finally {
       setBusy(false);
@@ -281,7 +282,7 @@ export default function Signup() {
 
       <div className="signup-col right">
         <div className="pitch">
-          <h2>Join creators growing with Bishop</h2>
+          <h2>Join our community</h2>
         </div>
         <div className="poster-grid">
           <div className="poster a" />

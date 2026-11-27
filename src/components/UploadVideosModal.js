@@ -7,16 +7,21 @@ import React, {
   useState,
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import axios from "axios";
-import api, { uploadApi } from "../api";
+import * as tus from "tus-js-client";
+import api from "../api";
 import "./UploadVideosModal.css";
 
 const CREATE_TIMEOUT_MS = 20000;
 const POLL_MS = 2500;
-const DIRECT_UPLOAD_MIN_BYTES = 50 * 1024 * 1024; // 50MB
+// 50MB
 
 // UI update throttling (4/sec)
 const PROGRESS_THROTTLE_MS = 250;
+
+// Bunny Stream transcoding mode.
+// Videos go to Bunny Stream (TUS) so Bunny handles transcoding/adaptive HLS.
+// Bunny Storage / server upload helpers are kept below for non-stream fallback compatibility.
+const USE_BUNNY_STREAM_UPLOAD = true;
 
 function baseTitle(filename = "") {
   const dot = filename.lastIndexOf(".");
@@ -112,6 +117,7 @@ export default function UploadVideosModal({
   // Per-upload tracking to throttle progress updates
   // tracker[id] = { lastUiTs, lastPct, lastEta, lastSpeed, lastLoaded, lastT }
   const progressTrackerRef = useRef(Object.create(null));
+  const createLocksRef = useRef(Object.create(null));
 
   // -------- Category state --------
   const [categories, setCategories] = useState([]);
@@ -301,6 +307,7 @@ export default function UploadVideosModal({
 
     // Clear tracking
     progressTrackerRef.current = Object.create(null);
+    createLocksRef.current = Object.create(null);
 
     // Reset state
     setItems([]);
@@ -357,7 +364,7 @@ export default function UploadVideosModal({
       }));
 
       setItems((prev) => [...prev, ...entries]);
-      entries.forEach((entry) => startUpload(entry));
+      entries.forEach((entry) => startUploadRef.current(entry));
     },
     [
       categoryIsValid,
@@ -399,75 +406,89 @@ export default function UploadVideosModal({
     delete progressTrackerRef.current[id];
   }
 
-  async function initDirectUpload({ file, kind, category }) {
-    const payload = {
-      filename: file?.name || "upload.bin",
+  async function createBunnyStreamPresign({ title, file }) {
+    const res = await api.post("/bunny/stream/presign", {
+      title: title || baseTitle(file?.name || "Untitled"),
+      filename: file?.name || "upload.mp4",
       contentType: file?.type || "application/octet-stream",
       sizeBytes: file?.size || 0,
-      kind: kind || "videos",
-      category: category || "uncategorized",
-    };
+    });
 
-    const res = await api.post("/uploads/bunny/direct-init", payload);
     const d = res?.data || {};
-
-    const uploadUrl = d.uploadUrl || d.upload_url || "";
-    const publicUrl = d.publicUrl || d.public_url || "";
-    const key = d.key || "";
-    const ticket = d.ticket || "";
-    const contentType = d.contentType || d.content_type || payload.contentType;
-
-    if (!uploadUrl || !publicUrl || !ticket) {
-      throw new Error("Direct init failed: missing uploadUrl/publicUrl/ticket");
+    if (!d.ok || !d.videoId || !d.signature || !d.expires || !d.tusEndpoint) {
+      throw new Error(d.message || "Bunny Stream presign failed");
     }
 
-    return { uploadUrl, publicUrl, key, ticket, contentType };
+    return d;
   }
 
-  async function mintDirectAccessKey({ ticket }) {
-    const res = await api.post("/uploads/bunny/direct-auth", { ticket });
-    const d = res?.data || {};
-    const accessKey = d.accessKey || d.access_key || "";
-    if (!accessKey) throw new Error("Direct auth failed: missing accessKey");
-    return accessKey;
-  }
+  function uploadFileToBunnyStream({ file, title, onProgress }) {
+    let tusUpload = null;
 
-  async function uploadDirectToBunny({
-    uploadUrl,
-    file,
-    signal,
-    onProgress,
-    accessKey,
-    contentType,
-  }) {
-    const headers = {
-      "Content-Type": contentType || file?.type || "application/octet-stream",
-      AccessKey: accessKey,
+    const task = new Promise(async (resolve, reject) => {
+      try {
+        const presign = await createBunnyStreamPresign({ title, file });
+
+        tusUpload = new tus.Upload(file, {
+          endpoint: presign.tusEndpoint,
+          retryDelays: [0, 3000, 5000, 10000, 20000, 60000],
+          headers: {
+            AuthorizationSignature: String(presign.signature),
+            AuthorizationExpire: String(presign.expires),
+            VideoId: String(presign.videoId),
+            LibraryId: String(presign.libraryId),
+          },
+          metadata: {
+            filename: file?.name || "upload.mp4",
+            filetype: file?.type || "application/octet-stream",
+            title: title || baseTitle(file?.name || "Untitled"),
+          },
+          onError: reject,
+          onProgress: (bytesUploaded, bytesTotal) => {
+            onProgress?.({
+              loaded: bytesUploaded,
+              total: bytesTotal || file?.size || 0,
+            });
+          },
+          onSuccess: () => {
+            resolve({
+              provider: "bunny_stream",
+              provider_key: presign.videoId,
+              bunny_video_id: presign.videoId,
+              bunny_library_id: String(presign.libraryId || ""),
+              video_url: presign.playbackUrl || presign.hlsUrl || "",
+              playback_url: presign.playbackUrl || presign.hlsUrl || "",
+              embed_url: presign.embedUrl || "",
+              // Do not save Bunny Stream raw thumbnail URLs here.
+              // They can fail if the Stream CDN blocks direct thumbnail access.
+              // Admins can upload a custom thumbnail from Video Details instead.
+              thumbnail_url: null,
+              processing_status: "processing",
+            });
+          },
+        });
+
+        const previousUploads = await tusUpload.findPreviousUploads();
+        if (previousUploads.length) {
+          tusUpload.resumeFromPreviousUpload(previousUploads[0]);
+        }
+
+        tusUpload.start();
+      } catch (e) {
+        reject(e);
+      }
+    });
+
+    return {
+      promise: task,
+      abort: () => {
+        if (tusUpload) {
+          try {
+            tusUpload.abort(true);
+          } catch {}
+        }
+      },
     };
-
-    return axios.put(uploadUrl, file, {
-      headers,
-      signal,
-      onUploadProgress: onProgress,
-      timeout: 0,
-      maxBodyLength: Infinity,
-      maxContentLength: Infinity,
-    });
-  }
-
-  async function uploadViaServer({ file, categorySlug, signal, onProgress }) {
-    const fd = new FormData();
-    fd.append("file", file);
-    fd.append("kind", "videos");
-    if (categorySlug) fd.append("category", categorySlug);
-
-    return uploadApi.post("/uploads/video", fd, {
-      signal,
-      onUploadProgress: onProgress,
-      timeout: 0,
-      maxBodyLength: Infinity,
-      maxContentLength: Infinity,
-    });
   }
 
   function ensureTracker(id) {
@@ -501,17 +522,17 @@ export default function UploadVideosModal({
     });
   }
 
+  // addFiles (a useCallback above) always calls the latest startUpload
+  const startUploadRef = useRef(null);
+  startUploadRef.current = startUpload;
+
   async function startUpload(entry) {
-    const { id, file, categorySlug, visibility } = entry;
+    const { id, file, visibility } = entry;
 
     ensureTracker(id);
     safeSetProgress(id, { status: "uploading", error: "" });
 
-    const uploadCtl = new AbortController();
-    safeSetProgress(id, { controller: uploadCtl });
-
-    let fileUrl = "";
-    let durationSec = null;
+    let streamInfo = null;
 
     const tracker = ensureTracker(id);
 
@@ -577,64 +598,50 @@ export default function UploadVideosModal({
       });
     };
 
-    const shouldTryDirect = (file?.size || 0) >= DIRECT_UPLOAD_MIN_BYTES;
-
     try {
-      if (shouldTryDirect) {
-        const init = await initDirectUpload({
-          file,
-          kind: "videos",
-          category: categorySlug || "uncategorized",
-        });
-
-        const accessKey = await mintDirectAccessKey({ ticket: init.ticket });
-
-        await uploadDirectToBunny({
-          uploadUrl: init.uploadUrl,
-          file,
-          signal: uploadCtl.signal,
-          onProgress,
-          accessKey,
-          contentType: init.contentType,
-        });
-
-        fileUrl = init.publicUrl;
-        if (!fileUrl)
-          throw new Error("Direct upload succeeded but missing publicUrl");
-
-        flushProgress({
-          url: fileUrl,
-          durationSec: null,
-          progress: 100,
-          status: "creating",
-          etaSec: null,
-          speedBps: 0,
-        });
-      } else {
-        const up = await uploadViaServer({
-          file,
-          categorySlug,
-          signal: uploadCtl.signal,
-          onProgress,
-        });
-
-        const data = up?.data || {};
-        fileUrl = data.url;
-        durationSec = data.duration_sec ?? data.duration_seconds ?? null;
-        if (!fileUrl) throw new Error("Upload succeeded but missing URL");
-
-        flushProgress({
-          url: fileUrl,
-          durationSec,
-          progress: 100,
-          status: "creating",
-          etaSec: null,
-          speedBps: 0,
-        });
+      if (!USE_BUNNY_STREAM_UPLOAD) {
+        throw new Error("Bunny Stream upload is disabled");
       }
+
+      const bunnyTask = uploadFileToBunnyStream({
+        file,
+        title: entry.title,
+        onProgress,
+      });
+
+      safeSetProgress(id, {
+        controller: {
+          abort: () => {
+            try {
+              bunnyTask.abort();
+            } catch {}
+          },
+        },
+      });
+
+      streamInfo = await bunnyTask.promise;
+
+      if (!streamInfo?.playback_url && !streamInfo?.video_url) {
+        throw new Error(
+          "Bunny Stream upload succeeded but playback URL is missing",
+        );
+      }
+
+      flushProgress({
+        url: streamInfo.playback_url || streamInfo.video_url,
+        streamInfo,
+        durationSec: null,
+        progress: 100,
+        status: "creating",
+        etaSec: null,
+        speedBps: 0,
+      });
     } catch (err) {
       const isCanceled =
-        err?.name === "CanceledError" || err?.code === "ERR_CANCELED";
+        err?.name === "CanceledError" ||
+        err?.code === "ERR_CANCELED" ||
+        /aborted|cancel/i.test(String(err?.message || ""));
+
       if (isCanceled) {
         flushProgress({
           status: "canceled",
@@ -647,77 +654,28 @@ export default function UploadVideosModal({
         return;
       }
 
-      if (shouldTryDirect) {
-        try {
-          const t = ensureTracker(id);
-          t.lastLoaded = 0;
-          t.lastT = Date.now();
-          t.lastUiTs = 0;
-          t.lastPct = -1;
-          t.lastEta = null;
-          t.lastSpeed = 0;
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.detail ||
+        err?.message ||
+        "Bunny Stream upload failed";
 
-          const up = await uploadViaServer({
-            file,
-            categorySlug,
-            signal: uploadCtl.signal,
-            onProgress,
-          });
-
-          const data = up?.data || {};
-          fileUrl = data.url;
-          durationSec = data.duration_sec ?? data.duration_seconds ?? null;
-          if (!fileUrl) throw new Error("Upload succeeded but missing URL");
-
-          flushProgress({
-            url: fileUrl,
-            durationSec,
-            progress: 100,
-            status: "creating",
-            etaSec: null,
-            speedBps: 0,
-          });
-        } catch (err2) {
-          const msg =
-            err2?.response?.data?.message ||
-            err2?.response?.data?.detail ||
-            err2?.message ||
-            "Upload failed";
-
-          flushProgress({
-            status: "error",
-            error: msg,
-            controller: null,
-            etaSec: null,
-            speedBps: 0,
-          });
-          cleanupTracker(id);
-          return;
-        }
-      } else {
-        const msg =
-          err?.response?.data?.message ||
-          err?.response?.data?.detail ||
-          err?.message ||
-          "Upload failed";
-
-        flushProgress({
-          status: "error",
-          error: msg,
-          controller: null,
-          etaSec: null,
-          speedBps: 0,
-        });
-        cleanupTracker(id);
-        return;
-      }
+      flushProgress({
+        status: "error",
+        error: msg,
+        controller: null,
+        etaSec: null,
+        speedBps: 0,
+      });
+      cleanupTracker(id);
+      return;
     }
 
     await createVideoWithTimeout(
       id,
-      fileUrl,
+      streamInfo,
       entry.title,
-      durationSec,
+      null,
       entry.categoryId,
       visibility,
     );
@@ -727,12 +685,27 @@ export default function UploadVideosModal({
 
   async function createVideoWithTimeout(
     id,
-    fileUrl,
+    streamInfo,
     title,
     durationSec,
     categoryId,
     visibility,
   ) {
+    const streamKey = String(
+      streamInfo?.bunny_video_id ||
+        streamInfo?.provider_key ||
+        streamInfo?.video_url ||
+        streamInfo?.playback_url ||
+        id,
+    );
+
+    // Prevent duplicate DB rows when React re-renders, the modal refreshes, or
+    // a TUS upload success callback fires more than once for the same Bunny video.
+    if (createLocksRef.current[streamKey]) {
+      return;
+    }
+    createLocksRef.current[streamKey] = true;
+
     const ctl = new AbortController();
     const to = setTimeout(() => ctl.abort(), CREATE_TIMEOUT_MS);
 
@@ -742,8 +715,19 @@ export default function UploadVideosModal({
         {
           title,
           description: "",
-          video_url: fileUrl,
+          video_url: streamInfo?.video_url || streamInfo?.playback_url,
+          playback_url: streamInfo?.playback_url || streamInfo?.video_url,
+          embed_url: streamInfo?.embed_url || null,
+          // Keep Bunny Stream uploads from saving raw vz-*.b-cdn.net thumbnail URLs.
+          // Those URLs may show "Domain suspended or not configured" when opened directly.
           thumbnail_url: null,
+          bunny_video_id:
+            streamInfo?.bunny_video_id || streamInfo?.provider_key || null,
+          bunny_library_id: streamInfo?.bunny_library_id || null,
+          provider: streamInfo?.provider || "bunny_stream",
+          provider_key:
+            streamInfo?.provider_key || streamInfo?.bunny_video_id || null,
+          processing_status: streamInfo?.processing_status || "processing",
           category_id: categoryId ?? null,
           visibility: (visibility || "private").toLowerCase(),
           is_premium: true,
@@ -772,6 +756,8 @@ export default function UploadVideosModal({
       });
     } catch (err) {
       clearTimeout(to);
+      delete createLocksRef.current[streamKey];
+
       const msg =
         err?.name === "CanceledError" || err?.code === "ERR_CANCELED"
           ? "Creating the video timed out. Please click Retry."
@@ -793,10 +779,9 @@ export default function UploadVideosModal({
       });
     }
   }
-
   async function retryCreate(id) {
     const it = items.find((x) => x.id === id);
-    if (!it?.url) return;
+    if (!it?.streamInfo && !it?.url) return;
 
     patchItem(id, (cur) => {
       if (!cur) return cur;
@@ -805,7 +790,12 @@ export default function UploadVideosModal({
 
     await createVideoWithTimeout(
       id,
-      it.url,
+      it.streamInfo || {
+        video_url: it.url,
+        playback_url: it.url,
+        provider: "bunny_stream",
+        processing_status: "processing",
+      },
       it.title,
       it.durationSec,
       it.categoryId,

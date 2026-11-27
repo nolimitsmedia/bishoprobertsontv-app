@@ -10,7 +10,7 @@ export default function Sidebar() {
 
   return (
     <aside className="sidebar">
-      <h3 className="sidebar-title">Bishop Panel</h3>
+      <h3 className="sidebar-title">Admin Panel</h3>
       <nav className="sidebar-nav">
         <Link className={isActive("/admin")} to="/admin">
           Dashboard

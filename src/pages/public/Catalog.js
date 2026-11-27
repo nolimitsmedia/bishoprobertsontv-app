@@ -2,9 +2,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import api from "../../api";
-import DefaultThumb from "../../assets/BishopRobertsonTVLogo.png";
-import CatalogBanner from "../../assets/brtv-catalog-banner.jpg";
+// Play button in the ministry's brand color (no thumbnail).
+import { DEFAULT_THUMB as DefaultThumb } from "../../lib/brand";
+import { contentUrl } from "../../lib/siteContent";
 import "./Catalog.css";
+
+// This site's own banner (public/content/, set per ministry at build time).
+const CatalogBanner = contentUrl("catalog-banner.jpg");
 
 /* -----------------------------------------
    Utilities
@@ -51,6 +55,42 @@ async function safeGet(path, opts = {}) {
   } catch (e) {
     return { ok: false, status: 0, data: null };
   }
+}
+
+const CATALOG_CACHE_KEY = "brtv_catalog_cache_v3";
+const CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
+
+function normalizeItems(data) {
+  if (Array.isArray(data?.items)) return data.items;
+  if (Array.isArray(data?.videos)) return data.videos;
+  if (Array.isArray(data)) return data;
+  return [];
+}
+
+function readCatalogCache() {
+  try {
+    const raw = sessionStorage.getItem(CATALOG_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      !parsed?.savedAt ||
+      Date.now() - parsed.savedAt > CATALOG_CACHE_TTL_MS
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeCatalogCache(payload) {
+  try {
+    sessionStorage.setItem(
+      CATALOG_CACHE_KEY,
+      JSON.stringify({ ...payload, savedAt: Date.now() }),
+    );
+  } catch {}
 }
 
 /* -----------------------------------------
@@ -176,7 +216,7 @@ function VideoCard({ v }) {
     v.metadata?.thumbnail_vertical_url ||
     v.metadata?.thumbnail_url;
 
-  const realSrc = absUrl(thumb);
+  const realSrc = cardThumb(absUrl(thumb));
   const src = realSrc || DefaultThumb;
   const isDefault = !realSrc;
 
@@ -192,6 +232,11 @@ function VideoCard({ v }) {
           className={
             isDefault ? "nf-thumb-img nf-thumb-img--default" : "nf-thumb-img"
           }
+          loading="lazy"
+          decoding="async"
+          fetchPriority="low"
+          ref={markIfLoaded}
+          onLoad={(e) => markLoaded(e.currentTarget)}
           onError={(e) => {
             e.currentTarget.onerror = null;
             e.currentTarget.src = DefaultThumb;
@@ -215,7 +260,10 @@ function VideoCard({ v }) {
    ✅ FIX: Hide count badge when count is 0
 ----------------------------------------- */
 function CollectionCard({ c, categoryTitle }) {
-  const href = `/admin-collections/${c.id}`;
+  const href =
+    c._source === "collection"
+      ? `/catalog?collection=${c.id}`
+      : `/admin-collections/${c.id}`;
 
   const thumb =
     c.thumbnail_url ||
@@ -249,6 +297,11 @@ function CollectionCard({ c, categoryTitle }) {
           className={
             isDefault ? "nf-thumb-img nf-thumb-img--default" : "nf-thumb-img"
           }
+          loading="lazy"
+          decoding="async"
+          fetchPriority="low"
+          ref={markIfLoaded}
+          onLoad={(e) => markLoaded(e.currentTarget)}
           onError={(e) => {
             e.currentTarget.onerror = null;
             e.currentTarget.src = DefaultThumb;
@@ -363,7 +416,73 @@ function extractCollectionCategory(c) {
 
   if (id) return { key: String(id), name: name || "Untitled Category" };
   if (name) return { key: `slug:${slugify(name)}`, name };
+  // Collections have no category column in the current database schema.
+  // Group them by their own title rather than dropping them.
+  if (c._source === "collection") {
+    const title = c.title || c.name || "Collection";
+    return { key: `collection:${c.id}`, name: title };
+  }
+  if (c._source === "playlist") {
+    const title = c.title || c.name || "Playlist";
+    return { key: `playlist:${c.id}`, name: title };
+  }
   return null;
+}
+
+/* -----------------------------------------
+   Catalog sections: merge and hide (client requests)
+   - MERGE: show a category's messages inside another one
+   - HIDE:  don't show a category in the Catalog (or in the Category filter)
+   Names are matched without capitals / extra spaces.
+----------------------------------------- */
+const CATALOG_MERGE = { "2026 archives": "2026 messages" };
+const CATALOG_HIDE = new Set(["archives"]);
+const normName = (n) =>
+  String(n || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+const canonName = (n) => CATALOG_MERGE[normName(n)] || normName(n);
+
+function mergeAndHideGroups(groups) {
+  const out = [];
+  const byName = new Map();
+  for (const g of groups) {
+    if (CATALOG_HIDE.has(normName(g.name))) continue;
+    const target = CATALOG_MERGE[normName(g.name)];
+    if (!target) {
+      out.push(g);
+      byName.set(normName(g.name), g);
+    }
+  }
+  for (const g of groups) {
+    const target = CATALOG_MERGE[normName(g.name)];
+    if (!target || CATALOG_HIDE.has(normName(g.name))) continue;
+    let dest = byName.get(target);
+    if (!dest) {
+      // the target has no messages of its own yet: show it under its name
+      dest = {
+        ...g,
+        key: `merged:${target}`,
+        name: target.replace(/\b\w/g, (ch) => ch.toUpperCase()),
+        videos: [],
+        collections: [],
+      };
+      out.push(dest);
+      byName.set(target, dest);
+    }
+    const seenV = new Set(dest.videos.map((v) => String(v.id)));
+    const seenC = new Set(dest.collections.map((c) => String(c.id)));
+    dest.videos = [
+      ...dest.videos,
+      ...g.videos.filter((v) => !seenV.has(String(v.id))),
+    ].sort(sortWithinCategory);
+    dest.collections = [
+      ...dest.collections,
+      ...g.collections.filter((c) => !seenC.has(String(c.id))),
+    ];
+  }
+  return out;
 }
 
 /* -----------------------------------------
@@ -384,16 +503,90 @@ function getPublishOrCreateMs(x) {
   return ms;
 }
 
-/* ✅ Publish-date sort for items in a category (publish wins) */
+/* Message date: the date at the end of the title ("… 12-31-25") is the real
+   service date; some saved publish dates are wrong, which put rows out of
+   order. Falls back to the publish date. */
+function titleDateMs(title) {
+  const m = String(title || "").match(
+    /(\d{1,2})-(\d{1,2})-(\d{2}|\d{4})(?!.*\d{1,2}-\d{1,2}-\d{2})/,
+  );
+  if (!m) return 0;
+  const mo = Number(m[1]);
+  const d = Number(m[2]);
+  let y = Number(m[3]);
+  if (y < 100) y += 2000;
+  if (mo < 1 || mo > 12 || d < 1 || d > 31 || y < 2000 || y > 2100) return 0;
+  return Date.UTC(y, mo - 1, d, 12);
+}
+function messageDateMs(x) {
+  return titleDateMs(x?.title) || getPublishOrCreateMs(x);
+}
 function sortWithinCategory(a, b) {
-  const da = getPublishOrCreateMs(a);
-  const db = getPublishOrCreateMs(b);
-  return db - da;
+  return messageDateMs(b) - messageDateMs(a);
+}
+
+// Fade a card image in (and stop its placeholder) once it has arrived.
+function markLoaded(img) {
+  img.classList.add("is-loaded");
+  img.parentElement?.classList.add("is-loaded");
+}
+function markIfLoaded(img) {
+  if (img && img.complete && img.naturalWidth > 0) markLoaded(img);
+}
+
+/* Card-size thumbnails when Bunny's image optimizer is on (REACT_APP_BUNNY_OPTIMIZER=true):
+   much smaller files, so cards fill in faster. */
+function cardThumb(url) {
+  if (
+    !url ||
+    String(process.env.REACT_APP_BUNNY_OPTIMIZER || "").toLowerCase() !== "true"
+  )
+    return url;
+  try {
+    const u = new URL(url);
+    if (!/\.b-cdn\.net$/i.test(u.hostname)) return url;
+    u.searchParams.set("width", "640");
+    u.searchParams.set("quality", "75");
+    return u.toString();
+  } catch {
+    return url;
+  }
 }
 
 /* -----------------------------------------
    MAIN PAGE
 ----------------------------------------- */
+// Display newest message archive first, exclusives second, then older archives.
+function sortCatalogGroups(groups) {
+  const info = (name) => {
+    const label = String(name || "");
+    const year = label.match(/\b(?:19|20)\d{2}\b/);
+    return {
+      exclusive: /exclusive/i.test(label),
+      year: year ? Number(year[0]) : null,
+    };
+  };
+  const years = groups.map((g) => info(g.name).year).filter((y) => y !== null);
+  const latest = years.length ? Math.max(...years) : null;
+  return groups.sort((a, b) => {
+    const x = info(a.name),
+      y = info(b.name);
+    const tier = (v) =>
+      v.year === latest && !v.exclusive && latest !== null
+        ? 0
+        : v.exclusive
+          ? 1
+          : v.year !== null
+            ? 2
+            : 3;
+    return (
+      tier(x) - tier(y) ||
+      (x.year !== null && y.year !== null ? y.year - x.year : 0) ||
+      a.name.localeCompare(b.name)
+    );
+  });
+}
+
 export default function Catalog() {
   const navigate = useNavigate();
   const [sp] = useSearchParams();
@@ -402,6 +595,7 @@ export default function Catalog() {
 
   const [videos, setVideos] = useState([]);
   const [collections, setCollections] = useState([]);
+  const [collectionVideos, setCollectionVideos] = useState([]);
   const [categories, setCategories] = useState([]);
 
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -411,101 +605,120 @@ export default function Catalog() {
   const [filterSubject, setFilterSubject] = useState(sp.get("subj") || "all");
 
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        // Categories
-        let rawCats = [];
-        {
-          const catsRes = await safeGet("/public/categories");
-          if (catsRes.ok) rawCats = catsRes?.data?.items || catsRes?.data || [];
-        }
+    let alive = true;
 
-        const fromApi = (rawCats || []).map((c) => ({
+    const cached = readCatalogCache();
+    if (cached) {
+      setVideos(cached.videos || []);
+      setCollections(cached.collections || []);
+      setCollectionVideos(cached.collectionVideos || []);
+      setCategories(cached.categories || []);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
+    (async () => {
+      try {
+        // Fetch all independent public sources. Playlists and collections are
+        // different database tables; one must never suppress the other.
+        const [catsRes, videosRes, playlistsRes, collectionRes] =
+          await Promise.all([
+            safeGet("/public/categories"),
+            safeGet("/videos/public", { params: { limit: 600 } }),
+            safeGet("/playlists/public", { params: { limit: 200 } }),
+            safeGet("/collections/public", { params: { limit: 200 } }),
+          ]);
+        if (!alive) return;
+
+        const rawCats = catsRes.ok ? normalizeItems(catsRes.data) : [];
+        const fromApi = rawCats.map((c) => ({
           id: c.id ?? c.slug ?? slugify(c.name),
           name: c.name ?? c.title ?? c.slug ?? "Untitled",
         }));
 
-        // Videos
-        let items = [];
-        {
-          const r1 = await safeGet("/videos/public", {
-            params: { limit: 1000 },
+        let items = videosRes.ok ? normalizeItems(videosRes.data) : [];
+        if (!videosRes.ok) {
+          const alternate = await safeGet("/public/videos", {
+            params: { limit: 500 },
           });
-          if (r1.ok) items = r1.data?.items || r1.data || [];
+          if (!alive) return;
+          if (alternate.ok) items = normalizeItems(alternate.data);
         }
 
-        if (!items.length) {
-          const r2 = await safeGet("/public/videos");
-          if (r2.ok) items = r2.data?.items || r2.data || [];
-        }
+        const playlists = playlistsRes.ok
+          ? normalizeItems(playlistsRes.data).map((c) => ({
+              ...c,
+              _source: "playlist",
+            }))
+          : [];
+        const rawCollections = collectionRes.ok
+          ? normalizeItems(collectionRes.data).filter(isCollectionPublished)
+          : [];
 
-        setVideos(items || []);
-
-        // Collections/Playlists (published only)
-        let cols = [];
-
-        // Prefer collections endpoints first
-        const collectionEndpoints = [
-          ["/public/collections", { limit: 200 }],
-          ["/collections/public", { limit: 200 }],
+        // A collection is a named archive containing its own published videos.
+        // Load its videos from the collection membership endpoint; do not
+        // depend on category_id being present on each member video.
+        const details = await Promise.all(
+          rawCollections.map(async (c) => {
+            const r = await safeGet(
+              `/collections/public/${encodeURIComponent(c.id)}/videos`,
+            );
+            return {
+              collection: c,
+              videos: r.ok ? normalizeItems(r.data) : [],
+            };
+          }),
+        );
+        if (!alive) return;
+        const validDetails = details.filter((d) => d.videos.length > 0);
+        const publishedCols = [
+          ...playlists.filter(isCollectionPublished),
+          ...validDetails.map(({ collection }) => ({
+            ...collection,
+            _source: "collection",
+          })),
         ];
+        const memberVideos = validDetails.flatMap(
+          ({ collection, videos: memberItems }) =>
+            memberItems.map((v) => ({
+              ...v,
+              _collectionId: collection.id,
+              _collectionTitle: collection.title,
+            })),
+        );
 
-        for (const [path, params] of collectionEndpoints) {
-          const rr = await safeGet(path, { params });
-          if (rr.ok) {
-            const got = rr?.data?.items || rr?.data || [];
-            if (Array.isArray(got) && got.length) {
-              cols = got;
-              break;
-            }
-          }
-        }
-
-        // If no collections found, try playlists endpoints safely
-        if (!cols.length) {
-          const playlistEndpoints = [
-            ["/public/playlists", null],
-            ["/playlists/public", null],
-            ["/public/playlists", { limit: 200 }],
-            ["/playlists/public", { limit: 200 }],
-          ];
-
-          for (const [path, params] of playlistEndpoints) {
-            const rr = await safeGet(path, params ? { params } : undefined);
-            if (!rr.ok) continue;
-
-            const got = rr?.data?.items || rr?.data || [];
-            if (Array.isArray(got) && got.length) {
-              cols = got;
-              break;
-            }
-          }
-        }
-
-        const publishedCols = (cols || []).filter(isCollectionPublished);
-        setCollections(publishedCols);
-
-        const fromVideos = (items || [])
-          .map((v) => extractCategory(v))
+        const fromVideos = items
+          .map(extractCategory)
           .filter(Boolean)
           .map((c) => ({ id: c.key, name: c.name }));
-
-        const fromCollections = (publishedCols || [])
-          .map((c) => extractCollectionCategory(c))
+        const fromCollections = publishedCols
+          .map(extractCollectionCategory)
           .filter(Boolean)
           .map((c) => ({ id: c.key, name: c.name }));
-
         const allCats = [...fromApi, ...fromVideos, ...fromCollections];
         const deduped = Array.from(
           new Map(allCats.map((c) => [String(c.id), c])).values(),
         );
 
+        setVideos(items || []);
+        setCollections(publishedCols);
+        setCollectionVideos(memberVideos);
         setCategories(deduped);
+        writeCatalogCache({
+          videos: items || [],
+          collections: publishedCols,
+          collectionVideos: memberVideos,
+          categories: deduped,
+        });
       } finally {
-        setLoading(false);
+        if (alive) setLoading(false);
       }
     })();
+
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const filteredVideos = useMemo(() => {
@@ -522,14 +735,21 @@ export default function Catalog() {
     }
 
     if (filterCat !== "all") {
-      out = out.filter((v) => extractCategory(v)?.key === filterCat);
+      const want = canonName(
+        categories.find((c) => String(c.id) === filterCat)?.name,
+      );
+      out = out.filter(
+        (v) =>
+          extractCategory(v)?.key === filterCat ||
+          (want && canonName(extractCategory(v)?.name) === want),
+      );
     }
 
     if (filterYear !== "all") {
       out = out.filter((v) => {
         const ms = getPublishOrCreateMs(v);
         if (!ms) return false;
-        return new Date(ms).getFullYear() == filterYear;
+        return new Date(ms).getFullYear() === Number(filterYear);
       });
     }
 
@@ -542,13 +762,20 @@ export default function Catalog() {
     }
 
     return out;
-  }, [videos, q, filterCat, filterYear, filterSubject]);
+  }, [videos, q, filterCat, filterYear, filterSubject, categories]);
 
   const filteredCollections = useMemo(() => {
     let out = [...collections].filter(isCollectionPublished);
 
     if (filterCat !== "all") {
-      out = out.filter((c) => extractCollectionCategory(c)?.key === filterCat);
+      const want = canonName(
+        categories.find((x) => String(x.id) === filterCat)?.name,
+      );
+      out = out.filter(
+        (c) =>
+          extractCollectionCategory(c)?.key === filterCat ||
+          (want && canonName(extractCollectionCategory(c)?.name) === want),
+      );
     }
 
     if (q.trim()) {
@@ -561,7 +788,40 @@ export default function Catalog() {
     }
 
     return out;
-  }, [collections, filterCat, q]);
+  }, [collections, filterCat, q, categories]);
+
+  const filteredCollectionVideos = useMemo(() => {
+    let out = collectionVideos;
+    if (filterCat !== "all")
+      out = out.filter((v) => `collection:${v._collectionId}` === filterCat);
+    if (q.trim()) {
+      const term = q.trim().toLowerCase();
+      out = out.filter(
+        (v) =>
+          String(v.title || "")
+            .toLowerCase()
+            .includes(term) ||
+          String(v._collectionTitle || "")
+            .toLowerCase()
+            .includes(term) ||
+          String(v.description || "")
+            .toLowerCase()
+            .includes(term),
+      );
+    }
+    if (filterYear !== "all")
+      out = out.filter((v) => {
+        const date = getPublishOrCreateMs(v);
+        return date && new Date(date).getFullYear() === Number(filterYear);
+      });
+    if (filterSubject !== "all")
+      out = out.filter((v) =>
+        v.metadata?.tags?.some(
+          (t) => String(t).toLowerCase() === filterSubject,
+        ),
+      );
+    return out;
+  }, [collectionVideos, filterCat, q, filterYear, filterSubject]);
 
   const grouped = useMemo(() => {
     const map = new Map();
@@ -574,25 +834,42 @@ export default function Catalog() {
       map.get(cat.key).videos.push(v);
     });
 
+    filteredCollectionVideos.forEach((v) => {
+      const key = `collection:${v._collectionId}`;
+      if (!map.has(key))
+        map.set(key, {
+          name: v._collectionTitle || "Collection",
+          videos: [],
+          collections: [],
+        });
+      map.get(key).videos.push(v);
+    });
+
     filteredCollections.forEach((c) => {
       const cat = extractCollectionCategory(c);
       if (!cat) return;
       if (!map.has(cat.key))
         map.set(cat.key, { name: cat.name, videos: [], collections: [] });
-      map.get(cat.key).collections.push(c);
+      // Collection videos are rendered directly as playable cards, because
+      // App.js has no public collection-detail route.
+      if (c._source !== "collection") map.get(cat.key).collections.push(c);
     });
 
-    return [...map.entries()].map(([key, val]) => ({
-      key,
-      name: val.name,
-      videos: [...val.videos].sort(sortWithinCategory),
-      collections: [...val.collections].sort((a, b) => {
-        const da = getPublishOrCreateMs(a);
-        const db = getPublishOrCreateMs(b);
-        return db - da;
-      }),
-    }));
-  }, [filteredVideos, filteredCollections]);
+    return sortCatalogGroups(
+      mergeAndHideGroups(
+        [...map.entries()].map(([key, val]) => ({
+          key,
+          name: val.name,
+          videos: [...val.videos].sort(sortWithinCategory),
+          collections: [...val.collections].sort((a, b) => {
+            const da = getPublishOrCreateMs(a);
+            const db = getPublishOrCreateMs(b);
+            return db - da;
+          }),
+        })),
+      ),
+    );
+  }, [filteredVideos, filteredCollections, filteredCollectionVideos]);
 
   useEffect(() => {
     const p = new URLSearchParams();
@@ -655,11 +932,17 @@ export default function Catalog() {
                 onChange={(e) => setFilterCat(e.target.value)}
               >
                 <option value="all">All</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={String(c.id)}>
-                    {c.name}
-                  </option>
-                ))}
+                {categories
+                  .filter(
+                    (c) =>
+                      !CATALOG_HIDE.has(normName(c.name)) &&
+                      !CATALOG_MERGE[normName(c.name)],
+                  )
+                  .map((c) => (
+                    <option key={c.id} value={String(c.id)}>
+                      {c.name}
+                    </option>
+                  ))}
               </select>
             </div>
 
@@ -672,7 +955,7 @@ export default function Catalog() {
                 <option value="all">All</option>
                 {Array.from(
                   new Set(
-                    videos
+                    [...videos, ...collectionVideos]
                       .map((v) => getPublishOrCreateMs(v))
                       .filter(Boolean)
                       .map((ms) => new Date(ms).getFullYear()),
@@ -697,7 +980,7 @@ export default function Catalog() {
 
                 {Array.from(
                   new Set(
-                    videos.flatMap(
+                    [...videos, ...collectionVideos].flatMap(
                       (v) =>
                         v.metadata?.tags?.map((t) => t.toLowerCase()) || [],
                     ),

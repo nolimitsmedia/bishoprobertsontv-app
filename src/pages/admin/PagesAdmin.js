@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../api";
 import "./PagesAdmin.css";
+import { confirmDialog } from "../../components/ui/Dialogs";
 
 function safe(v) {
   return String(v ?? "");
@@ -180,7 +181,7 @@ export default function PagesAdmin() {
     } catch (e) {
       setPages([]);
       setErr(
-        e?.response?.data?.message || e?.message || "Failed to load pages."
+        e?.response?.data?.message || e?.message || "Failed to load pages.",
       );
     } finally {
       setLoading(false);
@@ -229,7 +230,7 @@ export default function PagesAdmin() {
       await fetchPages();
     } catch (e2) {
       alert(
-        e2?.response?.data?.message || e2?.message || "Failed to create page."
+        e2?.response?.data?.message || e2?.message || "Failed to create page.",
       );
     } finally {
       setSaving(false);
@@ -246,17 +247,17 @@ export default function PagesAdmin() {
       if (!res?.data?.ok)
         throw new Error(res?.data?.message || "Update failed");
       setPages((prev) =>
-        prev.map((x) => (x.id === p.id ? { ...x, ...res.data.page } : x))
+        prev.map((x) => (x.id === p.id ? { ...x, ...res.data.page } : x)),
       );
     } catch (e) {
       alert(
-        e?.response?.data?.message || e?.message || "Failed to update page."
+        e?.response?.data?.message || e?.message || "Failed to update page.",
       );
     }
   }
 
   async function onDelete(p) {
-    if (!window.confirm("Delete this page?")) return;
+    if (!(await confirmDialog("Delete this page?"))) return;
     try {
       const res = await api.delete(`/admin/pages/${p.id}`);
       if (!res?.data?.ok)
@@ -264,7 +265,7 @@ export default function PagesAdmin() {
       setPages((prev) => prev.filter((x) => x.id !== p.id));
     } catch (e) {
       alert(
-        e?.response?.data?.message || e?.message || "Failed to delete page."
+        e?.response?.data?.message || e?.message || "Failed to delete page.",
       );
     }
   }

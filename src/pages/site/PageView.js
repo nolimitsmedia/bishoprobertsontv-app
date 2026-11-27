@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import api from "../../api";
 import "./PageView.css";
+import sanitizeHtml from "../../utils/sanitizeHtml";
 
 export default function PageView() {
   const { slug } = useParams();
@@ -65,7 +66,9 @@ export default function PageView() {
         <h1 className="pv-title">{page?.title || "Page"}</h1>
         <div
           className="pv-content"
-          dangerouslySetInnerHTML={{ __html: page?.content_html || "" }}
+          dangerouslySetInnerHTML={{
+            __html: sanitizeHtml(page?.content_html || ""),
+          }}
         />
       </div>
     </div>

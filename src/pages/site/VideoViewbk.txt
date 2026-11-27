@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
 import api from "../../api";
 import "./VideoView.css";
+import BishopRobertsonTVLogo from "../../assets/BishopRobertsonTVLogo.png";
 
 const MAX_VISIBLE_COMMENTS = 6;
 const isLocalhost = ["localhost", "127.0.0.1"].includes(
@@ -14,6 +15,7 @@ const log = (...args) => {
 
 /* ---------------- resume / progress helpers ---------------- */
 const PROGRESS_SAVE_MS = 3000;
+const IFRAME_PROGRESS_SAVE_MS = 10000;
 
 function progressKey(videoId) {
   return `vv_progress_${videoId}`;
@@ -39,6 +41,33 @@ function clamp(n, min, max) {
   return Math.min(max, Math.max(min, x));
 }
 
+function readResumeSecondsFromSearch(search) {
+  try {
+    const qs = new URLSearchParams(search || "");
+    const raw = qs.get("t") || qs.get("start") || qs.get("resume");
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function addOrReplaceQueryParam(url, key, value) {
+  try {
+    const s = String(url || "");
+    if (!s) return s;
+    const [path, hash = ""] = s.split("#");
+    const [base, query = ""] = path.split("?");
+    const qs = new URLSearchParams(query);
+    qs.set(key, String(value));
+    const out = `${base}?${qs.toString()}`;
+    return hash ? `${out}#${hash}` : out;
+  } catch {
+    const hasQuery = String(url || "").includes("?");
+    return `${url}${hasQuery ? "&" : "?"}${key}=${encodeURIComponent(value)}`;
+  }
+}
+
 /* ---------------- utils ---------------- */
 function apiOrigin() {
   try {
@@ -58,6 +87,74 @@ function isHlsUrl(u) {
   if (!u) return false;
   const clean = u.split("?")[0].split("#")[0];
   return /\.m3u8$/i.test(clean) || clean.includes(".m3u8");
+}
+
+function isBunnyStreamVideo(video) {
+  return (
+    String(video?.provider || "").toLowerCase() === "bunny_stream" &&
+    !!(video?.bunny_video_id || video?.provider_key || video?.embed_url)
+  );
+}
+
+function buildBunnyEmbedUrl(video, startSeconds = 0, shouldAutoplay = true) {
+  const raw = String(video?.embed_url || "").trim();
+  const videoId = video?.bunny_video_id || video?.provider_key;
+  const libraryId = video?.bunny_library_id;
+
+  let url = raw;
+  if (!url && libraryId && videoId) {
+    url = `https://iframe.mediadelivery.net/embed/${libraryId}/${videoId}`;
+  }
+  if (!url) return "";
+
+  try {
+    const u = new URL(url);
+
+    // Logged-in Bunny Stream videos should start consistently.
+    // The preview iframe uses buildPreviewBunnyEmbedUrl(), so this does not
+    // affect logged-out preview gating.
+    u.searchParams.set("autoplay", shouldAutoplay ? "true" : "false");
+    if (!u.searchParams.has("preload")) u.searchParams.set("preload", "true");
+    if (!u.searchParams.has("responsive"))
+      u.searchParams.set("responsive", "true");
+
+    // Bunny Stream supports the `t` parameter for iframe start time.
+    // This lets a logged-in user resume where the logged-out preview ended
+    // or where database watch progress says they left off.
+    const t = Math.floor(Number(startSeconds) || 0);
+    if (t > 0) {
+      u.searchParams.set("t", String(t));
+    } else {
+      u.searchParams.delete("t");
+    }
+
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+function buildPreviewBunnyEmbedUrl(video) {
+  const raw = String(video?.preview_embed_url || "").trim();
+  const videoId = video?.preview_bunny_video_id;
+  const libraryId = video?.bunny_library_id;
+
+  let url = raw;
+  if (!url && libraryId && videoId) {
+    url = `https://iframe.mediadelivery.net/embed/${libraryId}/${videoId}`;
+  }
+  if (!url) return "";
+
+  try {
+    const u = new URL(url);
+    if (!u.searchParams.has("autoplay"))
+      u.searchParams.set("autoplay", "false");
+    if (!u.searchParams.has("preload")) u.searchParams.set("preload", "true");
+    if (!u.searchParams.has("responsive"))
+      u.searchParams.set("responsive", "true");
+    return u.toString();
+  } catch {
+    return url;
+  }
 }
 function secsFromAny(v) {
   if (v == null) return null;
@@ -132,7 +229,6 @@ function safeInt(n, min = 0, max = 24 * 60 * 60) {
   const xi = Math.floor(x);
   return Math.max(min, Math.min(max, xi));
 }
-
 function beaconAnalyticsEvent(url, payload) {
   try {
     if (!navigator.sendBeacon) return false;
@@ -144,13 +240,6 @@ function beaconAnalyticsEvent(url, payload) {
     return false;
   }
 }
-
-/**
- * IMPORTANT FIX:
- * - Do NOT use axios `api.post` for analytics because any 401 response triggers api.js interceptor
- *   which clears the token globally.
- * - Use fetch here (no interceptor), and just swallow 401/timeout.
- */
 async function sendAnalyticsEventFetch(payload, { timeoutMs = 8000 } = {}) {
   const url = `${apiOrigin()}/api/analytics/event`;
   const token = getAnyToken();
@@ -184,6 +273,130 @@ async function sendAnalyticsEventFetch(payload, { timeoutMs = 8000 } = {}) {
   }
 }
 
+/* ---------------- date sorting helpers (published -> created fallback) ---------------- */
+function getPublishedMs(v) {
+  const cand = [
+    v?.published_at,
+    v?.publish_date,
+    v?.published_date,
+    v?.public_published_at,
+    v?.metadata?.published_at,
+    v?.metadata?.publish_date,
+    v?.metadata?.published_date,
+    v?.created_at,
+    v?.created,
+  ].filter(Boolean)[0];
+
+  const ms = cand ? new Date(cand).getTime() : 0;
+  return Number.isFinite(ms) ? ms : 0;
+}
+function sortLatestToOldestByPublished(a, b) {
+  return getPublishedMs(b) - getPublishedMs(a);
+}
+
+/* ---------------- thumb component (fallback like Catalog) ---------------- */
+function ThumbImg({ src, alt = "" }) {
+  const [bad, setBad] = useState(false);
+  const finalSrc = !src || bad ? BishopRobertsonTVLogo : src;
+
+  return (
+    <img
+      src={finalSrc}
+      alt={alt}
+      loading="lazy"
+      onError={() => setBad(true)}
+      style={{
+        width: "100%",
+        height: "100%",
+        objectFit: src && !bad ? "cover" : "contain",
+        padding: src && !bad ? 0 : 10,
+      }}
+    />
+  );
+}
+
+/* ---------------- youtube-like loading skeleton ---------------- */
+function SkeletonBox({ className = "", style = {} }) {
+  return <div className={`vv-skel ${className}`} style={style} />;
+}
+function VideoViewSkeleton() {
+  return (
+    <div className="vv">
+      <div className="vv-wrap">
+        <div className="vv-grid">
+          <div>
+            <div className="vv-card">
+              <div className="vv-skel-video">
+                <SkeletonBox style={{ width: "100%", height: "100%" }} />
+              </div>
+              <div className="vv-pad">
+                <div className="vv-row" style={{ marginBottom: 10 }}>
+                  <SkeletonBox
+                    style={{ width: 86, height: 36, borderRadius: 10 }}
+                  />
+                  <SkeletonBox
+                    style={{ width: 140, height: 36, borderRadius: 10 }}
+                  />
+                  <SkeletonBox
+                    style={{ width: 96, height: 36, borderRadius: 10 }}
+                  />
+                </div>
+                <SkeletonBox
+                  style={{
+                    width: "78%",
+                    height: 22,
+                    borderRadius: 8,
+                    margin: "10px 0",
+                  }}
+                />
+                <SkeletonBox
+                  style={{
+                    width: "36%",
+                    height: 14,
+                    borderRadius: 8,
+                    marginBottom: 14,
+                  }}
+                />
+                <SkeletonBox
+                  style={{ width: "100%", height: 120, borderRadius: 12 }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <aside>
+            <div className="vv-side-card">
+              <div className="vv-side-title">Up next</div>
+              <div className="vv-rel">
+                {Array.from({ length: 7 }).map((_, i) => (
+                  <div key={i} className="vv-rel-item">
+                    <div className="vv-thumb">
+                      <SkeletonBox style={{ width: "100%", height: "100%" }} />
+                    </div>
+                    <div className="vv-rel-meta" style={{ flex: 1 }}>
+                      <SkeletonBox
+                        style={{
+                          width: "90%",
+                          height: 14,
+                          borderRadius: 8,
+                          marginBottom: 8,
+                        }}
+                      />
+                      <SkeletonBox
+                        style={{ width: "60%", height: 12, borderRadius: 8 }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function VideoView() {
   const { id } = useParams();
   const nav = useNavigate();
@@ -205,7 +418,11 @@ export default function VideoView() {
   const [playlistRest, setPlaylistRest] = useState([]);
 
   const [isAuthed, setIsAuthed] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
   const [previewHit, setPreviewHit] = useState(false);
+  const [needsUnmute, setNeedsUnmute] = useState(false);
+  const [dbProgressSeconds, setDbProgressSeconds] = useState(0);
+  const [iframeStartSeconds, setIframeStartSeconds] = useState(0);
 
   const [showPL, setShowPL] = useState(false);
   const [myPlaylists, setMyPlaylists] = useState([]);
@@ -218,6 +435,43 @@ export default function VideoView() {
   const [cmtErr, setCmtErr] = useState("");
   const [showAllComments, setShowAllComments] = useState(false);
 
+  const [videoErr, setVideoErr] = useState(false);
+
+  function unmuteNativeVideo() {
+    const el = videoRef.current;
+    if (!el) return;
+
+    try {
+      el.muted = false;
+      el.defaultMuted = false;
+      el.volume = 1;
+      setNeedsUnmute(false);
+
+      const p = el.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(() => {
+          // If the browser still blocks playback, keep the button visible.
+          setNeedsUnmute(true);
+        });
+      }
+    } catch {
+      setNeedsUnmute(true);
+    }
+  }
+
+  // youtube-like autoplay controls
+  const [autoNextOn, setAutoNextOn] = useState(() => {
+    try {
+      const raw = localStorage.getItem("vv_autonext");
+      return raw == null ? true : raw === "true";
+    } catch {
+      return true;
+    }
+  });
+  const [upNextCountdown, setUpNextCountdown] = useState(0);
+  const autoNavRef = useRef(false);
+  const countdownRef = useRef(null);
+
   const videoRef = useRef(null);
   const hlsRef = useRef(null);
 
@@ -225,6 +479,10 @@ export default function VideoView() {
   const lastWatchSecondsRef = useRef(0);
   const lastSavedAtRef = useRef(0);
   const restoredRef = useRef(false);
+  const iframeStartLockedVideoRef = useRef("");
+  const iframeEstimatedSecondsRef = useRef(0);
+  const iframeLastTickRef = useRef(0);
+  const iframeLastSavedAtRef = useRef(0);
 
   // build next path (preserves playlist param etc.)
   const watchPath = useMemo(
@@ -236,6 +494,38 @@ export default function VideoView() {
     return `/login?next=${next}`;
   }, [watchPath, id]);
 
+  const hasUrlResume = useMemo(
+    () => readResumeSecondsFromSearch(loc.search) > 0,
+    [loc.search],
+  );
+
+  const shouldUseSavedResume = useMemo(() => {
+    // Rules:
+    // 1) Overlay login resume uses ?t=seconds.
+    // 2) Refresh/back-forward can resume saved DB/local progress.
+    // 3) Normal logged-in open/click starts from 0:00.
+    if (hasUrlResume) return true;
+
+    try {
+      const navEntry = performance.getEntriesByType?.("navigation")?.[0];
+      const navType = navEntry?.type || "";
+      return navType === "reload" || navType === "back_forward";
+    } catch {
+      return false;
+    }
+  }, [hasUrlResume, id]);
+
+  const resumeSeconds = useMemo(() => {
+    const fromSearch = readResumeSecondsFromSearch(loc.search);
+    if (fromSearch > 0) return fromSearch;
+
+    if (!shouldUseSavedResume) return 0;
+
+    const fromDb = Number(dbProgressSeconds || 0);
+    const fromLocal = readProgressSeconds(id);
+    return Math.max(0, fromDb, fromLocal);
+  }, [id, loc.search, dbProgressSeconds, shouldUseSavedResume]);
+
   function currentSecondsNow() {
     const el = videoRef.current;
     if (!el) return Math.floor(lastWatchSecondsRef.current || 0);
@@ -245,19 +535,102 @@ export default function VideoView() {
   }
 
   function goLoginWithResume() {
-    const t = currentSecondsNow();
-    writeProgressSeconds(id, t);
-    nav(`${loginBase}${t ? `&t=${t}` : ""}`);
+    // Native HLS can read currentTime directly, so resume works for logged-out preview.
+    // Use the current time if available, otherwise fall back to the preview limit
+    // or the last saved local progress. This prevents returning to 00:00 after login.
+    let t = currentSecondsNow();
+    if (!(t > 0) && previewSeconds > 0) t = Math.max(0, previewSeconds - 1);
+    if (!(t > 0)) t = readProgressSeconds(id);
+
+    const safeT = Math.max(0, Math.floor(Number(t) || 0));
+    if (safeT > 0) writeProgressSeconds(id, safeT);
+
+    const loginUrl =
+      safeT > 0 ? addOrReplaceQueryParam(loginBase, "t", safeT) : loginBase;
+    nav(loginUrl);
   }
 
-  const srcUrl = useMemo(
-    () => (video?.video_url ? absUrl(video.video_url) : ""),
-    [video?.video_url],
+  async function loadWatchProgress() {
+    if (!isAuthed || !id) {
+      setDbProgressSeconds(0);
+      return 0;
+    }
+
+    try {
+      const r = await api.get(`/videos/${id}/progress`);
+      const s = Math.max(
+        0,
+        Math.floor(Number(r?.data?.position_seconds || 0) || 0),
+      );
+      setDbProgressSeconds(s);
+      if (s > 0) writeProgressSeconds(id, s);
+      return s;
+    } catch (e) {
+      if (isLocalhost) log("watch progress load failed", e?.response?.status);
+      setDbProgressSeconds(0);
+      return 0;
+    } finally {
+    }
+  }
+
+  async function saveWatchProgress(
+    seconds,
+    durationSeconds = null,
+    completed = false,
+  ) {
+    if (!isAuthed || !id) return false;
+
+    const position = Math.max(0, Math.floor(Number(seconds) || 0));
+    if (!(position > 0)) return false;
+
+    try {
+      writeProgressSeconds(id, position);
+      await api.post(`/videos/${id}/progress`, {
+        position_seconds: position,
+        duration_seconds:
+          durationSeconds == null || !Number.isFinite(Number(durationSeconds))
+            ? null
+            : Math.max(0, Math.floor(Number(durationSeconds))),
+        completed: !!completed,
+      });
+      return true;
+    } catch (e) {
+      if (isLocalhost) log("watch progress save failed", e?.response?.status);
+      return false;
+    }
+  }
+
+  const srcUrl = useMemo(() => {
+    const candidate =
+      video?.playback_url ||
+      video?.video_url ||
+      video?.hls_url ||
+      video?.embed_url ||
+      "";
+    return candidate ? absUrl(candidate) : "";
+  }, [video?.playback_url, video?.video_url, video?.hls_url, video?.embed_url]);
+
+  const bunnyEmbedUrl = useMemo(
+    () =>
+      buildBunnyEmbedUrl(video, isAuthed ? iframeStartSeconds : 0, isAuthed),
+    [video, isAuthed, iframeStartSeconds],
   );
-  const poster = useMemo(
-    () => (video?.thumbnail_url ? absUrl(video.thumbnail_url) : ""),
-    [video?.thumbnail_url],
+  const previewBunnyEmbedUrl = useMemo(
+    () => buildPreviewBunnyEmbedUrl(video),
+    [video],
   );
+
+  const isBunnyStream = useMemo(() => isBunnyStreamVideo(video), [video]);
+  const activeBunnyEmbedUrl = useMemo(() => {
+    if (!isBunnyStream) return "";
+    return isAuthed ? bunnyEmbedUrl : previewBunnyEmbedUrl;
+  }, [isBunnyStream, isAuthed, bunnyEmbedUrl, previewBunnyEmbedUrl]);
+
+  // main poster fallback
+  const poster = useMemo(() => {
+    const p = video?.thumbnail_url ? absUrl(video.thumbnail_url) : "";
+    return p || BishopRobertsonTVLogo;
+  }, [video?.thumbnail_url]);
 
   const previewSeconds = useMemo(() => {
     const candidates = [
@@ -273,8 +646,18 @@ export default function VideoView() {
     return 0;
   }, [video]);
 
-  const previewActive = !isAuthed && previewSeconds > 0;
-  const hardLoginGate = !isAuthed && !srcUrl;
+  const requiresLoginForPlayback =
+    !isAuthed && (video?.requires_login || video?.is_premium !== false);
+  const previewActive = requiresLoginForPlayback && previewSeconds > 0;
+  const hardLoginGate =
+    requiresLoginForPlayback && (!srcUrl || !(previewSeconds > 0));
+
+  // const useBunnyStreamPlayer = useMemo(() => {
+  //   return false;
+  // }, []);
+  const useBunnyStreamPlayer = useMemo(() => {
+    return isAuthed && isBunnyStream && !!bunnyEmbedUrl;
+  }, [isAuthed, isBunnyStream, bunnyEmbedUrl]);
 
   /* ------------ analytics state (refs) -------------- */
   const playSentRef = useRef(false);
@@ -284,6 +667,37 @@ export default function VideoView() {
   const lastPosRef = useRef(null);
   const analyticsInFlightRef = useRef(false);
   const endedHandledRef = useRef(false);
+
+  // --- NEW: ensure previous video is paused/unloaded and HLS destroyed
+  // This prevents audio from the previous video continuing to play after navigation.
+  useEffect(() => {
+    // cleanup runs before effect for new id (and on unmount)
+    return () => {
+      try {
+        const prevEl = videoRef.current;
+        if (prevEl) {
+          try {
+            prevEl.pause();
+          } catch {}
+          try {
+            // remove source and force reload to free any playing media
+            prevEl.removeAttribute("src");
+            if (typeof prevEl.load === "function") prevEl.load();
+          } catch {}
+        }
+      } catch {}
+
+      try {
+        if (hlsRef.current) {
+          try {
+            hlsRef.current.destroy();
+          } catch {}
+          hlsRef.current = null;
+        }
+      } catch {}
+    };
+    // we want this cleanup to run when `id` changes (before new video mounts)
+  }, [id]);
 
   useEffect(() => {
     playSentRef.current = false;
@@ -296,40 +710,179 @@ export default function VideoView() {
     lastWatchSecondsRef.current = 0;
     lastSavedAtRef.current = 0;
     restoredRef.current = false;
+    iframeStartLockedVideoRef.current = "";
+    iframeEstimatedSecondsRef.current = 0;
+    iframeLastTickRef.current = 0;
+    iframeLastSavedAtRef.current = 0;
+    setIframeStartSeconds(0);
+
+    setVideoErr(false);
+
+    // reset youtube autoplay state
+    autoNavRef.current = false;
+    setUpNextCountdown(0);
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    countdownRef.current = null;
   }, [id]);
 
   /* ------------ AUTH -------------- */
   useEffect(() => {
+    let alive = true;
+
     const token = getAnyToken();
     const hasToken = !!token;
-    setIsAuthed(hasToken);
+
+    setAuthChecked(false);
+    setIsAuthed(false);
 
     if (isLocalhost) log("auth token present:", hasToken);
-    if (!hasToken) return;
+
+    if (!hasToken) {
+      setAuthChecked(true);
+      return () => {
+        alive = false;
+      };
+    }
 
     api
       .get("/auth/me")
       .then((r) => {
+        if (!alive) return;
         if (isLocalhost) log("/auth/me ok:", r?.status);
         setIsAuthed(true);
       })
       .catch((e) => {
+        if (!alive) return;
         if (isLocalhost)
-          log("/auth/me failed (keeping authed):", e?.response?.status);
-        setIsAuthed(true);
+          log("/auth/me failed (treating as logged out):", e?.response?.status);
+        setIsAuthed(false);
+      })
+      .finally(() => {
+        if (alive) setAuthChecked(true);
       });
+
+    return () => {
+      alive = false;
+    };
   }, []);
+
+  /* ------------ LOAD DB WATCH PROGRESS -------------- */
+  useEffect(() => {
+    let alive = true;
+
+    if (!authChecked) return;
+
+    if (!isAuthed) {
+      setDbProgressSeconds(0);
+      return;
+    }
+
+    (async () => {
+      const s = await loadWatchProgress();
+      if (!alive) return;
+      if (s > 0 && shouldUseSavedResume) {
+        iframeEstimatedSecondsRef.current = Math.max(
+          iframeEstimatedSecondsRef.current || 0,
+          s,
+        );
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authChecked, isAuthed, id, shouldUseSavedResume]);
+
+  /* ------------ FREEZE BUNNY IFRAME START TIME -------------- */
+  useEffect(() => {
+    if (!isAuthed || !isBunnyStream || !video?.id) {
+      setIframeStartSeconds(0);
+      return;
+    }
+
+    const videoKey = String(video.id);
+    if (iframeStartLockedVideoRef.current === videoKey) return;
+
+    const fromSearch = readResumeSecondsFromSearch(loc.search);
+    const fromDb = Math.max(0, Math.floor(Number(dbProgressSeconds || 0)));
+    const fromLocal = readProgressSeconds(id);
+
+    // Important: this value is used ONLY to build the iframe URL once.
+    // Do not keep tying the iframe src to changing progress values or Bunny
+    // will reload the player every few seconds while progress is saved.
+    //
+    // Normal logged-in open starts at 0:00. Saved DB/local progress is used
+    // only for refresh/back-forward, or when the overlay-login ?t= handoff exists.
+    const start =
+      fromSearch > 0
+        ? fromSearch
+        : shouldUseSavedResume
+          ? Math.max(fromDb, fromLocal)
+          : 0;
+
+    iframeStartLockedVideoRef.current = videoKey;
+    setIframeStartSeconds(start);
+    iframeEstimatedSecondsRef.current = start;
+  }, [
+    isAuthed,
+    isBunnyStream,
+    video?.id,
+    id,
+    loc.search,
+    dbProgressSeconds,
+    shouldUseSavedResume,
+  ]);
+
+  /* ------------ CLEAN ONE-TIME LOGIN RESUME PARAM -------------- */
+  useEffect(() => {
+    if (!isAuthed) return;
+
+    const qs = new URLSearchParams(loc.search || "");
+    if (!qs.has("t") && !qs.has("start") && !qs.has("resume")) return;
+
+    const fromUrl = readResumeSecondsFromSearch(loc.search);
+    if (fromUrl > 0) {
+      writeProgressSeconds(id, fromUrl);
+      iframeEstimatedSecondsRef.current = Math.max(
+        iframeEstimatedSecondsRef.current || 0,
+        fromUrl,
+      );
+      saveWatchProgress(fromUrl);
+    }
+
+    qs.delete("t");
+    qs.delete("start");
+    qs.delete("resume");
+
+    nav(
+      {
+        pathname: loc.pathname,
+        search: qs.toString() ? `?${qs.toString()}` : "",
+      },
+      { replace: true },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthed, id]);
 
   /* ------------ LOAD VIDEO -------------- */
   useEffect(() => {
+    if (!authChecked) return;
+
     let alive = true;
     (async () => {
       setLoading(true);
       setErr("");
+      setVideo(null);
+      setPreviewHit(false);
+      setNeedsUnmute(false);
+
       try {
-        const data =
-          (await tryGetFirst([`/videos/public/${id}`])) ||
-          (await tryGetFirst([`/videos/${id}`]));
+        const urls = isAuthed
+          ? [`/videos/${id}`, `/videos/public/${id}`]
+          : [`/videos/public/${id}`];
+
+        const data = await tryGetFirst(urls);
         if (!alive) return;
         if (!data) setErr("Video not found.");
         else {
@@ -345,7 +898,7 @@ export default function VideoView() {
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [id, authChecked, isAuthed]);
 
   /* ------------ LOAD CATEGORY VIDEOS -------------- */
   useEffect(() => {
@@ -362,9 +915,7 @@ export default function VideoView() {
           ]));
 
         const items = Array.isArray(res?.items) ? res.items : res || [];
-        const sorted = [...items].sort(
-          (a, b) => new Date(b.created_at) - new Date(a.created_at),
-        );
+        const sorted = [...items].sort(sortLatestToOldestByPublished);
 
         setCategoryVideos(sorted);
         log("Category videos:", sorted);
@@ -380,11 +931,13 @@ export default function VideoView() {
     if (!id) return;
     (async () => {
       const data =
-        (await tryGetFirst([`/videos/public?limit=20&sort=created_at:desc`])) ||
-        (await tryGetFirst([`/videos?limit=20&sort=created_at:desc`]));
+        (await tryGetFirst([`/videos/public?limit=200`])) ||
+        (await tryGetFirst([`/videos?limit=200`]));
       const arr = Array.isArray(data) ? data : data?.items || [];
-      setMoreGlobal(arr.filter((v) => String(v.id) !== String(id)));
-      log("Global fallback list:", arr);
+      const sorted = [...arr].sort(sortLatestToOldestByPublished);
+
+      setMoreGlobal(sorted.filter((v) => String(v.id) !== String(id)));
+      log("Global fallback list:", sorted);
     })();
   }, [id]);
 
@@ -398,6 +951,7 @@ export default function VideoView() {
       return;
     }
 
+    // IMPORTANT: playlist mode logic stays here (as requested)
     (async () => {
       try {
         setPlaylistMeta(null);
@@ -520,10 +1074,9 @@ export default function VideoView() {
       hlsRef.current = null;
     }
 
-    if (!el || !srcUrl) return;
+    if (!el || !srcUrl || useBunnyStreamPlayer) return;
     const hls = isHlsUrl(srcUrl);
 
-    // Safari/iOS native HLS
     if (hls && el.canPlayType("application/vnd.apple.mpegURL")) {
       el.src = srcUrl;
       try {
@@ -542,18 +1095,14 @@ export default function VideoView() {
           if (cancelled) return;
 
           if (Hls.isSupported()) {
-            // These settings help with “stuck loading” and flaky segment fetches
             const instance = new Hls({
               enableWorker: true,
               lowLatencyMode: false,
-
-              // Buffer tuning (safe defaults)
               maxBufferLength: 30,
               maxMaxBufferLength: 60,
               backBufferLength: 90,
               maxBufferSize: 30 * 1000 * 1000,
 
-              // Retry tuning
               fragLoadingTimeOut: 20000,
               fragLoadingMaxRetry: 6,
               fragLoadingRetryDelay: 1000,
@@ -569,25 +1118,14 @@ export default function VideoView() {
             instance.loadSource(srcUrl);
             instance.attachMedia(el);
 
-            // Error recovery: prevents infinite loading spinner on transient issues
             instance.on(Hls.Events.ERROR, function (_, data) {
               if (!data?.fatal) return;
-
-              if (isLocalhost) {
-                console.warn("[VideoView] HLS fatal error:", data?.type, data);
-              }
-
               try {
-                if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                  // Try restarting network load
+                if (data.type === Hls.ErrorTypes.NETWORK_ERROR)
                   instance.startLoad();
-                } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-                  // Try recovering media error
+                else if (data.type === Hls.ErrorTypes.MEDIA_ERROR)
                   instance.recoverMediaError();
-                } else {
-                  // Unrecoverable
-                  instance.destroy();
-                }
+                else instance.destroy();
               } catch {
                 try {
                   instance.destroy();
@@ -621,16 +1159,25 @@ export default function VideoView() {
       };
     }
 
-    // MP4 / non-HLS
     el.src = srcUrl;
     try {
       el.load();
     } catch {}
-  }, [srcUrl]);
+  }, [srcUrl, useBunnyStreamPlayer]);
+
+  /* ------------ FORCE UNMUTE (default) -------------- */
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    // ensure default is unmuted whenever video changes
+    el.muted = false;
+    el.defaultMuted = false;
+  }, [id, srcUrl]);
 
   /* ------------ PREVIEW GATE -------------- */
   useEffect(() => {
     setPreviewHit(false);
+    setNeedsUnmute(false);
   }, [id, srcUrl]);
 
   useEffect(() => {
@@ -665,17 +1212,27 @@ export default function VideoView() {
     };
     const onPlay = () => previewHit && stop();
     const onSeek = () => {
-      if (el.currentTime > previewSeconds) clampPreview();
+      if (el.currentTime >= previewSeconds) {
+        clampPreview();
+        stop();
+      }
+    };
+    const onRate = () => {
+      if (el.playbackRate > 1) el.playbackRate = 1;
     };
 
     el.addEventListener("timeupdate", onTime);
     el.addEventListener("play", onPlay);
     el.addEventListener("seeking", onSeek);
+    el.addEventListener("seeked", onSeek);
+    el.addEventListener("ratechange", onRate);
 
     return () => {
       el.removeEventListener("timeupdate", onTime);
       el.removeEventListener("play", onPlay);
       el.removeEventListener("seeking", onSeek);
+      el.removeEventListener("seeked", onSeek);
+      el.removeEventListener("ratechange", onRate);
     };
   }, [previewActive, previewSeconds, previewHit]);
 
@@ -692,12 +1249,15 @@ export default function VideoView() {
       if (now - lastSavedAtRef.current > PROGRESS_SAVE_MS) {
         lastSavedAtRef.current = now;
         writeProgressSeconds(id, cur);
+        if (isAuthed) {
+          saveWatchProgress(cur, el.duration || null);
+        }
       }
     };
 
     el.addEventListener("timeupdate", onTime);
     return () => el.removeEventListener("timeupdate", onTime);
-  }, [id]);
+  }, [id, isAuthed]);
 
   /* ------------ RESTORE PROGRESS (robust for HLS) -------------- */
   useEffect(() => {
@@ -708,9 +1268,14 @@ export default function VideoView() {
     const qs = new URLSearchParams(loc.search);
     const tFromUrl = Number(qs.get("t"));
     const tFromStorage = readProgressSeconds(id);
+    const tFromDb = Number(dbProgressSeconds || 0);
 
     let desired =
-      Number.isFinite(tFromUrl) && tFromUrl > 0 ? tFromUrl : tFromStorage;
+      Number.isFinite(tFromUrl) && tFromUrl > 0
+        ? tFromUrl
+        : shouldUseSavedResume
+          ? Math.max(tFromDb, tFromStorage)
+          : 0;
 
     if (!desired || desired <= 0) {
       restoredRef.current = true;
@@ -718,7 +1283,7 @@ export default function VideoView() {
     }
 
     let attempts = 0;
-    const MAX_ATTEMPTS = 8; // ~2 seconds total
+    const MAX_ATTEMPTS = 8;
 
     const computeTarget = () => {
       const dur = Number(el.duration || 0);
@@ -727,7 +1292,6 @@ export default function VideoView() {
           ? clamp(desired, 0, Math.max(0, dur - 2))
           : Math.max(0, desired);
 
-      // If preview mode, don't resume past preview limit
       if (previewActive && previewSeconds) {
         safe = Math.min(safe, Math.max(0, previewSeconds - 0.25));
       }
@@ -745,12 +1309,10 @@ export default function VideoView() {
         return false;
       }
 
-      // Confirm it “stuck” (HLS can reset on attach/buffer)
       const ok = Math.abs(Number(el.currentTime || 0) - target) < 1;
       if (ok) {
         restoredRef.current = true;
 
-        // remove t= only after successful seek
         if (qs.get("t")) {
           qs.delete("t");
           const newSearch = qs.toString();
@@ -763,38 +1325,26 @@ export default function VideoView() {
           );
         }
 
-        if (isLocalhost) log("Resume applied at", target);
         return true;
       }
-
       return false;
     };
 
     const tick = () => {
       attempts++;
-
-      // only try when metadata is present (duration known) OR after HLS has buffered enough
       if (el.readyState >= 1) {
         if (trySeekOnce()) return;
       }
-
       if (attempts >= MAX_ATTEMPTS) {
         restoredRef.current = true;
-        if (isLocalhost) log("Resume gave up after retries");
         return;
       }
-
       setTimeout(tick, 250);
     };
 
-    // Start when metadata is ready
-    if (el.readyState >= 1) {
-      tick();
-    } else {
-      el.addEventListener("loadedmetadata", tick, { once: true });
-    }
+    if (el.readyState >= 1) tick();
+    else el.addEventListener("loadedmetadata", tick, { once: true });
 
-    // Extra safety: sometimes HLS resets after “canplay”
     const onCanPlay = () => {
       if (!restoredRef.current) tick();
     };
@@ -812,6 +1362,8 @@ export default function VideoView() {
     nav,
     previewActive,
     previewSeconds,
+    dbProgressSeconds,
+    shouldUseSavedResume,
   ]);
 
   /* ------------ VOD ANALYTICS (play/progress/complete) -------------- */
@@ -928,6 +1480,10 @@ export default function VideoView() {
 
     const onPlay = async () => {
       endedHandledRef.current = false;
+      // mark user interacted so we can autoplay unmuted next time (like youtube)
+      try {
+        localStorage.setItem("vv_user_interacted", "true");
+      } catch {}
       await sendPlayOnce();
       await sendProgress(true);
     };
@@ -982,8 +1538,6 @@ export default function VideoView() {
     };
 
     window.addEventListener("beforeunload", onBeforeUnload);
-
-    if (isLocalhost) log("analytics tracking enabled for video:", safeVideoId);
 
     return () => {
       clearInterval(intv);
@@ -1071,81 +1625,300 @@ export default function VideoView() {
     }
   }
 
+  // compute next/related using published date sorting (public view)
+  const categoryWithoutCurrent = categoryVideos.filter(
+    (v) => String(v.id) !== String(id),
+  );
+  const globalWithoutCurrent = moreGlobal.filter(
+    (v) => String(v.id) !== String(id),
+  );
+
   let nextVideos = [];
   let relatedVideos = [];
 
-  if (categoryVideos.length > 0) {
-    const withoutCurrent = categoryVideos.filter(
-      (v) => String(v.id) !== String(id),
-    );
-    nextVideos = withoutCurrent.slice(0, 8);
+  if (categoryVideos.length > 0 && video) {
+    nextVideos = [...categoryWithoutCurrent]
+      .sort(sortLatestToOldestByPublished)
+      .slice(0, 30);
 
-    relatedVideos = moreGlobal.filter(
-      (v) => v.category_id !== video.category_id,
-    );
-    relatedVideos = relatedVideos.slice(0, 8);
+    relatedVideos = [...globalWithoutCurrent]
+      .filter((v) => v.category_id !== video.category_id)
+      .sort(sortLatestToOldestByPublished)
+      .slice(0, 18);
   } else {
-    nextVideos = moreGlobal.slice(0, 8);
-    relatedVideos = moreGlobal.slice(8, 16);
+    const sortedGlobal = [...globalWithoutCurrent].sort(
+      sortLatestToOldestByPublished,
+    );
+    nextVideos = sortedGlobal.slice(0, 30);
+    relatedVideos = sortedGlobal.slice(30, 48);
   }
 
   const nextVideo = nextVideos[0] || null;
   const remainingNext = nextVideos.slice(1);
 
-  const styles = `
-  .vv { --bg:#0b0f19; --card:#0f172a; --muted:#9aa4b2; --text:#e5e7eb; --text-strong:#fff; --border:rgba(148,163,184,.18); }
-  .vv { background: var(--bg); color: var(--text); min-height: 100vh; }
-  .vv a { color: #93c5fd; text-decoration: none; }
-  .vv a:hover { text-decoration: underline; }
-  .vv-wrap { width: min(1180px, 94vw); margin: 0 auto; padding: 18px 0 40px; }
-  .vv-grid { display:grid; grid-template-columns: minmax(0,1fr) 320px; gap: 18px; align-items:start; }
-  @media (max-width: 1024px) { .vv-grid { grid-template-columns: 1fr; } }
-  .vv-card { background: var(--card); border:1px solid var(--border); border-radius:14px; box-shadow: 0 16px 50px rgba(2,6,23,.25); overflow:hidden; }
-  .vv-pad { padding: 14px; }
-  .vv-h1 { font-weight: 800; font-size: 22px; margin: 14px 8px 8px; color: var(--text-strong); }
-  .vv-byline { display:flex; gap:10px; font-size:13px; color:var(--muted); margin: 0 8px 12px; }
-  .vv-badge { padding:6px 10px; font-size:11px; font-weight:800; border-radius:999px; background:#111827; color:#d1d5db; border:1px solid var(--border); }
-  .vv-row { display:flex; gap:10px; flex-wrap:wrap; }
-  .vv-btn { height:36px; padding:0 14px; border-radius:10px; border:1px solid var(--border); background:#0b1020; color:#fff; cursor:pointer; }
-  .vv-btn:hover { background:#0a1328; }
-  .vv-btn.primary { background:#2563eb; border-color:#2563eb; }
-  .vv-btn.primary:hover { background:#1e40af; }
-  .vv-side-card { background: var(--card); border:1px solid var(--border); border-radius:12px; padding: 10px; margin-bottom: 14px; }
-  .vv-side-title { font-size:12px; color:#cbd5e1; font-weight:800; margin-bottom:6px; }
-  .vv-rel { display:flex; flex-direction:column; gap:8px; }
-  .vv-rel-item { display:flex; gap:10px; text-decoration:none; }
-  .vv-thumb { width:120px; height:68px; border-radius:10px; overflow:hidden; background:#101827; border:1px solid var(--border); position:relative; }
-  .vv-thumb img { width:100%; height:100%; object-fit:cover; }
-  .vv-dur { position:absolute; right:6px; bottom:6px; font-size:10px; font-weight:700; background:rgba(0,0,0,.7); color:#fff; padding:2px 6px; border-radius:6px; }
-  .vv-gate { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.7); }
-  .vv-gate-inner { background:#0b1020; padding:20px; border-radius:12px; border:1px solid var(--border); color:#fff; text-align:center; }
-  .vv-muted { color: var(--muted); }
-  .vv-hr { border:0; border-top:1px solid var(--border); margin:12px 0; }
-  `;
+  const nextCountTotal = 1 + remainingNext.length;
+  const shouldScrollNext = !inPlaylistMode && nextCountTotal > 10;
 
-  if (loading)
-    return (
-      <div className="vv">
-        <style dangerouslySetInnerHTML={{ __html: styles }} />
-        <div className="vv-wrap">
-          <div className="vv-card vv-pad">Loading…</div>
-        </div>
-      </div>
+  /* ------------ BUNNY IFRAME WATCH PROGRESS (ESTIMATED) -------------- */
+  useEffect(() => {
+    if (!isAuthed || !useBunnyStreamPlayer || !id) return;
+
+    const startAt = Math.max(
+      0,
+      Number(iframeEstimatedSecondsRef.current || 0),
+      Number(iframeStartSeconds || 0),
     );
+
+    iframeEstimatedSecondsRef.current = startAt;
+    iframeLastTickRef.current = Date.now();
+    iframeLastSavedAtRef.current = 0;
+
+    const saveNow = (force = false) => {
+      const position = Math.max(
+        0,
+        Math.floor(Number(iframeEstimatedSecondsRef.current || 0)),
+      );
+      if (!(position > 0)) return;
+
+      const now = Date.now();
+      if (
+        !force &&
+        now - iframeLastSavedAtRef.current < IFRAME_PROGRESS_SAVE_MS
+      ) {
+        return;
+      }
+
+      iframeLastSavedAtRef.current = now;
+      writeProgressSeconds(id, position);
+      saveWatchProgress(position);
+    };
+
+    const tick = window.setInterval(() => {
+      const now = Date.now();
+      const delta = Math.max(
+        0,
+        Math.round((now - iframeLastTickRef.current) / 1000),
+      );
+      iframeLastTickRef.current = now;
+
+      // Bunny iframe does not expose reliable currentTime to React here.
+      // We estimate progress only while the tab is visible, which fixes refresh
+      // resume for normal watching without changing the Bunny iframe player.
+      if (document.visibilityState === "visible" && delta > 0) {
+        iframeEstimatedSecondsRef.current += Math.min(delta, 5);
+        saveNow(false);
+      }
+    }, 1000);
+
+    const onVisibility = () => {
+      iframeLastTickRef.current = Date.now();
+      saveNow(true);
+    };
+
+    const onBeforeUnload = () => {
+      saveNow(true);
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("beforeunload", onBeforeUnload);
+
+    return () => {
+      saveNow(true);
+      window.clearInterval(tick);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthed, useBunnyStreamPlayer, id, iframeStartSeconds]);
+
+  /* ------------ YOUTUBE-STYLE MAIN AUTOPLAY -------------- */
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    if (!srcUrl || useBunnyStreamPlayer) return;
+    if (hardLoginGate) return;
+    if (previewActive && previewHit) return;
+
+    // reset countdown if user starts playing again
+    setUpNextCountdown(0);
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    countdownRef.current = null;
+    autoNavRef.current = false;
+
+    let cancelled = false;
+    let didStart = false;
+
+    const attempt = async () => {
+      if (cancelled || didStart) return;
+      if (!videoRef.current) return;
+      const player = videoRef.current;
+      if (player.readyState < 1 && isHlsUrl(srcUrl)) return;
+
+      // Browser rule: unmuted autoplay is often blocked on first load until
+      // the user interacts with the page. Try unmuted first, then fall back to
+      // muted autoplay so the video still starts. The UI shows an Unmute button.
+      try {
+        player.muted = false;
+        player.defaultMuted = false;
+        const p = player.play();
+        if (p && typeof p.then === "function") await p;
+        if (cancelled) return;
+        didStart = true;
+        setNeedsUnmute(false);
+        return;
+      } catch {}
+
+      try {
+        player.muted = true;
+        player.defaultMuted = true;
+        const p = player.play();
+        if (p && typeof p.then === "function") await p;
+        if (cancelled) return;
+        didStart = true;
+        setNeedsUnmute(true);
+      } catch {
+        if (!cancelled) setNeedsUnmute(false);
+      }
+    };
+
+    // Try immediately and retry when the native/HLS player becomes ready.
+    const timers = [120, 450, 1000].map((ms) => setTimeout(attempt, ms));
+    const events = [
+      "loadedmetadata",
+      "loadeddata",
+      "canplay",
+      "canplaythrough",
+    ];
+    events.forEach((evt) => el.addEventListener(evt, attempt));
+
+    return () => {
+      cancelled = true;
+      timers.forEach(clearTimeout);
+      events.forEach((evt) => el.removeEventListener(evt, attempt));
+    };
+  }, [
+    id,
+    srcUrl,
+    hardLoginGate,
+    previewActive,
+    previewHit,
+    useBunnyStreamPlayer,
+  ]);
+
+  /* ------------ YOUTUBE-STYLE AUTOPLAY NEXT -------------- */
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || useBunnyStreamPlayer) return;
+
+    const clearCountdown = () => {
+      setUpNextCountdown(0);
+      if (countdownRef.current) clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    };
+
+    const startCountdownAndGo = (targetUrl) => {
+      if (!targetUrl) return;
+      if (autoNavRef.current) return;
+      autoNavRef.current = true;
+
+      let s = 5;
+      setUpNextCountdown(s);
+
+      countdownRef.current = setInterval(() => {
+        s -= 1;
+        setUpNextCountdown(s);
+
+        if (s <= 0) {
+          clearCountdown();
+          nav(targetUrl);
+        }
+      }, 1000);
+    };
+
+    const onEnded = () => {
+      if (!autoNextOn) return;
+      if (hardLoginGate) return;
+      if (previewActive) return;
+
+      // Prefer playlist continuation when in playlist mode
+      if (inPlaylistMode && playlistRest && playlistRest.length > 0) {
+        const nxt = playlistRest[0];
+        startCountdownAndGo(`/watch/${nxt.id}?playlist=${playlistParam}`);
+        return;
+      }
+
+      // Otherwise go to Up Next
+      if (nextVideo?.id) {
+        startCountdownAndGo(`/watch/${nextVideo.id}`);
+      }
+    };
+
+    const onPlay = () => {
+      // If user manually resumes/plays, cancel countdown
+      clearCountdown();
+      autoNavRef.current = false;
+    };
+
+    el.addEventListener("ended", onEnded);
+    el.addEventListener("play", onPlay);
+
+    return () => {
+      el.removeEventListener("ended", onEnded);
+      el.removeEventListener("play", onPlay);
+      clearCountdown();
+      autoNavRef.current = false;
+    };
+  }, [
+    nav,
+    autoNextOn,
+    nextVideo?.id,
+    hardLoginGate,
+    previewActive,
+    inPlaylistMode,
+    playlistRest,
+    playlistParam,
+    useBunnyStreamPlayer,
+  ]);
+
+  function toggleAutoNext() {
+    setAutoNextOn((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem("vv_autonext", String(next));
+      } catch {}
+      return next;
+    });
+  }
+
+  function cancelUpNext() {
+    setUpNextCountdown(0);
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    countdownRef.current = null;
+    autoNavRef.current = false;
+  }
+
+  // ✅ YouTube-style loading (no “Loading…” text)
+  if (loading) return <VideoViewSkeleton />;
 
   if (err || !video)
     return (
       <div className="vv">
-        <style dangerouslySetInnerHTML={{ __html: styles }} />
         <div className="vv-wrap">
           <div className="vv-card vv-pad">{err || "Video not found."}</div>
         </div>
       </div>
     );
 
-  const tags = video?.metadata?.tags || [];
   const created = video.created_at || video.created;
   const author = video?.metadata?.authors?.[0];
+  const currentPublishedLabel = (() => {
+    const ms = getPublishedMs(video);
+    return ms
+      ? datePretty(new Date(ms).toISOString())
+      : created
+        ? datePretty(created)
+        : "";
+  })();
 
   const visibleComments = showAllComments
     ? comments
@@ -1154,46 +1927,145 @@ export default function VideoView() {
 
   return (
     <div className="vv">
-      <style dangerouslySetInnerHTML={{ __html: styles }} />
       <div className="vv-wrap">
         <div className="vv-grid">
           <div>
             <div className="vv-card">
               <div style={{ background: "#000", position: "relative" }}>
-                <video
-                  ref={videoRef}
-                  poster={poster || undefined}
-                  style={{
-                    width: "100%",
-                    display: "block",
-                    background: "#000",
-                    pointerEvents:
-                      (previewActive && previewHit) || hardLoginGate
-                        ? "none"
-                        : "auto",
-                  }}
-                  controls
-                  playsInline
-                  preload="metadata"
-                  crossOrigin="anonymous"
-                  controlsList="nodownload"
-                  disablePictureInPicture
-                  onContextMenu={(e) => e.preventDefault()}
-                />
+                {useBunnyStreamPlayer ? (
+                  <div className="vv-bunny-player-wrap">
+                    <iframe
+                      key={activeBunnyEmbedUrl}
+                      className="vv-bunny-player"
+                      src={activeBunnyEmbedUrl}
+                      title={video?.title || "Bunny Stream Player"}
+                      loading="eager"
+                      allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
+                      allowFullScreen
+                    />
+                    {!isAuthed && previewBunnyEmbedUrl && (
+                      <div className="vv-bunny-preview-cta">
+                        <span>Preview playing</span>
+                        <button
+                          className="vv-btn primary"
+                          onClick={goLoginWithResume}
+                        >
+                          Log in to watch full video
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <video
+                    ref={videoRef}
+                    poster={poster || undefined}
+                    style={{
+                      width: "100%",
+                      display: "block",
+                      background: "#000",
+                      pointerEvents:
+                        (previewActive && previewHit) || hardLoginGate
+                          ? "none"
+                          : "auto",
+                    }}
+                    controls
+                    autoPlay={!hardLoginGate && !(previewActive && previewHit)}
+                    playsInline
+                    preload="auto"
+                    crossOrigin="anonymous"
+                    controlsList="nodownload"
+                    disablePictureInPicture
+                    onContextMenu={(e) => e.preventDefault()}
+                    onError={() => setVideoErr(true)}
+                    onLoadedData={() => setVideoErr(false)}
+                  />
+                )}
 
-                {(hardLoginGate || (previewActive && previewHit)) && (
-                  <div className="vv-gate">
-                    <div className="vv-gate-inner">
-                      <p>Please log in to watch the full video.</p>
-                      <button
-                        className="vv-btn primary"
-                        onClick={goLoginWithResume}
-                      >
-                        Log in
-                      </button>
+                {!useBunnyStreamPlayer &&
+                  needsUnmute &&
+                  !previewHit &&
+                  !hardLoginGate && (
+                    <button
+                      type="button"
+                      className="vv-btn primary"
+                      onClick={unmuteNativeVideo}
+                      style={{
+                        position: "absolute",
+                        right: 14,
+                        bottom: 14,
+                        zIndex: 5,
+                        boxShadow: "0 10px 30px rgba(0,0,0,.35)",
+                      }}
+                    >
+                      🔊 Unmute
+                    </button>
+                  )}
+
+                {/* fallback image layer */}
+                {!useBunnyStreamPlayer &&
+                  (hardLoginGate || !srcUrl || videoErr) && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background:
+                          "radial-gradient(800px 400px at 20% 30%, rgba(99,102,241,.22), rgba(0,0,0,0) 55%)",
+                        pointerEvents: "none",
+                      }}
+                      aria-hidden="true"
+                    >
+                      <img
+                        src={BishopRobertsonTVLogo}
+                        alt=""
+                        style={{
+                          width: "min(420px, 60%)",
+                          opacity: 0.92,
+                          filter: "drop-shadow(0 18px 60px rgba(0,0,0,.55))",
+                        }}
+                      />
+                    </div>
+                  )}
+
+                {/* Up Next countdown overlay (YouTube-like) */}
+                {upNextCountdown > 0 && (
+                  <div
+                    className="vv-upnext-overlay"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <div className="vv-upnext-card">
+                      <div className="vv-upnext-title">Up next</div>
+                      <div className="vv-upnext-sub">
+                        Playing next in <strong>{upNextCountdown}</strong>s
+                      </div>
+                      <div className="vv-upnext-actions">
+                        <button className="vv-btn" onClick={cancelUpNext}>
+                          Cancel
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
+
+                {!useBunnyStreamPlayer &&
+                  (hardLoginGate || (previewActive && previewHit)) && (
+                    <div className="vv-gate">
+                      <div className="vv-gate-inner">
+                        <p style={{ marginTop: 0 }}>
+                          Please log in to watch the full video.
+                        </p>
+                        <button
+                          className="vv-btn primary"
+                          onClick={goLoginWithResume}
+                        >
+                          Log in
+                        </button>
+                      </div>
+                    </div>
+                  )}
               </div>
 
               <div className="vv-pad">
@@ -1253,46 +2125,14 @@ export default function VideoView() {
 
                 <div className="vv-byline">
                   {author && <span className="vv-badge">{author}</span>}
-                  {created && <span>{datePretty(created)}</span>}
+                  {currentPublishedLabel && (
+                    <span>{currentPublishedLabel}</span>
+                  )}
                 </div>
 
-                {!!tags.length &&
-                  tags.map((t, i) => (
-                    <span key={i} className="vv-badge">
-                      {t}
-                    </span>
-                  ))}
-
-                {!!video.description && (
-                  <>
-                    <hr className="vv-hr" />
-                    <div className="vv-muted">{video.description}</div>
-                  </>
-                )}
-
-                {resources.length > 0 && (
-                  <>
-                    <hr className="vv-hr" />
-                    <div>
-                      <h3>Resources</h3>
-                      <ul>
-                        {resources.map((r, i) => (
-                          <li key={i}>
-                            <a
-                              href={absUrl(r.url)}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              {r.title}
-                            </a>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </>
-                )}
-
                 <hr className="vv-hr" />
+
+                {/* Comments (kept) */}
                 <div>
                   <strong>Comments</strong>
 
@@ -1307,7 +2147,7 @@ export default function VideoView() {
                           width: "100%",
                           background: "#0b1020",
                           color: "#e5e7eb",
-                          border: "1px solid var(--border)",
+                          border: "1px solid rgba(148,163,184,.18)",
                           borderRadius: 8,
                           padding: 8,
                         }}
@@ -1354,7 +2194,7 @@ export default function VideoView() {
                           <div
                             key={c.id}
                             style={{
-                              borderBottom: "1px solid var(--border)",
+                              borderBottom: "1px solid rgba(148,163,184,.18)",
                               padding: "8px 0",
                             }}
                           >
@@ -1374,9 +2214,7 @@ export default function VideoView() {
                           >
                             {showAllComments
                               ? "Show less"
-                              : `Show more (${
-                                  comments.length - MAX_VISIBLE_COMMENTS
-                                })`}
+                              : `Show more (${comments.length - MAX_VISIBLE_COMMENTS})`}
                           </button>
                         )}
                       </>
@@ -1401,6 +2239,11 @@ export default function VideoView() {
                             v.duration ??
                             v?.metadata?.duration,
                         );
+                        const thumb = v.thumbnail_url
+                          ? absUrl(v.thumbnail_url)
+                          : "";
+                        const ms = getPublishedMs(v);
+
                         return (
                           <Link
                             key={v.id}
@@ -1408,16 +2251,21 @@ export default function VideoView() {
                             className="vv-rel-item"
                           >
                             <div className="vv-thumb">
-                              {v.thumbnail_url && (
-                                <img src={absUrl(v.thumbnail_url)} alt="" />
-                              )}
+                              <ThumbImg src={thumb} alt="" />
                               {dur && (
                                 <span className="vv-dur">
                                   {formatDuration(dur)}
                                 </span>
                               )}
                             </div>
-                            <div>{v.title}</div>
+                            <div className="vv-rel-meta">
+                              <div className="vv-rel-title">{v.title}</div>
+                              <div className="vv-rel-date">
+                                {ms
+                                  ? datePretty(new Date(ms).toISOString())
+                                  : ""}
+                              </div>
+                            </div>
                           </Link>
                         );
                       })}
@@ -1429,61 +2277,199 @@ export default function VideoView() {
               <>
                 {(nextVideo || remainingNext.length > 0) && (
                   <div className="vv-side-card">
-                    <div className="vv-side-title">Next Video</div>
+                    <div
+                      className="vv-side-title"
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: 10,
+                      }}
+                    >
+                      <span>Up next</span>
 
-                    {nextVideo && (
-                      <Link
-                        to={`/watch/${nextVideo.id}`}
-                        className="vv-rel-item"
+                      <div className="vv-autonext">
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: "#94a3b8",
+                            fontWeight: 800,
+                          }}
+                        >
+                          Autoplay
+                        </span>
+                        <button
+                          type="button"
+                          className={`vv-toggle ${autoNextOn ? "on" : ""}`}
+                          onClick={toggleAutoNext}
+                          aria-pressed={autoNextOn}
+                          title="Autoplay next video"
+                        >
+                          <span className="vv-toggle-knob" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div
+                      className={
+                        shouldScrollNext ? "vv-side-scroll" : undefined
+                      }
+                    >
+                      {/* Playing row (YouTube-style pinned) */}
+                      <div
+                        className="vv-rel-item vv-playing"
+                        style={{ cursor: "default", pointerEvents: "none" }}
                       >
                         <div className="vv-thumb">
-                          {nextVideo.thumbnail_url && (
-                            <img src={absUrl(nextVideo.thumbnail_url)} alt="" />
-                          )}
+                          <ThumbImg src={poster} alt="" />
                         </div>
-                        <div>{nextVideo.title}</div>
-                      </Link>
-                    )}
+                        <div className="vv-rel-meta">
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 10,
+                              alignItems: "center",
+                            }}
+                          >
+                            <div className="vv-rel-title">{video.title}</div>
+                            <span className="vv-playing-pill">Playing</span>
+                          </div>
+                          <div className="vv-rel-date">
+                            {currentPublishedLabel}
+                          </div>
+                        </div>
+                      </div>
 
-                    {remainingNext.length > 0 && (
-                      <div className="vv-rel">
-                        {remainingNext.map((v) => (
+                      {nextVideo && (
+                        <Link
+                          to={`/watch/${nextVideo.id}`}
+                          className="vv-rel-item"
+                        >
+                          <div className="vv-thumb">
+                            <ThumbImg
+                              src={
+                                nextVideo.thumbnail_url
+                                  ? absUrl(nextVideo.thumbnail_url)
+                                  : ""
+                              }
+                              alt=""
+                            />
+                            {(() => {
+                              const dur = secsFromAny(
+                                nextVideo.duration_seconds ??
+                                  nextVideo.duration_sec ??
+                                  nextVideo.duration ??
+                                  nextVideo?.metadata?.duration,
+                              );
+                              return dur ? (
+                                <span className="vv-dur">
+                                  {formatDuration(dur)}
+                                </span>
+                              ) : null;
+                            })()}
+                          </div>
+                          <div className="vv-rel-meta">
+                            <div className="vv-rel-title">
+                              {nextVideo.title}
+                            </div>
+                            <div className="vv-rel-date">
+                              {(() => {
+                                const ms = getPublishedMs(nextVideo);
+                                return ms
+                                  ? datePretty(new Date(ms).toISOString())
+                                  : "";
+                              })()}
+                            </div>
+                          </div>
+                        </Link>
+                      )}
+
+                      {remainingNext.length > 0 && (
+                        <div className="vv-rel">
+                          {remainingNext.map((v) => {
+                            const thumb = v.thumbnail_url
+                              ? absUrl(v.thumbnail_url)
+                              : "";
+                            const dur = secsFromAny(
+                              v.duration_seconds ??
+                                v.duration_sec ??
+                                v.duration ??
+                                v?.metadata?.duration,
+                            );
+                            const ms = getPublishedMs(v);
+
+                            return (
+                              <Link
+                                key={v.id}
+                                to={`/watch/${v.id}`}
+                                className="vv-rel-item"
+                              >
+                                <div className="vv-thumb">
+                                  <ThumbImg src={thumb} alt="" />
+                                  {dur && (
+                                    <span className="vv-dur">
+                                      {formatDuration(dur)}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="vv-rel-meta">
+                                  <div className="vv-rel-title">{v.title}</div>
+                                  <div className="vv-rel-date">
+                                    {ms
+                                      ? datePretty(new Date(ms).toISOString())
+                                      : ""}
+                                  </div>
+                                </div>
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {relatedVideos.length > 0 && (
+                  <div className="vv-side-card">
+                    <div className="vv-side-title">Related</div>
+                    <div className="vv-rel">
+                      {relatedVideos.map((v) => {
+                        const thumb = v.thumbnail_url
+                          ? absUrl(v.thumbnail_url)
+                          : "";
+                        const dur = secsFromAny(
+                          v.duration_seconds ??
+                            v.duration_sec ??
+                            v.duration ??
+                            v?.metadata?.duration,
+                        );
+                        const ms = getPublishedMs(v);
+
+                        return (
                           <Link
                             key={v.id}
                             to={`/watch/${v.id}`}
                             className="vv-rel-item"
                           >
                             <div className="vv-thumb">
-                              {v.thumbnail_url && (
-                                <img src={absUrl(v.thumbnail_url)} alt="" />
+                              <ThumbImg src={thumb} alt="" />
+                              {dur && (
+                                <span className="vv-dur">
+                                  {formatDuration(dur)}
+                                </span>
                               )}
                             </div>
-                            <div>{v.title}</div>
+                            <div className="vv-rel-meta">
+                              <div className="vv-rel-title">{v.title}</div>
+                              <div className="vv-rel-date">
+                                {ms
+                                  ? datePretty(new Date(ms).toISOString())
+                                  : ""}
+                              </div>
+                            </div>
                           </Link>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {relatedVideos.length > 0 && (
-                  <div className="vv-side-card">
-                    <div className="vv-side-title">Related Videos</div>
-                    <div className="vv-rel">
-                      {relatedVideos.map((v) => (
-                        <Link
-                          key={v.id}
-                          to={`/watch/${v.id}`}
-                          className="vv-rel-item"
-                        >
-                          <div className="vv-thumb">
-                            {v.thumbnail_url && (
-                              <img src={absUrl(v.thumbnail_url)} alt="" />
-                            )}
-                          </div>
-                          <div>{v.title}</div>
-                        </Link>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}

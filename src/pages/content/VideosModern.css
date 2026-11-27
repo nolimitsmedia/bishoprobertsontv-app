@@ -1,0 +1,233 @@
+/* Admin › Videos — modern list (inspired by the reference design, dark theme).
+   The page's own styles sit in an inline <style>; these rules carry more weight. */
+.us-shell .us-content:not(#_) .vp-modern {
+  --vp-line: rgba(255, 255, 255, 0.08);
+}
+.us-shell .us-content:not(#_) .vp-modern .vp-titleWrap {
+  display: grid;
+  gap: 2px;
+}
+.us-shell .us-content:not(#_) .vp-modern .video-main-title {
+  font-size: 26px !important;
+  font-weight: 900 !important;
+  color: #fff;
+}
+.us-shell .us-content:not(#_) .vp-modern .vp-subtitle {
+  margin: 0;
+  color: #9aa2b6;
+  font-size: 14px;
+}
+
+/* card + bulk bar */
+.us-shell .us-content:not(#_) .vp-modern .table-card {
+  background: #131722;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  overflow: visible;
+}
+.us-shell .us-content:not(#_) .vp-modern .bulkbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 12px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: #171c29;
+  border: 1px solid var(--vp-line);
+}
+.us-shell .us-content:not(#_) .vp-modern .bulkbar-left {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.us-shell .us-content:not(#_) .vp-modern .bulkbar-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: #e8eaf2;
+}
+.us-shell .us-content:not(#_) .vp-modern .bulkbar-tip {
+  font-size: 12.5px;
+  color: #8f97ad;
+}
+.us-shell .us-content:not(#_) .vp-modern .bulkbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.us-shell .us-content:not(#_) .vp-modern .bulkbar-select {
+  min-height: 34px;
+  width: auto;
+  min-width: 180px;
+}
+.us-shell .us-content:not(#_) .vp-modern .bulkbar.is-active {
+  background: linear-gradient(
+    90deg,
+    rgba(139, 92, 246, 0.28),
+    rgba(139, 92, 246, 0.1)
+  );
+  border-color: rgba(167, 139, 250, 0.55);
+}
+.us-shell .us-content:not(#_) .vp-modern .bulkbar.is-active .bulkbar-title {
+  color: #fff;
+}
+.us-shell .us-content:not(#_) .vp-modern .bulkbar.is-active .bulkbar-tip {
+  display: none;
+}
+.us-shell .us-content:not(#_) .vp-modern .bulkbar .btn {
+  min-height: 34px;
+  padding: 6px 14px;
+}
+.us-shell .us-content:not(#_) .vp-modern .bulkbar .btn.apply:not(:disabled) {
+  background: #8b5cf6;
+  border-color: #8b5cf6;
+  color: #fff !important;
+}
+
+/* table */
+.us-shell .us-content:not(#_) .vp-modern .table {
+  border-spacing: 0;
+}
+.us-shell .us-content:not(#_) .vp-modern .table thead th {
+  padding: 10px 14px;
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+}
+.us-shell .us-content:not(#_) .vp-modern .table tbody td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--vp-line) !important;
+  color: #c6cbd8;
+  font-size: 14px;
+}
+.us-shell .us-content:not(#_) .vp-modern .table tbody tr {
+  transition: background 0.12s ease;
+}
+.us-shell .us-content:not(#_) .vp-modern .table tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.025);
+}
+.us-shell .us-content:not(#_) .vp-modern .table tbody tr.is-selected td {
+  background: rgba(139, 92, 246, 0.1);
+}
+.us-shell .us-content:not(#_) .vp-modern .row-title {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #fff !important;
+}
+.us-shell .us-content:not(#_) .vp-modern .thumb {
+  width: 104px !important;
+  height: 58px !important;
+  border-radius: 8px !important;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+.us-shell .us-content:not(#_) .vp-modern .provider-badge {
+  font-size: 10.5px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  justify-self: start;
+}
+
+/* round checkboxes */
+.us-shell .us-content:not(#_) .vp-modern .table input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  border-radius: 999px;
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  background: transparent;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+}
+.us-shell .us-content:not(#_) .vp-modern .table input[type="checkbox"]:checked {
+  background: #8b5cf6
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.5l2.5 2.5L12 5.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    center / 12px no-repeat;
+  border-color: #8b5cf6;
+}
+.us-shell
+  .us-content:not(#_)
+  .vp-modern
+  .table
+  input[type="checkbox"]:focus-visible {
+  outline: 2px solid #c4b5fd;
+  outline-offset: 2px;
+}
+
+/* status pills */
+.us-shell .us-content:not(#_) .vp-modern .badge {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 0;
+}
+.us-shell .us-content:not(#_) .vp-modern .badge-green {
+  background: rgba(52, 211, 153, 0.14);
+  color: #6ee7b7;
+}
+.us-shell .us-content:not(#_) .vp-modern .badge-red {
+  background: rgba(248, 113, 113, 0.14);
+  color: #fca5a5;
+}
+
+/* row actions: quiet button + dark menu with LIGHT text */
+.us-shell .us-content:not(#_) .vp-modern td .icon-btn {
+  background: transparent;
+  border-color: transparent;
+  color: #9aa2b6;
+  min-width: 32px;
+  min-height: 32px;
+  font-size: 18px;
+}
+.us-shell .us-content:not(#_) .vp-modern td .icon-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+.us-shell .us-content:not(#_) .vp-modern .menu {
+  background: #1a1f2e;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  padding: 6px;
+  min-width: 210px;
+  z-index: 30;
+}
+.us-shell .us-content:not(#_) .vp-modern .menu .menu-item,
+.us-shell .us-content:not(#_) .vp-modern .menu .menu-item * {
+  color: #e8eaf2 !important;
+}
+.us-shell .us-content:not(#_) .vp-modern .menu .menu-item {
+  font-size: 13.5px;
+  font-weight: 600;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+.us-shell .us-content:not(#_) .vp-modern .menu .menu-item:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07) !important;
+}
+.us-shell .us-content:not(#_) .vp-modern .menu .menu-item:disabled,
+.us-shell .us-content:not(#_) .vp-modern .menu .menu-item:disabled * {
+  color: #6b7389 !important;
+  cursor: default;
+}
+.us-shell .us-content:not(#_) .vp-modern .menu .menu-item.danger,
+.us-shell .us-content:not(#_) .vp-modern .menu .menu-item.danger * {
+  color: #fca5a5 !important;
+}
+.us-shell .us-content:not(#_) .vp-modern .menu .menu-item.danger:hover {
+  background: rgba(248, 113, 113, 0.12) !important;
+}
+
+/* footer / pager */
+.us-shell .us-content:not(#_) .vp-modern .table-footer,
+.us-shell .us-content:not(#_) .vp-modern .pager {
+  color: #9aa2b6;
+  font-size: 13px;
+}

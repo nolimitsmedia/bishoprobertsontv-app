@@ -1,7 +1,8 @@
 // src/pages/studio/LiveCreatePage.js
 import React, { useState, useCallback, useEffect, useMemo } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import api from "../../api";
+import "../public/Login.css"; // its .auth-input field style (used to come from the Login page)
 
 /* ── Page-scoped CSS (outside component to avoid focus issues) ─────────── */
 const PAGE_CSS = `
@@ -104,8 +105,6 @@ function CopyInput({ label, value, onCopy, copied }) {
 /* ─────────────────────────────────────────────────────────────────────────── */
 
 export default function LiveCreatePage() {
-  const nav = useNavigate();
-
   // subscription gate
   const [sub, setSub] = useState(null);
   const [loadingSub, setLoadingSub] = useState(true);
@@ -131,12 +130,12 @@ export default function LiveCreatePage() {
 
   const planCode = useMemo(
     () => String(sub?.plan || sub?.plan_code || "").toLowerCase() || "free",
-    [sub]
+    [sub],
   );
   // Allow only paid/custom plans
   const canCreateLive = useMemo(
     () => ["starter", "pro", "custom"].includes(planCode),
-    [planCode]
+    [planCode],
   );
 
   const [title, setTitle] = useState("");
@@ -175,7 +174,7 @@ export default function LiveCreatePage() {
       if (e2?.response?.status === 402) {
         setErr(
           e2?.response?.data?.message ||
-            "Live streaming is not included in your current plan."
+            "Live streaming is not included in your current plan.",
         );
         try {
           const { data } = await api.get("/subscription/me");
@@ -197,7 +196,7 @@ export default function LiveCreatePage() {
         setEvent((prev) => ({ ...prev, ...data }));
       } catch {}
     },
-    [setEvent]
+    [setEvent],
   );
 
   // Light polling while the page is open so status updates if changed elsewhere
@@ -370,7 +369,7 @@ export default function LiveCreatePage() {
                 if (!canCreateLive) {
                   e.preventDefault();
                   setErr(
-                    "Live streaming is not included in your current plan."
+                    "Live streaming is not included in your current plan.",
                   );
                 }
               }}
@@ -378,8 +377,8 @@ export default function LiveCreatePage() {
               {creating
                 ? "Creating…"
                 : canCreateLive
-                ? "Create event"
-                : "Upgrade to create live events"}
+                  ? "Create event"
+                  : "Upgrade to create live events"}
             </button>
           </form>
         </div>
@@ -421,7 +420,7 @@ export default function LiveCreatePage() {
               onCopy={() =>
                 copyText(
                   "rtmp",
-                  event.rtmp_ingest || "rtmp://rtmp.livepeer.studio/live"
+                  event.rtmp_ingest || "rtmp://rtmp.livepeer.studio/live",
                 )
               }
             />
@@ -461,8 +460,8 @@ export default function LiveCreatePage() {
                 event?.status === "live"
                   ? "Already live"
                   : event?.status === "ended"
-                  ? "Stream has ended"
-                  : "Mark event as live"
+                    ? "Stream has ended"
+                    : "Mark event as live"
               }
             >
               {actionBusy && event?.status !== "live"

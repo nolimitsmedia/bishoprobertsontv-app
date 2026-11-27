@@ -1,0 +1,172 @@
+/* Catalog (redesign) */
+.cm-page {
+  padding-bottom: 64px;
+}
+.cm-hero .vw-hero {
+  height: clamp(360px, 34vw, 520px);
+}
+.cm-head {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 48px 32px 12px;
+}
+.cm-head h1 {
+  margin: 0 0 6px;
+  font-size: 48px;
+  font-weight: 900;
+  color: #fff;
+  letter-spacing: -0.02em;
+}
+.cm-head p {
+  margin: 0;
+  color: #b8bdcc;
+}
+.cm-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(7, 8, 13, 0.94);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(8px);
+}
+.cm-barInner {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 12px 32px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.cm-chips {
+  display: flex;
+  gap: 8px;
+  flex: 1 1 520px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.cm-chips::-webkit-scrollbar {
+  display: none;
+}
+.cm-chips button {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 0;
+  background: #1b2131;
+  color: #e8eaf2;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cm-chips button:hover {
+  background: #262d40;
+}
+.cm-chips button.is-on {
+  background: #fff;
+  color: #0b0d14;
+}
+.cm-chips button:focus-visible,
+.cm-all:focus-visible {
+  outline: 2px solid #c4b5fd;
+  outline-offset: 2px;
+}
+.cm-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: #131722;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #9aa2b6;
+  flex: 0 1 280px;
+}
+.cm-search:focus-within {
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.3);
+}
+.cm-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #e8eaf2;
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+  margin: 0;
+}
+.cm-all {
+  color: #c4b5fd;
+  font-size: 13.5px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.cm-all:hover {
+  color: #fff;
+}
+.cm-rows {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 28px 32px 0;
+}
+.cm-rowAnchor {
+  scroll-margin-top: 140px;
+}
+.cm-results {
+  margin: 0 0 8px;
+  color: #9aa2b6;
+  font-size: 14px;
+}
+@media (max-width: 760px) {
+  .cm-barInner {
+    padding: 10px 16px;
+  }
+  .cm-rows {
+    padding: 20px 16px 0;
+  }
+  .cm-search {
+    flex: 1 1 100%;
+  }
+}
+
+/* rows can shrink to the screen (the wrapper made the grid column as wide as the card track) */
+.cm-rows {
+  grid-template-columns: minmax(0, 1fr);
+}
+.cm-rows > * {
+  min-width: 0;
+}
+
+/* mockup: same content width as Home; bottom link to the full catalog */
+.cm-barInner,
+.cm-rows {
+  max-width: var(--max-w, 1140px) !important;
+  width: calc(100% - 32px);
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+.cm-rows {
+  display: grid;
+  gap: 40px;
+  padding-top: 32px !important;
+}
+.cm-more {
+  margin: 8px 0 0;
+  text-align: center;
+}
+.cm-more .cm-all {
+  font-size: 14px;
+}
+.cm-bar {
+  top: var(--cm-bar-top, 0px) !important;
+}
+.cm-rowAnchor {
+  scroll-margin-top: calc(var(--cm-bar-top, 0px) + 80px) !important;
+}

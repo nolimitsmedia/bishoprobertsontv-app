@@ -1,0 +1,1218 @@
+// src/pages/admin/AdminEmailCenter.js
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import api from "../../api";
+import "./AdminEmailCenter.css";
+import { SITE } from "../../config/site";
+
+function fmtDate(d) {
+  if (!d) return "";
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return "";
+  return dt.toLocaleString();
+}
+
+function fmtBytes(bytes = 0) {
+  const b = Math.max(0, Number(bytes) || 0);
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let n = b;
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  const digits = i === 0 ? 0 : i === 1 ? 1 : 2;
+  return `${n.toFixed(digits)} ${units[i]}`;
+}
+
+function Pill({ children, active, onClick }) {
+  return (
+    <button
+      type="button"
+      className={`em-pill ${active ? "is-active" : ""}`}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Toast({ toast, onClose }) {
+  if (!toast) return null;
+  return (
+    <div className={`em-toast ${toast.type === "error" ? "is-error" : ""}`}>
+      <div className="em-toast-title">
+        {toast.type === "error" ? "Error" : "Success"}
+      </div>
+      <div className="em-toast-msg">{toast.message}</div>
+      <button type="button" className="em-toast-x" onClick={onClose}>
+        ✕
+      </button>
+    </div>
+  );
+}
+
+// simple email validation (good enough for UI)
+function isValidEmail(s) {
+  const v = (s || "").trim();
+  if (!v) return false;
+  // basic RFC-ish
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+}
+
+function uniqEmails(list) {
+  const out = [];
+  const seen = new Set();
+  for (const raw of list || []) {
+    const e = String(raw || "")
+      .trim()
+      .toLowerCase();
+    if (!e || seen.has(e)) continue;
+    seen.add(e);
+    out.push(e);
+  }
+  return out;
+}
+
+/* ---------------------------
+   Inline modal (no CSS edits)
+---------------------------- */
+function ConfirmModal({
+  open,
+  title,
+  message,
+  confirmText = "Confirm",
+  cancelText = "Cancel",
+  tone = "danger", // "danger" | "default"
+  onConfirm,
+  onCancel,
+  busy,
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") onCancel?.();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onCancel]);
+
+  if (!open) return null;
+
+  const primaryClass =
+    tone === "danger" ? "em-btn em-btn-primary" : "em-btn em-btn-primary";
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(e) => {
+        // click outside closes
+        if (e.target === e.currentTarget) onCancel?.();
+      }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9999,
+        background: "rgba(0,0,0,0.62)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+      }}
+    >
+      <div
+        style={{
+          width: "min(560px, 96vw)",
+          borderRadius: 14,
+          background: "#0f1218",
+          border: "1px solid rgba(255,255,255,0.10)",
+          boxShadow: "0 18px 60px rgba(0,0,0,0.55)",
+          overflow: "hidden",
+        }}
+      >
+        <div style={{ padding: "16px 18px 10px" }}>
+          <div
+            style={{
+              fontSize: 16,
+              fontWeight: 800,
+              color: "rgba(255,255,255,0.92)",
+              marginBottom: 6,
+            }}
+          >
+            {title}
+          </div>
+          <div
+            style={{
+              fontSize: 13,
+              lineHeight: 1.5,
+              color: "rgba(255,255,255,0.72)",
+              whiteSpace: "pre-wrap",
+            }}
+          >
+            {message}
+          </div>
+        </div>
+
+        <div
+          style={{
+            padding: 14,
+            display: "flex",
+            gap: 10,
+            justifyContent: "flex-end",
+            borderTop: "1px solid rgba(255,255,255,0.08)",
+            background: "rgba(255,255,255,0.02)",
+          }}
+        >
+          <button
+            type="button"
+            className="em-btn"
+            onClick={onCancel}
+            disabled={busy}
+          >
+            {cancelText}
+          </button>
+          <button
+            type="button"
+            className={primaryClass}
+            onClick={onConfirm}
+            disabled={busy}
+            title={confirmText}
+          >
+            {busy ? "Please wait…" : confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function AdminEmailCenter() {
+  const [toast, setToast] = useState(null);
+
+  // Compose
+  const [fromName] = useState(SITE.name);
+  const [fromEmail] = useState("no-reply@yourdomain.com"); // UI only
+  const [subject, setSubject] = useState(
+    "Weekly Update — New Sermon Available",
+  );
+  const [body, setBody] = useState("Hello — new content is live…");
+
+  // ✅ Recipients picker
+  const [toOpen, setToOpen] = useState(false);
+  const [memberQuery, setMemberQuery] = useState("");
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [members, setMembers] = useState([]); // {id, name, email}
+  const [selectAll, setSelectAll] = useState(true); // default: All Members
+  const [selectedIds, setSelectedIds] = useState([]); // when selectAll=false
+
+  // ✅ Manual recipients mode
+  const [manualMode, setManualMode] = useState(false);
+  const [manualInput, setManualInput] = useState("");
+  const [manualEmails, setManualEmails] = useState([]); // lowercased emails
+
+  // Attachments
+  const fileInputRef = useRef(null);
+  const [attachments, setAttachments] = useState([]); // {name,size,mime,url}
+  const [uploading, setUploading] = useState(false);
+
+  const [sending, setSending] = useState(false);
+
+  // Jobs panel
+  const [jobs, setJobs] = useState([]);
+  const [jobsLoading, setJobsLoading] = useState(false);
+  const [activeJobId, setActiveJobId] = useState(null);
+  const [jobItems, setJobItems] = useState([]);
+  const [itemsLoading, setItemsLoading] = useState(false);
+
+  // ✅ Delete state
+  const [deleting, setDeleting] = useState(false);
+  const [confirm, setConfirm] = useState({
+    open: false,
+    mode: "delete", // "delete" | "force"
+    title: "",
+    message: "",
+  });
+
+  // Filters
+  const [jobQuery, setJobQuery] = useState("");
+  const [jobFilter, setJobFilter] = useState("all");
+
+  function showToast(type, message) {
+    setToast({ type, message });
+    window.clearTimeout(showToast._t);
+    showToast._t = window.setTimeout(() => setToast(null), 3200);
+  }
+
+  async function loadJobs() {
+    setJobsLoading(true);
+    try {
+      const r = await api.get("/admin/email/jobs?limit=50&offset=0");
+      setJobs(r.data?.items || []);
+    } catch {
+      setJobs([]);
+    } finally {
+      setJobsLoading(false);
+    }
+  }
+
+  async function loadItems(jobId) {
+    setItemsLoading(true);
+    try {
+      const r = await api.get(
+        `/admin/email/jobs/${jobId}/items?limit=200&offset=0`,
+      );
+      setJobItems(r.data?.items || []);
+    } catch {
+      setJobItems([]);
+    } finally {
+      setItemsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadJobs();
+  }, []);
+
+  // ✅ Load members for recipient picker (uses your admin users route)
+  async function loadMembers() {
+    setMembersLoading(true);
+    try {
+      const r = await api.get("/admin/users?limit=2000&offset=0");
+      const items = r.data?.items || r.data?.users || r.data?.rows || [];
+      const normalized = items
+        .map((u) => ({
+          id: Number(u.id),
+          name: u.name || u.full_name || u.fullName || u.username || "Member",
+          email: u.email || "",
+        }))
+        .filter((u) => Number.isFinite(u.id) && u.email);
+
+      setMembers(normalized);
+    } catch (_e) {
+      setMembers([]);
+      showToast(
+        "error",
+        "Could not load members list. Check /api/admin/users endpoint.",
+      );
+    } finally {
+      setMembersLoading(false);
+    }
+  }
+
+  // Load members only when opening the picker the first time
+  useEffect(() => {
+    if (toOpen && members.length === 0 && !membersLoading && !manualMode) {
+      loadMembers();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toOpen, manualMode]);
+
+  const filteredMembers = useMemo(() => {
+    const q = memberQuery.trim().toLowerCase();
+    if (!q) return members.slice(0, 80);
+    return members
+      .filter((m) => `${m.name} ${m.email}`.toLowerCase().includes(q))
+      .slice(0, 120);
+  }, [members, memberQuery]);
+
+  const selectedMembers = useMemo(() => {
+    const set = new Set(selectedIds);
+    return members.filter((m) => set.has(m.id));
+  }, [members, selectedIds]);
+
+  const filteredJobs = useMemo(() => {
+    const q = jobQuery.trim().toLowerCase();
+    return (jobs || []).filter((j) => {
+      if (jobFilter !== "all" && String(j.status || "") !== jobFilter)
+        return false;
+      if (!q) return true;
+      const hay = `${j.id} ${j.subject || ""} ${j.status || ""}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [jobs, jobQuery, jobFilter]);
+
+  const activeStats = useMemo(() => {
+    const total = jobItems.length;
+    const queued = jobItems.filter((x) => x.status === "queued").length;
+    const sent = jobItems.filter((x) => x.status === "sent").length;
+    const failed = jobItems.filter((x) => x.status === "failed").length;
+    return { total, queued, sent, failed };
+  }, [jobItems]);
+
+  const activeJob = useMemo(
+    () => jobs.find((j) => j.id === activeJobId) || null,
+    [jobs, activeJobId],
+  );
+
+  /* ---------------------------
+     DELETE JOB (popup modal)
+  ---------------------------- */
+  function openDeleteConfirm() {
+    if (!activeJobId) return;
+
+    const job = activeJob;
+    const label = job?.subject ? `“${job.subject}”` : `Job #${activeJobId}`;
+
+    setConfirm({
+      open: true,
+      mode: "delete",
+      title: `Delete ${label}?`,
+      message:
+        "This will remove the job and all recipient rows.\nThis cannot be undone.",
+    });
+  }
+
+  async function performDelete(force = false) {
+    if (!activeJobId) return;
+
+    setDeleting(true);
+    try {
+      const url = force
+        ? `/admin/email/jobs/${activeJobId}?force=1`
+        : `/admin/email/jobs/${activeJobId}`;
+
+      await api.delete(url);
+
+      showToast("success", "Job deleted.");
+      setConfirm({ open: false, mode: "delete", title: "", message: "" });
+
+      // Clear UI selection
+      setActiveJobId(null);
+      setJobItems([]);
+
+      // Refresh list
+      await loadJobs();
+    } catch (e) {
+      const status = e?.response?.status;
+      const msg =
+        e?.response?.data?.error ||
+        e?.response?.data?.message ||
+        e?.message ||
+        "Failed to delete job.";
+
+      if (status === 409 && !force) {
+        // Switch modal to "force" step (no browser alert)
+        setConfirm({
+          open: true,
+          mode: "force",
+          title: "Force delete?",
+          message: `${msg}\n\nForce deleting will remove the job and items even if it is still in progress.`,
+        });
+      } else {
+        showToast("error", msg);
+        setConfirm({ open: false, mode: "delete", title: "", message: "" });
+      }
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  // Attachments upload
+  async function uploadFiles(files) {
+    const list = Array.from(files || []);
+    if (!list.length) return;
+
+    const maxFiles = 8;
+    const maxMB = 20;
+    if (attachments.length + list.length > maxFiles) {
+      showToast("error", `Max ${maxFiles} attachments.`);
+      return;
+    }
+    const tooBig = list.find((f) => f.size > maxMB * 1024 * 1024);
+    if (tooBig) {
+      showToast("error", `File too large: ${tooBig.name} (max ${maxMB}MB)`);
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const uploaded = [];
+      for (const f of list) {
+        const fd = new FormData();
+        fd.append("file", f);
+
+        const r = await api.post("/uploads", fd, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+
+        const data = r.data || {};
+        const url = data.url || data.path || data.fileUrl || data.location;
+        if (!url) throw new Error("Upload response missing url");
+
+        uploaded.push({
+          name: data.name || f.name,
+          size: data.size || f.size,
+          mime: data.mime || f.type,
+          url,
+        });
+      }
+
+      setAttachments((prev) => [...prev, ...uploaded]);
+      showToast("success", `Attached ${uploaded.length} file(s).`);
+    } catch (e) {
+      showToast(
+        "error",
+        e?.response?.data?.error || e.message || "Upload failed.",
+      );
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  function removeAttachment(idx) {
+    setAttachments((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  // ✅ Member selection actions
+  function toggleMember(id) {
+    setSelectAll(false);
+    setSelectedIds((prev) => {
+      const set = new Set(prev);
+      if (set.has(id)) set.delete(id);
+      else set.add(id);
+      return Array.from(set);
+    });
+  }
+
+  function setAllMembers(on) {
+    setSelectAll(on);
+    if (on) setSelectedIds([]);
+  }
+
+  function removeSelected(id) {
+    setSelectedIds((prev) => prev.filter((x) => x !== id));
+  }
+
+  // ✅ Manual recipients helpers
+  function parseManualInputToEmails(input) {
+    // accept comma, semicolon, newline, space
+    const parts = String(input || "")
+      .split(/[\s,;]+/g)
+      .map((x) => x.trim())
+      .filter(Boolean);
+
+    const valid = [];
+    const invalid = [];
+    for (const p of parts) {
+      if (isValidEmail(p)) valid.push(p);
+      else invalid.push(p);
+    }
+    return { valid: uniqEmails(valid), invalid };
+  }
+
+  function addManualFromInput() {
+    const { valid, invalid } = parseManualInputToEmails(manualInput);
+    if (invalid.length) {
+      showToast(
+        "error",
+        `Invalid email(s): ${invalid.slice(0, 4).join(", ")}${
+          invalid.length > 4 ? "…" : ""
+        }`,
+      );
+      return;
+    }
+    if (!valid.length) {
+      showToast("error", "Type at least 1 valid email address.");
+      return;
+    }
+    setManualEmails((prev) => uniqEmails([...prev, ...valid]));
+    setManualInput("");
+  }
+
+  function removeManualEmail(email) {
+    const e = String(email || "").toLowerCase();
+    setManualEmails((prev) => prev.filter((x) => x !== e));
+  }
+
+  function setRecipientsMode(mode) {
+    // mode: "members" | "manual"
+    if (mode === "manual") {
+      setManualMode(true);
+      setSelectAll(false); // avoid confusion; manual mode controls recipients
+      setSelectedIds([]);
+    } else {
+      setManualMode(false);
+      setManualEmails([]);
+      setManualInput("");
+    }
+  }
+
+  async function onSend() {
+    if (!subject.trim()) return showToast("error", "Subject is required.");
+    if (!body.trim()) return showToast("error", "Message is empty.");
+
+    // ✅ Manual mode validation + payload
+    if (manualMode) {
+      if (!manualEmails.length) {
+        // allow quick send by typing and hitting send without pressing Add
+        const { valid, invalid } = parseManualInputToEmails(manualInput);
+        if (invalid.length) {
+          return showToast(
+            "error",
+            `Invalid email(s): ${invalid.slice(0, 4).join(", ")}${
+              invalid.length > 4 ? "…" : ""
+            }`,
+          );
+        }
+        if (!valid.length)
+          return showToast("error", "Add at least 1 recipient email.");
+        setManualEmails(valid);
+      }
+    } else {
+      if (!selectAll && selectedIds.length === 0) {
+        return showToast(
+          "error",
+          "Select at least 1 member, or use Select All.",
+        );
+      }
+    }
+
+    setSending(true);
+    try {
+      const audience = manualMode
+        ? {
+            type: "emails",
+            emails: manualEmails.length
+              ? manualEmails
+              : parseManualInputToEmails(manualInput).valid,
+          }
+        : selectAll
+          ? { type: "all" }
+          : { type: "ids", ids: selectedIds };
+
+      const r = await api.post("/admin/email/send", {
+        subject: subject.trim(),
+        text: body,
+        audience,
+        attachments,
+      });
+
+      showToast(
+        "success",
+        `Queued ${r.data?.queued ?? 0} emails (job #${r.data?.jobId}).`,
+      );
+
+      await loadJobs();
+
+      if (r.data?.jobId) {
+        setActiveJobId(r.data.jobId);
+        await loadItems(r.data.jobId);
+      }
+    } catch (e) {
+      showToast("error", e?.response?.data?.error || "Failed to send.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  // UI helpers for To label
+  const toLabel = useMemo(() => {
+    if (manualMode) {
+      const count = manualEmails.length;
+      if (count === 0) return "Manual (type email)";
+      if (count === 1) return manualEmails[0];
+      return `${count} manual recipients`;
+    }
+    return selectAll ? "All Members" : `${selectedIds.length} selected`;
+  }, [manualMode, manualEmails, selectAll, selectedIds.length]);
+
+  return (
+    <div className="em-root">
+      <div className="em-topbar">
+        <div className="em-title">
+          <div className="em-title-main">Email Center</div>
+          <div className="em-title-sub">Inbox + Compose (Gmail vibe)</div>
+        </div>
+
+        <div className="em-top-actions">
+          <button className="em-btn" onClick={loadJobs} disabled={jobsLoading}>
+            {jobsLoading ? "Refreshing…" : "Refresh"}
+          </button>
+
+          {/* ✅ Delete job button */}
+          <button
+            className="em-btn"
+            onClick={openDeleteConfirm}
+            disabled={!activeJobId || deleting || jobsLoading || itemsLoading}
+            title={
+              activeJobId
+                ? `Delete Job #${activeJobId}`
+                : "Select a job to delete"
+            }
+          >
+            {deleting ? "Deleting…" : "Delete"}
+          </button>
+
+          <button
+            className="em-btn em-btn-primary"
+            onClick={onSend}
+            disabled={sending}
+          >
+            {sending ? "Sending…" : "Send"}
+          </button>
+        </div>
+      </div>
+
+      <div className="em-shell">
+        {/* LEFT: Inbox list */}
+        <aside className="em-left">
+          <div className="em-left-head">
+            <div className="em-search">
+              <span className="em-search-ico">⌕</span>
+              <input
+                value={jobQuery}
+                onChange={(e) => setJobQuery(e.target.value)}
+                placeholder="Search jobs"
+              />
+            </div>
+
+            <div className="em-pills">
+              <Pill
+                active={jobFilter === "all"}
+                onClick={() => setJobFilter("all")}
+              >
+                All
+              </Pill>
+              <Pill
+                active={jobFilter === "queued"}
+                onClick={() => setJobFilter("queued")}
+              >
+                Queued
+              </Pill>
+              <Pill
+                active={jobFilter === "sent"}
+                onClick={() => setJobFilter("sent")}
+              >
+                Sent
+              </Pill>
+              <Pill
+                active={jobFilter === "failed"}
+                onClick={() => setJobFilter("failed")}
+              >
+                Failed
+              </Pill>
+            </div>
+          </div>
+
+          <div className="em-list">
+            {!filteredJobs.length ? (
+              <div className="em-empty">
+                <div className="em-empty-title">No jobs yet</div>
+                <div className="em-empty-sub">
+                  Send an email to create your first job.
+                </div>
+              </div>
+            ) : (
+              filteredJobs.map((j) => (
+                <button
+                  key={j.id}
+                  type="button"
+                  className={`em-row ${activeJobId === j.id ? "is-active" : ""}`}
+                  onClick={async () => {
+                    setActiveJobId(j.id);
+                    await loadItems(j.id);
+                  }}
+                >
+                  <div className="em-row-top">
+                    <div className="em-row-subject">
+                      {j.subject || "(no subject)"}
+                    </div>
+                    <div
+                      className={`em-badge em-badge-${String(j.status || "queued")}`}
+                    >
+                      {j.status}
+                    </div>
+                  </div>
+
+                  <div className="em-row-bottom">
+                    <div className="em-row-meta">Job #{j.id}</div>
+                    <div className="em-row-time">{fmtDate(j.created_at)}</div>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+
+          <div className="em-left-foot">
+            <div className="em-foot-title">
+              {activeJob ? `Job #${activeJob.id}` : "Select a job"}
+            </div>
+            <div className="em-foot-sub">
+              {activeJob ? (
+                <>
+                  <span className="em-dot" /> {activeStats.total} recipients •{" "}
+                  {activeStats.queued} queued • {activeStats.sent} sent •{" "}
+                  {activeStats.failed} failed
+                </>
+              ) : (
+                "See recipients & delivery status here."
+              )}
+            </div>
+          </div>
+        </aside>
+
+        {/* RIGHT: Compose */}
+        <main className="em-right">
+          <section className="em-compose">
+            <div className="em-compose-head">
+              <div className="em-compose-title">New Message</div>
+
+              <div className="em-compose-tools">
+                <button
+                  type="button"
+                  className="em-iconbtn"
+                  onClick={() => {
+                    setBody("");
+                    setAttachments([]);
+                    showToast("success", "Cleared draft.");
+                  }}
+                  title="Clear draft"
+                >
+                  ⟲
+                </button>
+                <button
+                  type="button"
+                  className="em-iconbtn"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  title="Attach files"
+                >
+                  📎
+                </button>
+              </div>
+            </div>
+
+            <div className="em-fields">
+              <div className="em-line">
+                <div className="em-label">From</div>
+                <div className="em-chiprow">
+                  <span className="em-chip">
+                    <span className="em-chip-strong">{fromName}</span>
+                    <span className="em-chip-muted">&nbsp;•&nbsp;</span>
+                    <span className="em-chip-muted">{fromEmail}</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* ✅ To line with modes */}
+              <div className="em-line">
+                <div className="em-label">To</div>
+                <div
+                  className="em-chiprow"
+                  style={{ gap: 10, flexWrap: "wrap" }}
+                >
+                  <button
+                    type="button"
+                    className="em-toBtn"
+                    onClick={() => setToOpen((v) => !v)}
+                    title="Choose recipients"
+                  >
+                    {toLabel}
+                    <span className="em-toCaret">{toOpen ? "▴" : "▾"}</span>
+                  </button>
+
+                  {/* mode toggles */}
+                  <div
+                    style={{ display: "flex", gap: 8, alignItems: "center" }}
+                  >
+                    <button
+                      type="button"
+                      className={`em-chipbtn ${!manualMode ? "is-active" : ""}`}
+                      onClick={() => setRecipientsMode("members")}
+                      title="Pick from members list"
+                    >
+                      Members
+                    </button>
+                    <button
+                      type="button"
+                      className={`em-chipbtn ${manualMode ? "is-active" : ""}`}
+                      onClick={() => setRecipientsMode("manual")}
+                      title="Type email addresses manually"
+                    >
+                      Manual
+                    </button>
+                  </div>
+
+                  {!manualMode ? (
+                    !selectAll && selectedIds.length > 0 ? (
+                      <div className="em-toChips">
+                        {selectedMembers.slice(0, 6).map((m) => (
+                          <span key={m.id} className="em-miniChip">
+                            {m.name}
+                            <button
+                              type="button"
+                              className="em-miniChipX"
+                              onClick={() => removeSelected(m.id)}
+                              title="Remove"
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        ))}
+                        {selectedMembers.length > 6 ? (
+                          <span className="em-hint">
+                            +{selectedMembers.length - 6} more
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <span className="em-hint">
+                        Pick specific members or Select All
+                      </span>
+                    )
+                  ) : manualEmails.length ? (
+                    <div className="em-toChips">
+                      {manualEmails.slice(0, 6).map((e) => (
+                        <span key={e} className="em-miniChip">
+                          {e}
+                          <button
+                            type="button"
+                            className="em-miniChipX"
+                            onClick={() => removeManualEmail(e)}
+                            title="Remove"
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      ))}
+                      {manualEmails.length > 6 ? (
+                        <span className="em-hint">
+                          +{manualEmails.length - 6} more
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <span className="em-hint">
+                      Type an email (or multiple) and add
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* ✅ Dropdown / picker */}
+              {toOpen ? (
+                <div className="em-toPanel">
+                  {/* MANUAL MODE */}
+                  {manualMode ? (
+                    <>
+                      <div className="em-toPanelTop" style={{ gap: 10 }}>
+                        <div className="em-toSearch" style={{ flex: 1 }}>
+                          <span className="em-toSearchIco">✉</span>
+                          <input
+                            value={manualInput}
+                            onChange={(e) => setManualInput(e.target.value)}
+                            placeholder="Type emails (comma / space / newline separated)"
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                addManualFromInput();
+                              }
+                            }}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          className="em-btn"
+                          onClick={addManualFromInput}
+                        >
+                          Add
+                        </button>
+                      </div>
+
+                      <div className="em-toList">
+                        {manualEmails.length ? (
+                          manualEmails.map((e) => (
+                            <div
+                              key={e}
+                              className="em-toRow"
+                              style={{ display: "flex", alignItems: "center" }}
+                            >
+                              <div className="em-toRowText" style={{ flex: 1 }}>
+                                <div
+                                  className="em-toName"
+                                  style={{ fontWeight: 700 }}
+                                >
+                                  {e}
+                                </div>
+                                <div
+                                  className="em-toEmail"
+                                  style={{ opacity: 0.7 }}
+                                >
+                                  Manual recipient
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                className="em-btn"
+                                onClick={() => removeManualEmail(e)}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="em-toEmpty">
+                            Add a recipient above. Tip: paste a list of emails.
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="em-toPanelFoot">
+                        <div className="em-toCount">
+                          {manualEmails.length} recipients
+                        </div>
+                        <button
+                          type="button"
+                          className="em-btn"
+                          onClick={() => setToOpen(false)}
+                        >
+                          Done
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    /* MEMBERS MODE */
+                    <>
+                      <div className="em-toPanelTop">
+                        <div className="em-toSearch">
+                          <span className="em-toSearchIco">⌕</span>
+                          <input
+                            value={memberQuery}
+                            onChange={(e) => setMemberQuery(e.target.value)}
+                            placeholder="Search members by name or email"
+                          />
+                        </div>
+
+                        <div className="em-toActions">
+                          <button
+                            type="button"
+                            className={`em-chipbtn ${selectAll ? "is-active" : ""}`}
+                            onClick={() => setAllMembers(true)}
+                          >
+                            Select All
+                          </button>
+                          <button
+                            type="button"
+                            className={`em-chipbtn ${!selectAll ? "is-active" : ""}`}
+                            onClick={() => setAllMembers(false)}
+                          >
+                            Choose Members
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="em-toList">
+                        {membersLoading ? (
+                          <div className="em-toEmpty">Loading members…</div>
+                        ) : !members.length ? (
+                          <div className="em-toEmpty">
+                            No members loaded. Check your /api/admin/users
+                            endpoint.
+                          </div>
+                        ) : selectAll ? (
+                          <div className="em-toEmpty">
+                            Select All is enabled — every member with an email
+                            will receive this.
+                          </div>
+                        ) : !filteredMembers.length ? (
+                          <div className="em-toEmpty">No results.</div>
+                        ) : (
+                          filteredMembers.map((m) => {
+                            const checked = selectedIds.includes(m.id);
+                            return (
+                              <label key={m.id} className="em-toRow">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => toggleMember(m.id)}
+                                />
+                                <div className="em-toRowText">
+                                  <div className="em-toName">{m.name}</div>
+                                  <div className="em-toEmail">{m.email}</div>
+                                </div>
+                              </label>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      <div className="em-toPanelFoot">
+                        <div className="em-toCount">
+                          {selectAll
+                            ? "All Members"
+                            : `${selectedIds.length} selected`}
+                        </div>
+                        <button
+                          type="button"
+                          className="em-btn"
+                          onClick={() => setToOpen(false)}
+                        >
+                          Done
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ) : null}
+
+              <div className="em-line">
+                <div className="em-label">Subject</div>
+                <input
+                  className="em-input"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  placeholder="Subject"
+                />
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="em-editorOne">
+              <textarea
+                className="em-textarea"
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                placeholder="Write your message…"
+              />
+            </div>
+
+            {/* Attachments */}
+            <div className="em-attachbar">
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                style={{ display: "none" }}
+                onChange={(e) => uploadFiles(e.target.files)}
+              />
+
+              <div className="em-attach-left">
+                <button
+                  type="button"
+                  className="em-attachbtn"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                >
+                  {uploading ? "Uploading…" : "Add attachment"}
+                </button>
+
+                <div className="em-attachhint">Max 8 files • max 20MB each</div>
+              </div>
+
+              <div className="em-attachchips">
+                {attachments.map((a, idx) => (
+                  <div
+                    key={`${a.url}-${idx}`}
+                    className="em-filechip"
+                    title={a.url}
+                  >
+                    <div className="em-filechip-name">{a.name}</div>
+                    <div className="em-filechip-meta">{fmtBytes(a.size)}</div>
+                    <button
+                      type="button"
+                      className="em-filechip-x"
+                      onClick={() => removeAttachment(idx)}
+                      title="Remove"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="em-compose-foot">
+              <button
+                type="button"
+                className="em-send"
+                onClick={onSend}
+                disabled={sending}
+              >
+                {sending ? "Sending…" : "Send"}
+              </button>
+
+              <div className="em-mini">
+                <span className="em-mini-k">Status</span>
+                <span className="em-mini-v">
+                  {activeJob ? activeJob.status : "—"}
+                </span>
+              </div>
+            </div>
+          </section>
+
+          {/* Recipients table */}
+          <section className="em-details">
+            <div className="em-details-head">
+              <div className="em-details-title">Recipients</div>
+              <div className="em-details-sub">
+                {activeJob ? `Job #${activeJob.id}` : "No job selected"}
+              </div>
+            </div>
+
+            {!activeJobId ? (
+              <div className="em-details-empty">
+                Select a job on the left to view recipients and delivery status.
+              </div>
+            ) : itemsLoading ? (
+              <div className="em-details-empty">Loading recipients…</div>
+            ) : (
+              <div className="em-tablewrap">
+                <table className="em-table">
+                  <thead>
+                    <tr>
+                      <th>Email</th>
+                      <th>Status</th>
+                      <th>Error</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {jobItems.length ? (
+                      jobItems.map((it) => (
+                        <tr key={it.id}>
+                          <td className="em-td-email">{it.email}</td>
+                          <td>
+                            <span
+                              className={`em-pillstatus em-pillstatus-${it.status || "queued"}`}
+                            >
+                              {it.status}
+                            </span>
+                          </td>
+                          <td className="em-td-error">{it.error || ""}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={3} className="em-td-empty">
+                          No recipients found for this job.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </main>
+      </div>
+
+      {/* ✅ Delete confirmation modal */}
+      <ConfirmModal
+        open={confirm.open}
+        title={confirm.title}
+        message={confirm.message}
+        confirmText={confirm.mode === "force" ? "Force delete" : "Delete"}
+        cancelText="Cancel"
+        tone="danger"
+        busy={deleting}
+        onCancel={() => {
+          if (deleting) return;
+          setConfirm({ open: false, mode: "delete", title: "", message: "" });
+        }}
+        onConfirm={() => performDelete(confirm.mode === "force")}
+      />
+
+      <Toast toast={toast} onClose={() => setToast(null)} />
+    </div>
+  );
+}

@@ -366,7 +366,7 @@ export default function AccountHome() {
         </div>
 
         <div style={{ display: "flex", gap: 10 }}>
-          <Link className="btn" to="/pricing">
+          <Link className="btn" to="/subscribe">
             Upgrade
           </Link>
         </div>
@@ -402,6 +402,18 @@ export default function AccountHome() {
               <div>{nextBill}</div>
             </>
           )}
+        </div>
+
+        {/* Emails card */}
+        <div className="card" style={{ padding: 16 }}>
+          <h3 style={{ marginTop: 0 }}>Emails</h3>
+          <p style={{ margin: "0 0 12px", color: "#64748b", fontSize: 14 }}>
+            Choose which emails you get from us: live service reminders, new
+            sermons and announcements.
+          </p>
+          <Link className="btn" to="/email-preferences">
+            Email preferences
+          </Link>
         </div>
 
         {/* Usage card */}

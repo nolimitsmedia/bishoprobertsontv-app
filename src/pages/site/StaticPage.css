@@ -1,0 +1,96 @@
+/* src/pages/site/StaticPage.css */
+.sp-wrap {
+  min-height: 70vh;
+  color: rgba(255, 255, 255, 0.92);
+}
+.sp-loading,
+.sp-notfound {
+  padding: 40px 22px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.sp-hero {
+  position: relative;
+  min-height: 360px;
+  background-size: cover;
+  background-position: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.sp-heroOverlay {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      900px 600px at 15% 65%,
+      rgba(139, 92, 246, 0.35),
+      rgba(0, 0, 0, 0) 60%
+    ),
+    linear-gradient(to right, rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.35));
+}
+.sp-heroInner {
+  position: relative;
+  padding: 90px 22px 30px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.sp-heroInner h1 {
+  font-size: 44px;
+  margin: 0 0 10px;
+}
+.sp-heroInner p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.75);
+  max-width: 760px;
+}
+
+.sp-titleOnly {
+  padding: 40px 22px 8px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.sp-titleOnly h1 {
+  font-size: 38px;
+  margin: 0 0 10px;
+}
+.sp-titleOnly p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.sp-content {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 22px;
+  line-height: 1.8;
+  font-size: 16px;
+  color: rgba(255, 255, 255, 0.9);
+}
+.sp-content h1 {
+  font-size: 32px;
+  margin: 18px 0 10px;
+}
+.sp-content h2 {
+  font-size: 24px;
+  margin: 18px 0 10px;
+}
+.sp-content h3 {
+  font-size: 19px;
+  margin: 16px 0 10px;
+}
+.sp-content a {
+  color: rgba(167, 139, 250, 1);
+  text-decoration: underline;
+}
+.sp-content img {
+  max-width: 100%;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.sp-content blockquote {
+  margin: 14px 0;
+  padding: 12px 14px;
+  border-left: 3px solid rgba(139, 92, 246, 0.9);
+  background: rgba(139, 92, 246, 0.1);
+  border-radius: 12px;
+}

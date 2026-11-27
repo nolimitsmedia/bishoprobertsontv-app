@@ -2,6 +2,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import api from "../../api";
 import "./Calendar.css";
+import "./CalendarModern.css";
+import { chooseDialog, confirmDialog } from "../../components/ui/Dialogs";
 
 /**
  * Admin Calendar (Uscreen-style scheduling)
@@ -27,21 +29,63 @@ function toISODate(d) {
   return `${x.getFullYear()}-${pad2(x.getMonth() + 1)}-${pad2(x.getDate())}`;
 }
 
+/* ---------------------------------------------------------------------------
+   Times are the church's time zone (Eastern), whatever the computer is set to.
+   Before: a computer in another country typed and showed its own time — e.g.
+   "10:00 AM" typed in Manila became 9 PM Eastern the day before.
+--------------------------------------------------------------------------- */
+const CAL_TZ = process.env.REACT_APP_CALENDAR_TIMEZONE || "America/New_York";
+const CAL_TZ_LABEL = CAL_TZ === "America/New_York" ? "ET" : CAL_TZ;
+const tzFmt = new Intl.DateTimeFormat("en-US", {
+  timeZone: CAL_TZ,
+  hourCycle: "h23",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+function tzParts(d) {
+  const p = {};
+  for (const x of tzFmt.formatToParts(new Date(d))) p[x.type] = x.value;
+  return {
+    y: Number(p.year),
+    m: Number(p.month),
+    d: Number(p.day),
+    hh: Number(p.hour) % 24,
+    mi: Number(p.minute),
+  };
+}
+// "YYYY-MM-DD" of an instant, in the church's time zone
+function tzDateKey(d) {
+  const p = tzParts(d);
+  return `${p.y}-${pad2(p.m)}-${pad2(p.d)}`;
+}
+// the instant for a wall-clock time in the church's time zone (handles DST)
+function tzToInstant(y, m, d, hh, mi) {
+  const want = Date.UTC(y, m - 1, d, hh, mi);
+  let t = want;
+  for (let i = 0; i < 3; i += 1) {
+    const p = tzParts(t);
+    const diff = want - Date.UTC(p.y, p.m - 1, p.d, p.hh, p.mi);
+    if (!diff) break;
+    t += diff;
+  }
+  return new Date(t);
+}
+
 function toLocalInputValue(d) {
   if (!d) return "";
   const x = new Date(d);
-  const yyyy = x.getFullYear();
-  const mm = pad2(x.getMonth() + 1);
-  const dd = pad2(x.getDate());
-  const hh = pad2(x.getHours());
-  const mi = pad2(x.getMinutes());
-  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+  if (Number.isNaN(x.getTime())) return "";
+  const p = tzParts(x);
+  return `${p.y}-${pad2(p.m)}-${pad2(p.d)}T${pad2(p.hh)}:${pad2(p.mi)}`;
 }
 
 function fromLocalInputValue(v) {
-  if (!v) return null;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  const m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!m) return null;
+  return tzToInstant(+m[1], +m[2], +m[3], +m[4], +m[5]).toISOString();
 }
 
 function startOfMonth(date) {
@@ -71,14 +115,6 @@ function addDays(date, n) {
   return d;
 }
 
-function sameDay(a, b) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
-
 function niceMonthTitle(d) {
   return d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
 }
@@ -93,6 +129,26 @@ function niceDayTitle(d) {
 
 function sortByStartAsc(a, b) {
   return new Date(a.start_at).getTime() - new Date(b.start_at).getTime();
+}
+
+// "10:00 AM" in the church's time zone, for the event chips
+function chipTime(iso) {
+  const d = new Date(iso || "");
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: CAL_TZ,
+  });
+}
+// today's month/day in the church's time zone, for the date badge
+function todayBadge() {
+  const p = tzParts(new Date());
+  const mon = new Date(Date.UTC(p.y, p.m - 1, p.d)).toLocaleDateString(
+    "en-US",
+    { month: "short", timeZone: "UTC" },
+  );
+  return { mon: mon.toUpperCase(), day: p.d };
 }
 
 const TYPE_OPTIONS = [
@@ -347,9 +403,13 @@ const DOW = [
 
 function guessByWeekdayFromStart(localStartAt) {
   try {
-    const d = new Date(localStartAt);
+    // weekday of the typed (Eastern) date itself
+    const m = String(localStartAt || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const d = m
+      ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]))
+      : new Date(localStartAt);
     const map = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
-    const k = map[d.getDay()];
+    const k = map[m ? d.getUTCDay() : d.getDay()];
     return k ? [k] : ["SU"];
   } catch {
     return ["SU"];
@@ -461,7 +521,7 @@ export default function Calendar() {
     const map = new Map();
     for (const ev of events) {
       const start = new Date(ev.start_at);
-      const key = toISODate(start);
+      const key = tzDateKey(start); // the event's Eastern date
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(ev);
     }
@@ -484,24 +544,24 @@ export default function Calendar() {
   }
 
   function openCreateForDay(day) {
-    const start = new Date(day);
-    start.setHours(19, 0, 0, 0);
-    const end = new Date(start);
-    end.setHours(end.getHours() + 1);
+    // 7:00–8:00 PM Eastern on the clicked date
+    const dateKey = toISODate(day);
+    const start = `${dateKey}T19:00`;
+    const end = `${dateKey}T20:00`;
 
     setEditing(null);
     setForm({
       title: "",
       type: "live",
-      start_at: toLocalInputValue(start),
-      end_at: toLocalInputValue(end),
+      start_at: start,
+      end_at: end,
       video_id: "",
       category_id: "",
       notes: "",
     });
 
     resetRecurrenceUI();
-    setRepeatByWeekday(guessByWeekdayFromStart(toLocalInputValue(start)));
+    setRepeatByWeekday(guessByWeekdayFromStart(start));
 
     setModalOpen(true);
   }
@@ -577,7 +637,7 @@ export default function Calendar() {
       const editingSeriesId = editing ? getSeriesId(editing) : null;
       const occurrenceDate =
         (editing && getOccurrenceDate(editing)) ||
-        (payload.start_at ? toISODate(payload.start_at) : null);
+        (payload.start_at ? tzDateKey(payload.start_at) : null);
 
       // editing occurrence from series
       if (editing?.id && editingSeriesId) {
@@ -683,14 +743,22 @@ export default function Calendar() {
     const seriesId = getSeriesId(editing);
     const occurrenceDate =
       getOccurrenceDate(editing) ||
-      (editing?.start_at ? toISODate(editing.start_at) : null);
+      (editing?.start_at ? tzDateKey(editing.start_at) : null);
 
     if (seriesId) {
-      // eslint-disable-next-line no-alert
-      const choice = window.prompt(
-        "Type one:\n\n1) occurrence  — delete only this date\n2) series      — delete entire recurring series\n\n(Enter: occurrence / series)",
-        "occurrence",
-      );
+      const choice = await chooseDialog({
+        title: "Delete a recurring event",
+        message: "This event repeats. What should be deleted?",
+        options: [
+          { value: "occurrence", label: "Only this date" },
+          { value: "future", label: "This and all future dates" },
+          {
+            value: "series",
+            label: "The entire series (past dates too)",
+            danger: true,
+          },
+        ],
+      });
 
       const c = String(choice || "")
         .trim()
@@ -699,17 +767,18 @@ export default function Calendar() {
 
       setSaving(true);
       try {
-        if (c === "series") {
-          const ok = window.confirm("Delete the entire recurring series?");
-          if (!ok) return;
-
+        if (c === "future") {
+          // ends the series the day before this date; past dates stay
+          const res = await api.post(`/admin/calendar/series/${seriesId}/end`, {
+            date: occurrenceDate,
+          });
+          if (!res?.data?.ok)
+            throw new Error(res?.data?.message || "Could not end the series");
+        } else if (c === "series") {
           const res = await api.delete(`/admin/calendar/series/${seriesId}`);
           if (!res?.data?.ok)
             throw new Error(res?.data?.message || "Delete failed");
         } else {
-          const ok = window.confirm("Delete only this occurrence?");
-          if (!ok) return;
-
           const res = await api.post(
             `/admin/calendar/series/${seriesId}/exceptions`,
             { date: occurrenceDate, action: "skip" },
@@ -733,7 +802,7 @@ export default function Calendar() {
       return;
     }
 
-    if (!window.confirm("Delete this scheduled item?")) return;
+    if (!(await confirmDialog("Delete this scheduled item?"))) return;
 
     setSaving(true);
     try {
@@ -772,8 +841,6 @@ export default function Calendar() {
   }
 
   const isMonthView = view === "month";
-  const todayDate = new Date();
-  todayDate.setHours(0, 0, 0, 0);
 
   const rangeLabel =
     view === "week"
@@ -781,6 +848,16 @@ export default function Calendar() {
       : niceMonthTitle(cursor);
 
   const hasSeries = !!(editing && getSeriesId(editing));
+
+  // Escape closes the event editor (expected from a dialog; keyboard users)
+  useEffect(() => {
+    if (!modalOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") setModalOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [modalOpen]);
 
   useEffect(() => {
     if (!modalOpen) return;
@@ -877,69 +954,72 @@ export default function Calendar() {
   return (
     <div className="cal-page">
       <div className="cal-wrap">
-        <div className="cal-top">
-          <div className="cal-topLeft">
-            <div className="cal-kicker">ADMIN</div>
-            <h1 className="cal-title">Calendar</h1>
-            <p className="cal-sub">
-              Schedule live streams, premieres, and content drops.
-            </p>
-          </div>
-
-          <div className="cal-controls">
-            <button className="cal-btn cal-btn--ghost" onClick={today}>
-              Today
-            </button>
-            <button
-              className="cal-btn cal-btn--ghost"
-              onClick={prev}
-              aria-label="Previous"
-            >
-              ←
-            </button>
-            <button
-              className="cal-btn cal-btn--ghost"
-              onClick={next}
-              aria-label="Next"
-            >
-              →
-            </button>
-
-            <div className="cal-sep" />
-
-            <button
-              className={`cal-btn ${
-                view === "month" ? "cal-btn--primary" : "cal-btn--ghost"
-              }`}
-              onClick={() => setView("month")}
-            >
-              Month
-            </button>
-            <button
-              className={`cal-btn ${
-                view === "week" ? "cal-btn--primary" : "cal-btn--ghost"
-              }`}
-              onClick={() => setView("week")}
-            >
-              Week
-            </button>
-          </div>
-        </div>
-
-        <div className="cal-bar">
-          <div className="cal-rangeTitle">{rangeLabel}</div>
-
-          <div className="cal-barRight">
-            <div className="cal-statPill">
-              <span className="cal-statLabel">Items</span>
-              <span className="cal-statValue">{events.length}</span>
+        <div className="calm-top">
+          <div className="calm-head">
+            <div className="calm-badge" aria-hidden="true">
+              <span>{todayBadge().mon}</span>
+              <strong>{todayBadge().day}</strong>
             </div>
+            <div>
+              <div className="calm-kicker">Calendar</div>
+              <h1 className="calm-title">{rangeLabel}</h1>
+              <p className="calm-sub">
+                {view === "week" ? "Week view" : "Month view"} · {events.length}{" "}
+                scheduled · All times Eastern ({CAL_TZ_LABEL})
+              </p>
+            </div>
+          </div>
 
+          <div className="calm-tools">
+            <div
+              className="calm-seg"
+              role="group"
+              aria-label="Move through the calendar"
+            >
+              <button
+                type="button"
+                onClick={prev}
+                aria-label={
+                  view === "week" ? "Previous week" : "Previous month"
+                }
+              >
+                ‹
+              </button>
+              <button type="button" onClick={today}>
+                Today
+              </button>
+              <button
+                type="button"
+                onClick={next}
+                aria-label={view === "week" ? "Next week" : "Next month"}
+              >
+                ›
+              </button>
+            </div>
+            <div className="calm-seg" role="group" aria-label="View">
+              <button
+                type="button"
+                aria-pressed={view === "month"}
+                className={view === "month" ? "is-on" : ""}
+                onClick={() => setView("month")}
+              >
+                Month
+              </button>
+              <button
+                type="button"
+                aria-pressed={view === "week"}
+                className={view === "week" ? "is-on" : ""}
+                onClick={() => setView("week")}
+              >
+                Week
+              </button>
+            </div>
             <button
-              className="cal-btn cal-btn--primary"
+              type="button"
+              className="calm-add"
               onClick={() => openCreateForDay(new Date())}
             >
-              + New schedule
+              <span aria-hidden="true">+</span> Add event
             </button>
           </div>
         </div>
@@ -976,7 +1056,8 @@ export default function Calendar() {
                   const iso = toISODate(day);
                   const list = eventsByDay.get(iso) || [];
                   const inMonth = day.getMonth() === cursor.getMonth();
-                  const isToday = sameDay(day, todayDate);
+                  // "today" in the church's time zone, like every time on this page
+                  const isToday = iso === tzDateKey(new Date());
 
                   return (
                     <div
@@ -995,10 +1076,14 @@ export default function Calendar() {
                       title="Click to schedule"
                     >
                       <div className="cal-cellTop">
-                        <div className="cal-dayNum">{day.getDate()}</div>
-                        {list.length ? (
-                          <div className="cal-dayCount">{list.length}</div>
-                        ) : null}
+                        <div
+                          className="cal-dayNum"
+                          aria-label={
+                            isToday ? `${day.getDate()}, today` : undefined
+                          }
+                        >
+                          {day.getDate()}
+                        </div>
                       </div>
 
                       <div className="cal-pills">
@@ -1010,12 +1095,18 @@ export default function Calendar() {
                               e.stopPropagation();
                               openEdit(ev);
                             }}
-                            title={ev.title}
+                            title={`${ev.title || "Untitled"} · ${chipTime(ev.start_at)} ${CAL_TZ_LABEL}`}
                           >
-                            <span className="cal-pillDot" />
                             <span className="cal-pillText">
                               {ev.title || "Untitled"}
-                              {getSeriesId(ev) ? "  ↻" : ""}
+                            </span>
+                            <span className="cal-pillTime">
+                              {getSeriesId(ev) ? (
+                                <span aria-label="repeats" title="Repeats">
+                                  ↻{" "}
+                                </span>
+                              ) : null}
+                              {chipTime(ev.start_at)}
                             </span>
                           </button>
                         ))}
@@ -1083,7 +1174,9 @@ export default function Calendar() {
                               day: "numeric",
                               hour: "2-digit",
                               minute: "2-digit",
-                            })}
+                              timeZone: CAL_TZ,
+                            })}{" "}
+                            {CAL_TZ_LABEL}
                           </div>
                         </div>
                       </button>

@@ -8,8 +8,7 @@
   --muted: #64748b;
   --border: #e6e9ef;
   --surface: #ffffff;
-  --accent: #1677ff;
-
+  --accent: #7312ad;
   --side-bg: #030104;
   --side-ink: #334155;
   --side-muted: #94a3b8;
@@ -60,12 +59,29 @@ body {
   padding: 14px 14px 10px;
   border-right: 1px solid var(--border);
   z-index: 40; /* above dim */
+  overflow: hidden; /* prevent content from expanding sidebar width */
+  width: var(--side-w); /* enforce fixed width at all times */
+  max-width: var(--side-w); /* hard cap so a large image cannot push it wider */
 }
 .us-brand {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 6px 8px;
+  overflow: hidden; /* clip oversized image during flash */
+  min-height: 60px; /* reserve space so layout does not jump */
+}
+
+/* Lock logo size in every sidebar context — prevents flash-of-huge-image on refresh */
+.us-brand img,
+.us-brandDesktop img,
+.pl-logo img {
+  height: 50px;
+  width: auto;
+  max-width: 100%;
+  display: block;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 .us-dot {
   width: 32px;
@@ -578,6 +594,8 @@ body {
 /* Desktop brand block hidden on mobile */
 .us-brandDesktop {
   display: block;
+  overflow: hidden; /* extra guard against image overflow on refresh */
+  max-width: 100%; /* never wider than the sidebar */
 }
 
 /* Mobile behavior */

@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../../api";
+import { confirmDialog } from "../../components/ui/Dialogs";
+import { InstallAppButton, InstallAppStatus } from "../../pwa/InstallApp";
+import { SITE } from "../../config/site";
 
 /* icons */
 const IconApple = ({ size = 16 }) => (
@@ -78,7 +81,7 @@ export default function MobileTVApps() {
   // activation state
   const [code, setCode] = useState("");
   const [expiresAt, setExpiresAt] = useState(null);
-  const [tick, setTick] = useState(0); // just to force re-renders
+  const [, setTick] = useState(0); // just to force re-renders
   const [activating, setActivating] = useState(false);
   const tickRef = useRef(null);
 
@@ -86,7 +89,7 @@ export default function MobileTVApps() {
   const secondsLeft = expiresAt
     ? Math.max(
         0,
-        Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000)
+        Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000),
       )
     : 0;
 
@@ -142,7 +145,7 @@ export default function MobileTVApps() {
       console.error("activation start error:", e);
       setErr(
         e?.response?.data?.message ||
-          "Could not generate an activation code. Please try again."
+          "Could not generate an activation code. Please try again.",
       );
     } finally {
       setActivating(false);
@@ -150,7 +153,7 @@ export default function MobileTVApps() {
   }
 
   async function revoke(id) {
-    if (!window.confirm("Remove this device?")) return;
+    if (!(await confirmDialog("Remove this device?"))) return;
     try {
       await api.delete(`/devices/${id}`);
       await loadDevices();
@@ -178,6 +181,10 @@ export default function MobileTVApps() {
         }
         .store-btn:hover { background:#f8fafc; border-color:#dbe3ef; }
         .store-btn:active { transform: translateY(.5px); }
+        .store-btn--soon { font: inherit; font-weight: 700; cursor: default; opacity: .85; }
+        .store-btn--soon:hover { background: #ffffff; border-color: #e2e8f0; }
+        .store-btn--soon:active { transform: none; }
+        .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
         .store-icon { width:16px; height:16px; opacity:.9; }
 
         .tv-card {
@@ -226,37 +233,56 @@ export default function MobileTVApps() {
         <div>
           <h3 style={{ marginTop: 0 }}>Mobile & TV apps</h3>
           <div className="stores">
-            <a
-              className="store-btn"
-              href="#"
-              onClick={(e) => e.preventDefault()}
+            {/* the apps aren't published yet: a disabled button, not a link to nowhere */}
+            <button
+              type="button"
+              className="store-btn store-btn--soon"
+              disabled
+              title="Coming soon"
             >
-              <span className="store-icon">
+              <span className="store-icon" aria-hidden="true">
                 <IconApple />
               </span>
               iOS App Store
-            </a>
-            <a
-              className="store-btn"
-              href="#"
-              onClick={(e) => e.preventDefault()}
+              <span className="sr-only"> (coming soon)</span>
+            </button>
+            {/* the apps aren't published yet: a disabled button, not a link to nowhere */}
+            <button
+              type="button"
+              className="store-btn store-btn--soon"
+              disabled
+              title="Coming soon"
             >
-              <span className="store-icon">
+              <span className="store-icon" aria-hidden="true">
                 <IconGooglePlay />
               </span>
               Google Play
-            </a>
-            <a
-              className="store-btn"
-              href="#"
-              onClick={(e) => e.preventDefault()}
+              <span className="sr-only"> (coming soon)</span>
+            </button>
+            {/* the apps aren't published yet: a disabled button, not a link to nowhere */}
+            <button
+              type="button"
+              className="store-btn store-btn--soon"
+              disabled
+              title="Coming soon"
             >
-              <span className="store-icon">
+              <span className="store-icon" aria-hidden="true">
                 <IconAppleTV />
               </span>
               Apple TV
-            </a>
+              <span className="sr-only"> (coming soon)</span>
+            </button>
           </div>
+          <h3 style={{ marginTop: 20 }}>On this device</h3>
+          <p style={{ margin: "0 0 10px" }}>
+            Add {SITE.shortName} to your home screen. It opens full screen, like
+            an app.
+          </p>
+          <InstallAppButton
+            className="btn primary"
+            label={`Install the ${SITE.shortName} app`}
+          />
+          <InstallAppStatus />
         </div>
 
         <div>

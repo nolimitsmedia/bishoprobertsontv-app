@@ -61,19 +61,23 @@ export function clearToken() {
 }
 
 /* -------------------- Axios Instances -------------------- */
+const COMMON_HEADERS = {
+  Accept: "application/json",
+  "X-Requested-With": "XMLHttpRequest",
+};
+
+// ✅ Increase timeout for slow admin ops (scan/list/import)
 export const api = axios.create({
   baseURL: API_BASE,
   withCredentials: false,
-  headers: {
-    Accept: "application/json",
-    "X-Requested-With": "XMLHttpRequest",
-  },
+  timeout: 120000, // 120 seconds (was 15 seconds)
+  headers: COMMON_HEADERS,
 });
 
 export const uploadApi = axios.create({
   baseURL: API_BASE,
   withCredentials: false,
-  timeout: 0,
+  timeout: 0, // keep unlimited for large uploads (your choice)
   headers: {
     Accept: "application/json",
   },
@@ -91,6 +95,12 @@ uploadApi.interceptors.request.use(attachAuth);
 
 function onResponseError(err) {
   const status = err?.response?.status;
+
+  // ✅ if backend never responded (timeout / network)
+  if (err?.code === "ECONNABORTED") {
+    console.error("[api] Request timed out:", err?.config?.url);
+  }
+
   if (status === 401) clearToken();
   return Promise.reject(err);
 }

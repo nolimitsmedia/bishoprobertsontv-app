@@ -11,19 +11,6 @@ function clamp(n, a, b) {
   return Math.max(a, Math.min(b, n));
 }
 
-function fmtBytes(bytes = 0) {
-  const b = Math.max(0, Number(bytes) || 0);
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let n = b;
-  let i = 0;
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024;
-    i++;
-  }
-  const digits = i === 0 ? 0 : i === 1 ? 1 : 2;
-  return `${n.toFixed(digits)} ${units[i]}`;
-}
-
 function Badge({ children, tone = "gray" }) {
   return <span className={`wip-badge wip-${tone}`}>{children}</span>;
 }
@@ -56,48 +43,8 @@ function Toast({ toast, onClose }) {
   );
 }
 
-function ProgressBar({
-  label,
-  percent = 0,
-  tone = "blue",
-  indeterminate = false,
-}) {
-  const p = clamp(Number(percent) || 0, 0, 100);
-
-  const pctText = (() => {
-    if (indeterminate) return "";
-    if (p >= 100) return "100%";
-    return `${p.toFixed(1)}%`;
-  })();
-
-  return (
-    <div className="wip-progress">
-      <div className="wip-progress-top">
-        <div className="wip-progress-label">{label}</div>
-        {!indeterminate ? (
-          <div className="wip-progress-pct">{pctText}</div>
-        ) : null}
-      </div>
-      <div className={`wip-progress-track wip-progress-${tone}`}>
-        <div
-          className={`wip-progress-fill ${
-            indeterminate ? "wip-progress-indeterminate" : ""
-          }`}
-          style={indeterminate ? undefined : { width: `${p}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
 function connConfig(c) {
   return (c && (c.config || c.meta)) || {};
-}
-
-function basenameKey(key = "") {
-  const s = String(key || "");
-  const parts = s.split("/");
-  return parts[parts.length - 1] || s;
 }
 
 /* -----------------------------
@@ -177,7 +124,7 @@ export default function WasabiImporterPage() {
   const [loading, setLoading] = useState(false);
   const [connections, setConnections] = useState([]);
 
-  const [categories, setCategories] = useState([]);
+  const [, setCategories] = useState([]);
 
   // Wasabi form
   const [wMeta, setWMeta] = useState({
@@ -206,30 +153,14 @@ export default function WasabiImporterPage() {
 
   // Job
   const [job, setJob] = useState(null);
-  const [jobCounts, setJobCounts] = useState(null);
-  const [jobLoading, setJobLoading] = useState(false);
+  const [, setJobCounts] = useState(null);
 
-  // UI phase flags for progress
-  const [scanBusy, setScanBusy] = useState(false);
-  const [startBusy, setStartBusy] = useState(false);
-
-  const [jobForm, setJobForm] = useState({
-    mode: "remote", // remote | copy_to_bunny
-    prefix: "drm",
-    visibility: "private", // private | unlisted | public
-    category_id: "",
-    default_title_mode: "filename_no_ext", // filename_no_ext | filename
-  });
-
-  const [scanLimit, setScanLimit] = useState(1000);
-  const [scanResult, setScanResult] = useState(null);
-
-  const [items, setItems] = useState([]);
-  const [itemsStatus, setItemsStatus] = useState("failed");
-  const [itemsLimit, setItemsLimit] = useState(200);
+  const [, setItems] = useState([]);
+  const [itemsStatus] = useState("failed");
+  const [itemsLimit] = useState(200);
 
   // Selection (for manual import)
-  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [, setSelectedIds] = useState(() => new Set());
 
   // When user starts “Start Selected”, we track an explicit run plan
   const [runPlan, setRunPlan] = useState(null);
@@ -405,46 +336,6 @@ export default function WasabiImporterPage() {
         `${provider} disconnect failed`,
         e?.response?.data?.message || e?.message || "Disconnect failed",
       );
-    }
-  }
-
-  async function createJob() {
-    setJobLoading(true);
-    try {
-      const body = {
-        mode: jobForm.mode,
-        prefix: jobForm.prefix,
-        visibility: jobForm.visibility,
-        default_title_mode: jobForm.default_title_mode,
-      };
-
-      if (String(jobForm.category_id || "").trim()) {
-        body.category_id = Number(jobForm.category_id);
-      }
-
-      const r = await api.post("/admin/import-jobs", body);
-      setJob(r.data?.job || null);
-      prevJobStatusRef.current = r.data?.job?.status || null;
-
-      setScanResult(null);
-      setItems([]);
-      setSelectedIds(new Set());
-
-      setRunPlan(null);
-      setSelectedSnapshot([]);
-      saveRunPlan(r.data?.job?.id, null);
-      saveRunSnapshot(r.data?.job?.id, null);
-
-      showToast("success", "Job created", `Job #${r.data?.job?.id}`);
-      await refreshJob(r.data?.job?.id, { silent: true });
-    } catch (e) {
-      showToast(
-        "error",
-        "Create job failed",
-        e?.response?.data?.message || e?.message || "Server error",
-      );
-    } finally {
-      setJobLoading(false);
     }
   }
 
@@ -691,187 +582,6 @@ export default function WasabiImporterPage() {
     if (!silent) showToast("success", "Refreshed", `Job #${jobId} updated`);
   }
 
-  async function scanJob() {
-    if (!job?.id) return showToast("error", "No job", "Create a job first.");
-    setJobLoading(true);
-    setScanBusy(true);
-    try {
-      const body = {
-        prefix: jobForm.prefix,
-        limit: clamp(Number(scanLimit) || 1000, 1, 1000),
-      };
-      const r = await api.post(`/admin/import-jobs/${job.id}/scan`, body);
-
-      setScanResult(r.data || null);
-      showToast(
-        "success",
-        "Scan complete",
-        `Inserted: ${r.data?.inserted ?? 0}`,
-      );
-
-      await refreshJob(job.id, { silent: true });
-
-      setItemsStatus("queued");
-      await loadItems(job.id, { silent: true, nextStatus: "queued" });
-    } catch (e) {
-      showToast(
-        "error",
-        "Scan failed",
-        e?.response?.data?.message || e?.message || "Server error",
-      );
-    } finally {
-      setScanBusy(false);
-      setJobLoading(false);
-    }
-  }
-
-  async function startJob() {
-    if (!job?.id) return showToast("error", "No job", "Create a job first.");
-    setJobLoading(true);
-    setStartBusy(true);
-    try {
-      setRunPlan(null);
-      setSelectedSnapshot([]);
-      saveRunPlan(job.id, null);
-      saveRunSnapshot(job.id, null);
-
-      await api.post(`/admin/import-jobs/${job.id}/start`);
-      showToast("success", "Job started", `Job #${job.id} running`);
-      await refreshJob(job.id, { silent: true });
-    } catch (e) {
-      showToast(
-        "error",
-        "Start failed",
-        e?.response?.data?.message || e?.message || "Server error",
-      );
-    } finally {
-      setStartBusy(false);
-      setJobLoading(false);
-    }
-  }
-
-  async function startSelected() {
-    if (!job?.id) return showToast("error", "No job", "Create a job first.");
-
-    const ids = Array.from(selectedIds || [])
-      .map((n) => Number(n))
-      .filter(Boolean);
-
-    if (!ids.length)
-      return showToast("error", "No selection", "Select at least 1 file.");
-
-    setJobLoading(true);
-    setStartBusy(true);
-    try {
-      // Baseline job bytes so progress is accurate even if job ran before
-      const baseJobBytesCopied = Number(job?.totals?.bytes_copied || 0);
-      const baseJobBytesTotal = Number(job?.totals?.bytes_total || 0);
-
-      // Compute selected bytesTotal on the frontend
-      let bytesTotal = 0;
-      try {
-        const selectedItems = await fetchItemsByIds(job.id, ids);
-        bytesTotal = (selectedItems || []).reduce(
-          (sum, it) => sum + (Number(it?.source_size_bytes) || 0),
-          0,
-        );
-
-        // Prime snapshot with actual rows
-        if (selectedItems?.length) {
-          setSelectedSnapshot(selectedItems);
-          saveRunSnapshot(job.id, selectedItems);
-        } else {
-          const primed = ids.map((id) => ({
-            id,
-            status: "queued",
-            source_key: "",
-          }));
-          setSelectedSnapshot(primed);
-          saveRunSnapshot(job.id, primed);
-        }
-      } catch {
-        const primed = ids.map((id) => ({
-          id,
-          status: "queued",
-          source_key: "",
-        }));
-        setSelectedSnapshot(primed);
-        saveRunSnapshot(job.id, primed);
-      }
-
-      const plan = {
-        jobId: job.id,
-        total: ids.length,
-        ids,
-        startedAt: Date.now(),
-        mode: jobForm.mode,
-        bytesTotal,
-        baseJobBytesCopied,
-        baseJobBytesTotal,
-      };
-
-      setRunPlan(plan);
-      saveRunPlan(job.id, plan);
-
-      await api.post(`/admin/import-jobs/${job.id}/start`, { item_ids: ids });
-      showToast("success", "Job started", `Selected: ${ids.length}`);
-
-      await refreshSelectedSnapshot(job.id, plan);
-      await refreshJob(job.id, { silent: true });
-    } catch (e) {
-      showToast(
-        "error",
-        "Start selected failed",
-        e?.response?.data?.message || e?.message || "Server error",
-      );
-    } finally {
-      setStartBusy(false);
-      setJobLoading(false);
-    }
-  }
-
-  async function pauseJob() {
-    if (!job?.id) return;
-    setJobLoading(true);
-    try {
-      await api.post(`/admin/import-jobs/${job.id}/pause`);
-      showToast("success", "Paused", `Job #${job.id} paused`);
-      await refreshJob(job.id, { silent: true });
-    } catch (e) {
-      showToast(
-        "error",
-        "Pause failed",
-        e?.response?.data?.message || e?.message || "Server error",
-      );
-    } finally {
-      setJobLoading(false);
-    }
-  }
-
-  async function cancelJob() {
-    if (!job?.id) return;
-    setJobLoading(true);
-    try {
-      await api.post(`/admin/import-jobs/${job.id}/cancel`);
-      showToast("success", "Canceled", `Job #${job.id} canceled`);
-
-      setRunPlan(null);
-      setSelectedSnapshot([]);
-      saveRunPlan(job.id, null);
-      saveRunSnapshot(job.id, null);
-
-      await refreshJob(job.id, { silent: true });
-    } catch (e) {
-      showToast(
-        "error",
-        "Cancel failed",
-        e?.response?.data?.message || e?.message || "Server error",
-      );
-    } finally {
-      setJobLoading(false);
-    }
-  }
-
   async function loadItems(jobId, { silent = false, nextStatus = null } = {}) {
     if (!jobId) return;
     try {
@@ -916,177 +626,6 @@ export default function WasabiImporterPage() {
       }
     }
   }
-
-  function canCreateCopyToBunny() {
-    if (jobForm.mode !== "copy_to_bunny") return true;
-    return !!activeBunny;
-  }
-
-  const allVisibleIds = useMemo(
-    () => (items || []).map((x) => x.id).filter(Boolean),
-    [items],
-  );
-
-  const allVisibleSelected = useMemo(() => {
-    if (!allVisibleIds.length) return false;
-    for (const id of allVisibleIds) {
-      if (!selectedIds.has(id)) return false;
-    }
-    return true;
-  }, [allVisibleIds, selectedIds]);
-
-  function toggleSelectAllVisible() {
-    setSelectedIds((prev) => {
-      const next = new Set(prev || []);
-      if (allVisibleSelected) {
-        allVisibleIds.forEach((id) => next.delete(id));
-      } else {
-        allVisibleIds.forEach((id) => next.add(id));
-      }
-      return next;
-    });
-  }
-
-  function selectNoneVisible() {
-    setSelectedIds((prev) => {
-      const next = new Set(prev || []);
-      allVisibleIds.forEach((id) => next.delete(id));
-      return next;
-    });
-  }
-
-  function toggleRow(id) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev || []);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function clearSelectedProgress() {
-    if (!job?.id) return;
-    setRunPlan(null);
-    setSelectedSnapshot([]);
-    saveRunPlan(job.id, null);
-    saveRunSnapshot(job.id, null);
-    showToast("info", "Cleared", "Selected progress cleared for this job.");
-  }
-
-  const jobProgressInfo = useMemo(() => {
-    const completed = Number(
-      jobCounts?.completed ?? job?.totals?.completed ?? 0,
-    );
-    const failed = Number(jobCounts?.failed ?? job?.totals?.failed ?? 0);
-    const skipped = Number(jobCounts?.skipped ?? job?.totals?.skipped ?? 0);
-    const pending = Number(jobCounts?.pending ?? 0);
-
-    const total = Math.max(0, completed + failed + skipped + pending);
-    const done = Math.max(0, completed + failed + skipped);
-
-    const status = String(job?.status || "");
-    let percent = total > 0 ? (done / total) * 100 : 0;
-
-    if (status !== "completed") percent = Math.min(percent, 99.9);
-    else if (total > 0) percent = 100;
-
-    return { completed, failed, skipped, pending, total, done, percent };
-  }, [jobCounts, job]);
-
-  const selectedProgressInfo = useMemo(() => {
-    if (!runPlan?.ids?.length || runPlan.jobId !== job?.id) return null;
-
-    const total = Number(runPlan.total || runPlan.ids.length || 0);
-    const terminals = new Set(["completed", "failed", "skipped"]);
-    const activeOrder = [
-      "importing",
-      "copying",
-      "validating",
-      "retrying",
-      "queued",
-    ];
-
-    const byId = new Map((selectedSnapshot || []).map((x) => [x.id, x]));
-    const list = runPlan.ids.map((id) => byId.get(id)).filter(Boolean);
-
-    const done = list.filter((x) => terminals.has(String(x.status))).length;
-
-    let current = null;
-    for (const st of activeOrder) {
-      current = list.find((x) => String(x.status) === st);
-      if (current) break;
-    }
-
-    const remaining = Math.max(0, total - done);
-    let percent = total > 0 ? (done / total) * 100 : 0;
-
-    if (total > 0 && done >= total) percent = 100;
-    else percent = clamp(percent, 0, 99.9);
-
-    // selected bytes progress (copy_to_bunny only)
-    const bytesTotal = Math.max(0, Number(runPlan.bytesTotal || 0));
-    const baseCopied = Math.max(0, Number(runPlan.baseJobBytesCopied || 0));
-    const baseTotal = Math.max(0, Number(runPlan.baseJobBytesTotal || 0));
-    const jobBytesCopied = Math.max(0, Number(job?.totals?.bytes_copied || 0));
-    const jobBytesTotal = Math.max(0, Number(job?.totals?.bytes_total || 0));
-
-    const selBytesCopied = Math.max(0, jobBytesCopied - baseCopied);
-    const selBytesTotal =
-      bytesTotal > 0 ? bytesTotal : Math.max(0, jobBytesTotal - baseTotal);
-
-    const bytesPercent =
-      selBytesTotal > 0
-        ? clamp((selBytesCopied / selBytesTotal) * 100, 0, 99.9)
-        : 0;
-
-    const bytesDone = selBytesTotal > 0 && selBytesCopied >= selBytesTotal;
-    const bytesPctFinal =
-      selBytesTotal > 0 && done >= total && bytesDone ? 100 : bytesPercent;
-
-    return {
-      total,
-      done,
-      remaining,
-      percent,
-      current,
-      bytes: {
-        bytesTotal: selBytesTotal,
-        bytesCopied: selBytesCopied,
-        percent: selBytesTotal > 0 ? (bytesDone ? 100 : bytesPctFinal) : null,
-      },
-    };
-  }, [runPlan, selectedSnapshot, job?.id, job?.totals]);
-
-  const showImportProgress =
-    Boolean(job?.id) &&
-    ["running", "paused", "failed", "completed"].includes(String(job?.status));
-
-  const importIndeterminate =
-    Boolean(job?.id) &&
-    ["running"].includes(String(job?.status)) &&
-    jobProgressInfo.total === 0;
-
-  const destinationText = useMemo(() => {
-    const mode = String(job?.mode || jobForm.mode || "");
-    if (mode === "copy_to_bunny") {
-      const host = safeStr(bunnyCfg.host || "bunny storage");
-      const zone = safeStr(bunnyCfg.storage_zone || "");
-      const base = safeStr(bunnyCfg.base_path || "");
-      const cdn = safeStr(bunnyCfg.cdn_base_url || "");
-      const parts = [];
-      if (zone) parts.push(zone);
-      if (host) parts.push(`@ ${host}`);
-      if (base) parts.push(`/${base.replace(/^\//, "")}`);
-      const main = parts.filter(Boolean).join(" ");
-      if (cdn) return `${main} (CDN: ${cdn})`;
-      return main || "Bunny Storage";
-    }
-    const bucket = safeStr(wasabiCfg.bucket || "");
-    const ep = safeStr(wasabiCfg.endpoint || "");
-    if (bucket && ep) return `Wasabi (${bucket} @ ${ep})`;
-    if (bucket) return `Wasabi (${bucket})`;
-    return "Wasabi (remote URLs)";
-  }, [job?.mode, jobForm.mode, bunnyCfg, wasabiCfg]);
 
   return (
     <div className="wip-wrap">
@@ -1385,7 +924,7 @@ export default function WasabiImporterPage() {
 
             <Field
               label="BUNNY_STORAGE_BASE_PATH"
-              hint="Example: bishoprobertsontv/videos/archives/u_33"
+              hint="Example: ministry/videos/archives/2021"
             >
               <input
                 value={bMeta.base_path}

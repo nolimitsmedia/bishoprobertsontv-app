@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useCallback } from "react";
+import sanitizeHtml from "../utils/sanitizeHtml";
 
 /* ------------------------------ utilities -------------------------------- */
 
@@ -376,7 +377,7 @@ const TextView = ({ node }) => {
         lineHeight: s.line,
         textAlign: s.align,
       }}
-      dangerouslySetInnerHTML={{ __html: node.html || "" }}
+      dangerouslySetInnerHTML={{ __html: sanitizeHtml(node.html || "") }}
     />
   );
 };
@@ -386,8 +387,8 @@ const ImageView = ({ node }) => {
     node.align === "center"
       ? "center"
       : node.align === "right"
-      ? "flex-end"
-      : "flex-start";
+        ? "flex-end"
+        : "flex-start";
   if (!node.url) {
     return (
       <div style={{ color: "#94a3b8", fontSize: 13, textAlign: "left" }}>
@@ -415,14 +416,14 @@ const ButtonView = ({ node }) => {
     node.align === "center"
       ? "center"
       : node.align === "right"
-      ? "flex-end"
-      : "flex-start";
+        ? "flex-end"
+        : "flex-start";
   const pad =
     node.size === "sm"
       ? "8px 12px"
       : node.size === "lg"
-      ? "14px 18px"
-      : "10px 14px";
+        ? "14px 18px"
+        : "10px 14px";
   return (
     <div style={{ display: "flex", justifyContent: justify }}>
       <a
@@ -588,7 +589,7 @@ function NodeRenderer({
                   display: "grid",
                   gridTemplateColumns: `repeat(${Math.max(
                     cols.length || 2,
-                    1
+                    1,
                   )}, 1fr)`,
                   gap,
                 }}
@@ -1205,7 +1206,7 @@ export default function BlocksEditor({ initialDoc, value, onChange }) {
       setDoc(next);
       onChange && onChange(next);
     },
-    [onChange]
+    [onChange],
   );
 
   const selected = useMemo(() => {

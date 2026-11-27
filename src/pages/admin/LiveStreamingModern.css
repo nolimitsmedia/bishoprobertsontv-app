@@ -1,0 +1,11 @@
+/* Live Streaming — dark cards on the admin background (colors are set in the page's styles object).
+   The page's own .brtv-status / .brtv-publisher rules force dark purple/grey with !important. */
+.us-shell .ls-page {
+  background: transparent !important;
+}
+.us-shell .us-content .brtv-status {
+  color: #ffffff !important;
+}
+.us-shell .us-content .brtv-publisher {
+  color: #e8eaf2 !important;
+}

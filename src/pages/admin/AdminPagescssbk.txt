@@ -1,0 +1,455 @@
+/* src/pages/admin/AdminPages.css */
+
+.ap-root {
+  padding: 22px;
+  color: rgba(255, 255, 255, 0.92);
+}
+.ap-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.ap-title {
+  font-size: 22px;
+  font-weight: 800;
+}
+.ap-sub {
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 13px;
+}
+.ap-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ap-card {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+.ap-btn {
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+}
+.ap-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.ap-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ap-btnPrimary {
+  border-color: rgba(139, 92, 246, 0.45);
+  background: rgba(139, 92, 246, 0.28);
+}
+.ap-btnPrimary:hover {
+  background: rgba(139, 92, 246, 0.38);
+}
+
+.ap-btnDanger {
+  border-color: rgba(255, 91, 91, 0.4);
+  background: rgba(255, 91, 91, 0.18);
+}
+.ap-btnDanger:hover {
+  background: rgba(255, 91, 91, 0.25);
+}
+
+.ap-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.ap-table th,
+.ap-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.ap-strong {
+  font-weight: 700;
+}
+.ap-mono {
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+  font-size: 12px;
+}
+.ap-loading,
+.ap-empty {
+  padding: 18px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.ap-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 12px;
+}
+.ap-badge.ok {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.25);
+}
+
+.ap-grid {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 14px;
+}
+@media (max-width: 980px) {
+  .ap-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ap-field {
+  margin-bottom: 14px;
+}
+.ap-field label {
+  display: block;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
+  margin-bottom: 8px;
+}
+.ap-input,
+.ap-textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.25);
+  color: rgba(255, 255, 255, 0.92);
+  padding: 10px 12px;
+  outline: none;
+}
+.ap-textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.ap-hint {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  margin-top: 6px;
+}
+.ap-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+  margin: 12px 0;
+}
+.ap-dirty {
+  font-size: 12px;
+  color: rgba(251, 191, 36, 0.95);
+  margin-left: 8px;
+  font-weight: 600;
+}
+
+.ap-heroPreview {
+  margin-top: 10px;
+  display: grid;
+  gap: 10px;
+}
+.ap-heroPreview img {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* Toast */
+.ap-toastHost {
+  position: fixed;
+  right: 18px;
+  top: 18px;
+  z-index: 9999;
+  display: grid;
+  gap: 10px;
+  width: min(420px, calc(100vw - 36px));
+}
+.ap-toast {
+  cursor: pointer;
+  padding: 12px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.35);
+}
+.ap-toast.success {
+  border-color: rgba(46, 204, 113, 0.35);
+}
+.ap-toast.error {
+  border-color: rgba(255, 91, 91, 0.45);
+}
+.ap-toast.info {
+  border-color: rgba(154, 92, 255, 0.4);
+}
+.ap-toastTitle {
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.92);
+}
+.ap-toastMsg {
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 13px;
+}
+
+/* Confirm Modal */
+.ap-modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(6px);
+  display: grid;
+  place-items: center;
+  z-index: 9998;
+  padding: 18px;
+}
+.ap-modal {
+  width: min(520px, 100%);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(14, 14, 18, 0.92);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+  padding: 16px;
+}
+.ap-modalTitle {
+  font-size: 16px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.94);
+}
+.ap-modalMsg {
+  margin-top: 8px;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.5;
+}
+.ap-modalActions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+@keyframes apSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ap-loadingOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+  display: grid;
+  place-items: center;
+}
+
+.ap-loadingCard {
+  width: min(520px, calc(100% - 40px));
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(15, 16, 22, 0.85);
+  padding: 18px;
+  box-shadow: 0 24px 90px rgba(0, 0, 0, 0.6);
+}
+
+.ap-skel {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.06),
+    rgba(255, 255, 255, 0.12),
+    rgba(255, 255, 255, 0.06)
+  );
+  background-size: 200% 100%;
+  animation: apShimmer 1.2s ease-in-out infinite;
+  border-radius: 12px;
+}
+@keyframes apShimmer {
+  0% {
+    background-position: 0% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* -----------------------------
+   Page Builder - Blocks / Elements
+----------------------------- */
+.ap-blockList {
+  display: grid;
+  gap: 12px;
+}
+.ap-blockCard {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 14px;
+  padding: 12px;
+}
+.ap-blockHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.ap-blockTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ap-blockActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.ap-blockBody {
+  margin-top: 10px;
+}
+.ap-gridCards {
+  display: grid;
+  gap: 12px;
+}
+.ap-gridCard {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 14px;
+  padding: 12px;
+}
+.ap-gridCardTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.ap-imgMini {
+  margin-top: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.25);
+}
+.ap-imgMini img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.ap-galleryItem {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.25);
+}
+.ap-galleryItem img {
+  width: 100%;
+  height: 160px;
+  object-fit: cover;
+  display: block;
+}
+.ap-galleryMeta {
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  align-items: center;
+}
+
+/* --- Builder: Hero block editor helpers --- */
+.ap-heroEditor {
+  padding-top: 8px;
+}
+
+.ap-grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.ap-grid3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+}
+
+@media (max-width: 900px) {
+  .ap-grid2,
+  .ap-grid3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ap-inlineRow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.ap-fileBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.ap-fileBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* --- Gallery freeform resize handle --- */
+.ap-galleryItem {
+  position: relative;
+  overflow: hidden;
+}
+.ap-resizeHandle {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 16px;
+  height: 16px;
+  border-radius: 6px;
+  background: rgba(253, 157, 0, 0.85);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  cursor: nwse-resize;
+}
+.ap-resizeHandle:after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-right: 2px solid rgba(0, 0, 0, 0.35);
+  border-bottom: 2px solid rgba(0, 0, 0, 0.35);
+  border-radius: 2px;
+}
+
+/* Ensure freeform gallery stacks on mobile */
+@media (max-width: 900px) {
+  .ap-galleryGrid {
+    display: block !important;
+  }
+  .ap-galleryItem {
+    width: 100% !important;
+    height: auto !important;
+  }
+  .ap-galleryItem img {
+    width: 100% !important;
+    height: auto !important;
+  }
+}

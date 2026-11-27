@@ -2,7 +2,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import api from "../../api";
-import DefaultThumb from "../../assets/BishopRobertsonTVLogo.png";
+// Play button in the ministry's brand color (no thumbnail).
+import { DEFAULT_THUMB as DefaultThumb } from "../../lib/brand";
 import "./AdminCollectionPlaylists.css";
 import "./Catalog.css"; // reuse your existing catalog card/grid styles
 

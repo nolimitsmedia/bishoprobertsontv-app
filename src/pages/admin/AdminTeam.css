@@ -1,0 +1,112 @@
+/* Phase 8-1: Team page (builds on the Media Library page styles) */
+.tm-page .tm-card {
+  margin-top: 18px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: #1a1825;
+  border: 1px solid #34303f;
+}
+.tm-card h2 {
+  margin: 0 0 6px;
+  font-size: 17px;
+}
+.tm-card h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+.tm-addRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.tm-addRow .ml-input {
+  flex: 1 1 240px;
+  max-width: 360px;
+}
+.tm-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+.tm-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.tm-check input {
+  width: 16px;
+  height: 16px;
+  accent-color: #8b5cf6;
+}
+.tm-roleHelp {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  color: #a1a1aa;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.tm-roleHelp b {
+  color: #e4e4e7;
+}
+.tm-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.tm-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #121019;
+  border: 1px solid #2c2838;
+}
+.tm-who {
+  display: grid;
+  min-width: 0;
+}
+.tm-who strong,
+.tm-who span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm-who span {
+  color: #a1a1aa;
+  font-size: 12.5px;
+}
+.tm-badge {
+  justify-self: end;
+  grid-column: 3;
+  padding: 2px 10px;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid #484254;
+}
+.tm-badge.owner {
+  border-color: rgba(250, 204, 21, 0.6);
+  color: #fde68a;
+}
+.tm-transfer {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #34303f;
+}
+@media (max-width: 700px) {
+  .tm-row {
+    grid-template-columns: 1fr;
+  }
+  .tm-badge {
+    grid-column: auto;
+    justify-self: start;
+  }
+}

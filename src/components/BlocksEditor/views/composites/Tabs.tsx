@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import sanitizeHtml from "../../../../utils/sanitizeHtml";
 
 type Item = { id: string; label?: string; html?: string };
 type AnyNode = { type: string; items?: Item[]; style?: any };
@@ -39,9 +40,9 @@ export default function Tabs({ node }: { node: AnyNode }) {
           it.id === active ? (
             <div
               key={it.id}
-              dangerouslySetInnerHTML={{ __html: it.html ?? "" }}
+              dangerouslySetInnerHTML={{ __html: sanitizeHtml(it.html ?? "") }}
             />
-          ) : null
+          ) : null,
         )}
       </div>
     </div>

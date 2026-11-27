@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../api";
+import { confirmDialog, promptDialog } from "../../components/ui/Dialogs";
 
 const css = `
 .channel-pages .grid { display:grid;grid-template-columns:1fr 360px;gap:16px; }
@@ -182,7 +183,11 @@ export default function ChannelPages() {
   }, []);
 
   async function createPage() {
-    const title = prompt("New page title (e.g., About):", "About");
+    const title = await promptDialog({
+      title: "New page",
+      message: "Page title (for example About)",
+      defaultValue: "About",
+    });
     if (!title) return;
     try {
       setSaving(true);
@@ -227,7 +232,7 @@ export default function ChannelPages() {
 
       // Optimistic patch while we wait
       setPages((prev) =>
-        prev.map((x) => (x.id === next.id ? { ...x, ...next, ...body } : x))
+        prev.map((x) => (x.id === next.id ? { ...x, ...next, ...body } : x)),
       );
 
       const saved = await api
@@ -257,9 +262,9 @@ export default function ChannelPages() {
           .map((x) =>
             x.id === patched.id
               ? patched
-              : { ...x, is_home: patched.is_home ? false : x.is_home }
+              : { ...x, is_home: patched.is_home ? false : x.is_home },
           )
-          .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+          .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)),
       );
       setSel((s) => (s && s.id === patched.id ? patched : s));
     } catch (e) {
@@ -271,7 +276,7 @@ export default function ChannelPages() {
 
   async function deletePage(id) {
     if (!id) return;
-    if (!window.confirm("Delete this page?")) return;
+    if (!(await confirmDialog("Delete this page?"))) return;
     try {
       setSaving(true);
       await api.delete(`/channels/me/pages/${id}`);
@@ -316,7 +321,7 @@ export default function ChannelPages() {
 
   const sorted = useMemo(
     () => [...pages].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)),
-    [pages]
+    [pages],
   );
 
   return (
@@ -411,7 +416,7 @@ export default function ChannelPages() {
               onDelete={() => deletePage(sel.id)}
               onOpenBuilder={(p) =>
                 navigate(
-                  `/studio/channel/pages/${encodeURIComponent(p.id)}/edit`
+                  `/studio/channel/pages/${encodeURIComponent(p.id)}/edit`,
                 )
               }
             />

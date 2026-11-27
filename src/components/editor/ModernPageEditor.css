@@ -1,0 +1,85 @@
+/* src/components/editor/ModernPageEditor.css */
+
+.mpe-wrap {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+
+.mpe-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  flex-wrap: wrap;
+}
+
+.mpe-btn {
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+}
+.mpe-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.mpe-btnPrimary {
+  border-color: rgba(139, 92, 246, 0.45);
+  background: rgba(139, 92, 246, 0.28);
+}
+.mpe-btnPrimary:hover {
+  background: rgba(139, 92, 246, 0.38);
+}
+
+.mpe-sep {
+  width: 1px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.14);
+  margin: 0 2px;
+}
+
+.mpe-editorContent {
+  padding: 16px;
+  min-height: 320px;
+  color: rgba(255, 255, 255, 0.92);
+  line-height: 1.7;
+  font-size: 15px;
+}
+
+.mpe-editorContent h1 {
+  font-size: 28px;
+  margin: 14px 0;
+}
+.mpe-editorContent h2 {
+  font-size: 22px;
+  margin: 14px 0;
+}
+.mpe-editorContent h3 {
+  font-size: 18px;
+  margin: 12px 0;
+}
+.mpe-editorContent p {
+  margin: 10px 0;
+}
+.mpe-editorContent a {
+  color: rgba(167, 139, 250, 1);
+  text-decoration: underline;
+}
+.mpe-editorContent blockquote {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-left: 3px solid rgba(139, 92, 246, 0.9);
+  background: rgba(139, 92, 246, 0.1);
+  border-radius: 10px;
+}
+.mpe-editorContent img {
+  max-width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  margin: 10px 0;
+}

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../api";
 import Sidebar from "../../components/Sidebar";
+import { confirmDialog } from "../../components/ui/Dialogs";
 
 export default function Videos() {
   const [videos, setVideos] = useState([]);
@@ -28,7 +29,7 @@ export default function Videos() {
   }, []);
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Are you sure?")) return;
+    if (!(await confirmDialog("Are you sure?"))) return;
     try {
       await api.delete(`/videos/${id}`);
       setMessage("Video deleted.");

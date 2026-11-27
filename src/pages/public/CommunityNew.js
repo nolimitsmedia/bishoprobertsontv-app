@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
 import api from "../../api";
 import "./CommunityNew.css";
+import "./CommunityModern.css";
 
 function getStoredRole() {
   return (

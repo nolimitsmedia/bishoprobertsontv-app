@@ -1,8 +1,14 @@
 import React, { useEffect, useState } from "react";
+import { Navigate } from "react-router-dom";
+import { siteDefaultsReady, useSiteDefaults } from "../../lib/siteContent";
 import "./Connection.css";
 
+// Partner sign-up form embedded from the ministry's own website. Set per site
+// in content/defaults.json ("partner_form": { url, title, subtitle }) — Phase 2D.
+// Without one, visitors go to the Partnership page.
 export default function Connection() {
-  const FORM_URL = "https://bishoprobertson.tv/join-the-connetion-today/";
+  const form = useSiteDefaults().partner_form || {};
+  const FORM_URL = /^https:\/\//i.test(form.url || "") ? form.url : "";
 
   const [loaded, setLoaded] = useState(false);
 
@@ -10,20 +16,26 @@ export default function Connection() {
     setLoaded(false);
   }, []);
 
+  // Wait for this site's settings before deciding there is no form.
+  if (!FORM_URL && siteDefaultsReady())
+    return <Navigate to="/partnership" replace />;
+
   return (
     <main className="connection-page">
       <header className="connection-hero">
         <div className="connection-hero-inner">
-          <h1 className="connection-title">Join DRM: THE CONNECTION</h1>
+          <h1 className="connection-title">
+            {form.title || "Become a partner"}
+          </h1>
           <p className="connection-subtitle">
-            Fill out the Partner Registration form below to become a part of THE
-            CONNECTION.
+            {form.subtitle ||
+              "Fill out the partner registration form below to join."}
           </p>
         </div>
       </header>
 
       <section className="connection-shell">
-        {!loaded && (
+        {(!loaded || !FORM_URL) && (
           <div className="connection-loader">
             <div className="connection-spinner" aria-hidden="true" />
             <div className="connection-loader-text">
@@ -35,7 +47,7 @@ export default function Connection() {
         <div className={`connection-frameWrap ${loaded ? "is-loaded" : ""}`}>
           <iframe
             title="Partner Registration Form"
-            src={FORM_URL}
+            src={FORM_URL || undefined}
             className="connection-iframe"
             onLoad={() => setLoaded(true)}
             loading="lazy"

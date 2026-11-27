@@ -89,8 +89,8 @@ export default function RequestDemo() {
               {planCard === "custom"
                 ? "Custom-made"
                 : planCard === "growth"
-                ? "Growth"
-                : "App Essentials"}
+                  ? "Growth"
+                  : "App Essentials"}
             </strong>{" "}
             plan. Our team will reach out shortly.
           </p>
@@ -109,17 +109,17 @@ export default function RequestDemo() {
 
         <div className="bullets">
           <div>
-            ✅ Visualize what your membership would look like with Bishop.
+            ✅ Visualize what your membership would look like with Ministry TV.
           </div>
           <div>✅ Walkthrough features including Apps, Live, & Community.</div>
           <div>✅ Discover your earning potential with our platform.</div>
-          <div>✅ Learn why Bishop is perfect for your audience.</div>
+          <div>✅ Learn why Ministry TV is perfect for your audience.</div>
         </div>
 
         <div className="quote card">
           <div className="qmark">“</div>
           <div>
-            Bishop helped me grow my community beyond imagination, without
+            Ministry TV helped me grow my community beyond imagination, without
             compromising on the quality. Everyone loves the new apps!
           </div>
           <div className="person">

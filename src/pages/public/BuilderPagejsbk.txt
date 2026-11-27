@@ -1,0 +1,788 @@
+// src/pages/public/BuilderPage.js
+import React, { useEffect, useMemo, useState } from "react";
+import { useParams } from "react-router-dom";
+import api from "../../api";
+import "./Home.css"; // reuse existing builder section styles (cards, grids, etc)
+import "./About.css"; // reuse About page layout styles
+
+import BishopImage from "../../assets/bishopimage.png";
+import BishopPreaching from "../../assets/bishoppreaching.jpg";
+import BishopCoPastor from "../../assets/bishopcopastor.jpg";
+
+/* -----------------------------------------
+   Utilities
+----------------------------------------- */
+const ASSET_MAP = {
+  about_bishop_1: BishopImage,
+  about_bishop_2: BishopPreaching,
+  about_bishop_3: BishopCoPastor,
+};
+
+/**
+ * Normalize URLs so:
+ * - http(s), data:, blob: are left alone
+ * - frontend build assets (/static, /assets, /img) stay on frontend origin
+ * - backend uploads (/uploads, /api/uploads) are rewritten to API origin
+ */
+const absUrl = (u) => {
+  if (!u) return null;
+  const s = String(u);
+
+  // already absolute or special URLs
+  if (/^https?:\/\//i.test(s)) return s;
+  if (s.startsWith("data:") || s.startsWith("blob:")) return s;
+
+  // local build assets should stay on the FRONTEND origin (not the API origin)
+  if (
+    s.startsWith("/static/") ||
+    s.startsWith("/assets/") ||
+    s.startsWith("/img/") ||
+    s === "/favicon.ico"
+  ) {
+    return s;
+  }
+
+  // allow builder seeds to reference packaged assets by key (optional)
+  if (s.startsWith("asset:")) {
+    const key = s.slice("asset:".length);
+    return ASSET_MAP[key] || null;
+  }
+
+  // backend-served uploads should go to API origin
+  const apiBase = (api?.defaults?.baseURL || "").replace(/\/api\/?$/i, "");
+  if (s.startsWith("/uploads/")) return `${apiBase}${s}`;
+  if (s.startsWith("/api/uploads/"))
+    return `${apiBase}${s.replace(/^\/api/, "")}`;
+
+  // plain relative paths: use as-is (frontend origin)
+  return s.startsWith("/") ? s : `/${s}`;
+};
+
+function normAlign(v) {
+  const s = String(v || "")
+    .toLowerCase()
+    .trim();
+  if (s === "left" || s === "center" || s === "right") return s;
+  return "center";
+}
+
+async function safeGet(path, opts = {}) {
+  try {
+    const res = await api.get(path, { ...opts, validateStatus: () => true });
+    const status = res?.status ?? 0;
+    const ok = status >= 200 && status < 300;
+    return { ok, status, data: res?.data };
+  } catch {
+    return { ok: false, status: 0, data: null };
+  }
+}
+
+function clampNum(v, min, max) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return min;
+  return Math.max(min, Math.min(max, n));
+}
+
+function isObj(v) {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
+function isTwoColsLayout(layout) {
+  const raw =
+    layout && typeof layout === "object"
+      ? (layout.value ??
+        layout.layout ??
+        layout.key ??
+        layout.id ??
+        layout.label)
+      : layout;
+
+  const s = String(raw || "")
+    .trim()
+    .toLowerCase();
+  if (!s) return false;
+  const norm = s.replace(/[^a-z0-9]+/g, "");
+  return (
+    norm === "twocolumns" ||
+    norm === "twocolumn" ||
+    norm === "twocols" ||
+    norm === "twocol" ||
+    norm === "2columns" ||
+    norm === "2column" ||
+    norm === "2cols" ||
+    norm === "2col" ||
+    norm.includes("twocol")
+  );
+}
+
+function mapJustify(v) {
+  const s = String(v || "")
+    .trim()
+    .toLowerCase();
+  if (!s || s === "default") return "flex-start";
+  if (s === "left" || s === "start" || s === "flex-start") return "flex-start";
+  if (s === "center") return "center";
+  if (s === "right" || s === "end" || s === "flex-end") return "flex-end";
+  if (s === "space-between") return "space-between";
+  if (s === "space-around") return "space-around";
+  if (s === "space-evenly") return "space-evenly";
+  return v;
+}
+
+function mapAlignItems(v) {
+  const s = String(v || "")
+    .trim()
+    .toLowerCase();
+  if (!s || s === "default") return "stretch";
+  if (s === "left" || s === "start" || s === "flex-start") return "flex-start";
+  if (s === "center") return "center";
+  if (s === "right" || s === "end" || s === "flex-end") return "flex-end";
+  if (s === "stretch") return "stretch";
+  return v;
+}
+
+/* -----------------------------------------
+   Theme + default styles
+----------------------------------------- */
+function themeDefaults(theme) {
+  const t = String(theme || "default");
+  if (t === "dark") {
+    return {
+      bg: "rgba(255,255,255,0.04)",
+      border: "rgba(255,255,255,0.10)",
+      text: "#ffffff",
+    };
+  }
+  if (t === "purple") {
+    return {
+      bg: "rgba(124,58,237,0.12)",
+      border: "rgba(124,58,237,0.25)",
+      text: "#ffffff",
+    };
+  }
+  if (t === "blue") {
+    return {
+      bg: "rgba(59,130,246,0.10)",
+      border: "rgba(59,130,246,0.22)",
+      text: "#ffffff",
+    };
+  }
+  if (t === "light") {
+    return {
+      bg: "rgba(255,255,255,0.92)",
+      border: "rgba(0,0,0,0.10)",
+      text: "#0b0d12",
+    };
+  }
+  return {
+    bg: "rgba(255,255,255,0.04)",
+    border: "rgba(255,255,255,0.10)",
+    text: "#ffffff",
+  };
+}
+
+function defaultSectionStyle(theme = "default") {
+  return {
+    align: "center",
+    max_width: "1100px",
+    padding: "",
+    margin: "",
+    border_width: "",
+    font_size: "",
+    line_height: "",
+    bg_color: "",
+    text_color: "",
+    border_color: "",
+    radius: 14,
+    shadow: "soft",
+    title_color: "",
+    show_title: true,
+    overlay: 0,
+    overlay_color: "",
+    overlay_opacity: "",
+    bg_image_url: "",
+    bg_image_fit: "cover",
+    bg_image_pos: "center",
+    content_gap: "",
+    min_height: "",
+    height: "",
+    img_radius: 12,
+    img_fit: "cover",
+    img_shadow: "soft",
+  };
+}
+
+/* -----------------------------------------
+   Block renderer (compatible with AdminPageEditor)
+----------------------------------------- */
+function renderBlocks(sec, st, pageSlug, isNarrow) {
+  // Support both: sec.blocks (new) and sec.elements (older editor)
+  const blocks = Array.isArray(sec.blocks)
+    ? sec.blocks
+    : Array.isArray(sec.elements)
+      ? sec.elements
+      : [];
+
+  if (!blocks.length) return null;
+
+  const gapNum = String(st.content_gap || "").trim()
+    ? Number(String(st.content_gap).replace(/[^0-9.]/g, "")) || 18
+    : 18;
+
+  const slugStr = String(pageSlug || "").toLowerCase();
+  const titleStr = String(sec?.title || "").toLowerCase();
+
+  const hasGallery = blocks.some((b) => String(b?.type || "") === "gallery");
+  const hasRich = blocks.some((b) => String(b?.type || "") === "richtext");
+
+  const isTwoCols = isTwoColsLayout(sec?.layout);
+
+  // Two-column builder layout (left = non-rich blocks, right = richtext)
+  // Also keeps the About page layout you already like.
+  const shouldUseTwoColLayout =
+    isTwoCols && hasRich && (hasGallery || blocks.length > 1);
+
+  if (shouldUseTwoColLayout) {
+    const richBlocks = blocks.filter(
+      (b) => String(b?.type || "") === "richtext",
+    );
+    const leftBlocks = blocks.filter(
+      (b) => String(b?.type || "") !== "richtext",
+    );
+
+    // left width % (desktop only). default 68/32 like your screenshot.
+    const leftStored = st?.col_left_pct ?? sec?.styles?.col_left_pct;
+    const rightStored = st?.col_right_pct ?? sec?.styles?.col_right_pct;
+    const leftPct = Number(
+      leftStored != null
+        ? leftStored
+        : rightStored != null
+          ? 100 - Number(rightStored || 50)
+          : 50,
+    );
+    const rightPct = Number(
+      rightStored != null
+        ? rightStored
+        : leftStored != null
+          ? 100 - Number(leftStored || 50)
+          : 50,
+    );
+
+    return (
+      <section className="builder-twoCols">
+        <div
+          className="builder-twoColsShell"
+          style={{
+            display: "grid",
+            gap: clampNum(gapNum, 0, 60),
+            gridTemplateColumns: isNarrow ? `1fr` : `${leftPct}% ${rightPct}%`,
+            alignItems: "start",
+          }}
+        >
+          <div
+            className="builder-twoColsLeft"
+            style={{ padding: st.col_left_padding || undefined }}
+          >
+            {/* render all non-rich blocks on the left */}
+            {leftBlocks.map((b, i) => {
+              const type = String(b?.type || "");
+              if (type === "gallery") {
+                const imgs = Array.isArray(b?.images)
+                  ? b.images
+                  : Array.isArray(b?.items)
+                    ? b.items
+                    : [];
+
+                return (
+                  <div
+                    key={b.id || `g-${i}`}
+                    className="builder-galleryFlex"
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: Math.max(0, Number(b?.gap) || 10),
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    {imgs.map((it, k) => {
+                      const raw = it?.src || it?.url || it?.image_url || it;
+                      const src = absUrl(raw);
+                      if (!src) return null;
+
+                      const w = Number(it?.w ?? it?.width);
+                      const h = Number(it?.h ?? it?.height);
+
+                      const boxStyle = {};
+                      if (Number.isFinite(w) && w > 20)
+                        boxStyle.width = `${Math.round(w)}px`;
+                      if (Number.isFinite(h) && h > 20)
+                        boxStyle.height = `${Math.round(h)}px`;
+
+                      return (
+                        <div
+                          key={it?.id || `${k}`}
+                          className="builder-galleryFlexItem"
+                          style={boxStyle}
+                        >
+                          <img
+                            src={src}
+                            alt={it?.alt || `image-${k + 1}`}
+                            style={{
+                              width: "100%",
+                              height: boxStyle.height ? "100%" : "auto",
+                              display: "block",
+                              objectFit: "cover",
+                              borderRadius: 14,
+                              border: "1px solid rgba(255,255,255,0.10)",
+                            }}
+                            loading="lazy"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              }
+
+              // fallback: reuse single-column renderer for other block types
+              return (
+                <div key={b.id || `l-${i}`}>
+                  {renderBlocks(
+                    { ...sec, layout: "card", blocks: [b] },
+                    st,
+                    pageSlug,
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div
+            className="builder-twoColsRight"
+            style={{ padding: st.col_right_padding || undefined }}
+          >
+            {sec?.title ? (
+              <div className="builder-kicker">{sec.title}</div>
+            ) : null}
+            {richBlocks.map((r, i) => {
+              const html = String(r?.html || "");
+              if (!html) return null;
+              return (
+                <div
+                  key={r.id || `rt-${i}`}
+                  className="builder-richtext"
+                  dangerouslySetInnerHTML={{ __html: html }}
+                />
+              );
+            })}
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  // Default: single column stack
+  return (
+    <div
+      className="brtv-blocks"
+      style={{
+        display: "grid",
+        gap: clampNum(gapNum, 0, 60),
+        fontSize: String(st.font_size || "").trim() || undefined,
+        lineHeight: String(st.line_height || "").trim() || undefined,
+      }}
+    >
+      {blocks.map((b) => {
+        const type = String(b?.type || "richtext");
+
+        if (type === "hero") {
+          const bg = absUrl(b.bg_url || "");
+          const img = absUrl(b.image_url || "");
+          const fit = b.bg_fit || "cover";
+          const bpos = b.bg_pos || "center";
+
+          return (
+            <div
+              key={b.id || Math.random()}
+              className="brtv-hero"
+              style={{
+                position: "relative",
+                overflow: "hidden",
+                borderRadius: 16,
+                border: "1px solid rgba(255,255,255,0.10)",
+                background: bg ? `url(${bg})` : "rgba(255,255,255,0.04)",
+                backgroundSize: bg ? fit : undefined,
+                backgroundPosition: bg ? bpos : undefined,
+                padding: "22px 20px",
+              }}
+            >
+              {img ? (
+                <img
+                  src={img}
+                  alt=""
+                  style={{
+                    width: 86,
+                    height: 86,
+                    borderRadius: 14,
+                    objectFit: "cover",
+                  }}
+                />
+              ) : null}
+              <div style={{ marginTop: 14 }}>
+                <div style={{ opacity: 0.8, fontSize: 13 }}>
+                  {b.kicker || ""}
+                </div>
+                <div style={{ fontSize: 28, fontWeight: 900, marginTop: 6 }}>
+                  {b.title || ""}
+                </div>
+                <div style={{ opacity: 0.86, marginTop: 10, maxWidth: 720 }}>
+                  {b.sub || ""}
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        if (type === "gallery") {
+          const imgs = Array.isArray(b?.images)
+            ? b.images
+            : Array.isArray(b?.items)
+              ? b.items
+              : [];
+
+          const cols = clampNum(Number(b?.cols) || 3, 1, 6);
+          const gap = clampNum(Number(b?.gap) || 10, 0, 40);
+
+          return (
+            <div
+              key={b.id || Math.random()}
+              style={{
+                display: "grid",
+                gridTemplateColumns: `repeat(${cols}, 1fr)`,
+                gap,
+              }}
+            >
+              {imgs.map((it, idx) => {
+                const raw = it?.src || it?.url || it?.image_url || it;
+                const src = absUrl(raw);
+                if (!src) return null;
+                return (
+                  <img
+                    key={it?.id || idx}
+                    src={src}
+                    alt={it?.alt || ""}
+                    style={{
+                      width: "100%",
+                      borderRadius: 14,
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      objectFit: "cover",
+                    }}
+                    loading="lazy"
+                  />
+                );
+              })}
+            </div>
+          );
+        }
+
+        // default to richtext
+        const html = String(b?.html || "");
+        if (!html) return null;
+        return (
+          <div
+            key={b.id || Math.random()}
+            className="builder-richtext"
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function renderLegacy(sec, st, pageSlug, isNarrow) {
+  const html = String(sec?.html || "").trim();
+  const leftHtml = String(sec?.left_html || "").trim();
+  const rightHtml = String(sec?.right_html || "").trim();
+
+  // Two-column legacy HTML support
+  if (isTwoColsLayout(sec?.layout) && (leftHtml || rightHtml)) {
+    const leftStored = st?.col_left_pct ?? sec?.styles?.col_left_pct;
+    const rightStored = st?.col_right_pct ?? sec?.styles?.col_right_pct;
+
+    const leftPct = Number(
+      leftStored != null
+        ? leftStored
+        : rightStored != null
+          ? 100 - Number(rightStored || 50)
+          : 50,
+    );
+    const rightPct = clampNum(100 - leftPct, 0, 100);
+
+    const gapNum = String(st?.content_gap || "").trim()
+      ? Number(String(st.content_gap).replace(/[^0-9.]/g, "")) || 18
+      : 18;
+
+    return (
+      <div
+        className="builder-twoCols"
+        style={{
+          display: "grid",
+          gap: clampNum(gapNum, 0, 60),
+          gridTemplateColumns: isNarrow
+            ? "1fr"
+            : `${clampNum(leftPct, 0, 100)}% ${clampNum(rightPct, 0, 100)}%`,
+          alignItems: "start",
+        }}
+      >
+        <div
+          className="builder-twoColsLeft"
+          style={{ padding: st?.col_left_padding || undefined }}
+          dangerouslySetInnerHTML={{ __html: leftHtml || "" }}
+        />
+        <div
+          className="builder-twoColsRight"
+          style={{ padding: st?.col_right_padding || undefined }}
+          dangerouslySetInnerHTML={{ __html: rightHtml || "" }}
+        />
+      </div>
+    );
+  }
+
+  // Single-column legacy HTML support
+  if (html) {
+    return (
+      <div
+        className="builder-richtext"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    );
+  }
+
+  return null;
+}
+
+function BuilderSection({ sec, pageSlug, isNarrow }) {
+  const st = isObj(sec.styles) ? sec.styles : defaultSectionStyle(sec.theme);
+  const t = themeDefaults(sec.theme);
+
+  const isFull = sec.layout === "full";
+  const isHighlight = sec.layout === "highlight";
+
+  const maxW = String(st.max_width || "").trim();
+  const wrapMaxWidth = maxW || (isFull ? "100%" : "1100px");
+
+  const pad = st.padding || (isFull ? "48px 0" : "22px 18px");
+  const mg = st.margin || (isFull ? "0" : "18px auto");
+  const radius = clampNum(st.radius ?? 14, 0, 60);
+
+  const bgColor =
+    String(st.bg_color || "").trim() ||
+    (isHighlight ? "rgba(154, 92, 255, 0.12)" : t.bg);
+
+  const borderColor = String(st.border_color || "").trim() || t.border;
+  const textColor = String(st.text_color || "").trim() || t.text;
+  const titleColor = String(st.title_color || "").trim() || textColor;
+
+  const overlayOpacityNumRaw =
+    String(st.overlay_opacity ?? "").trim() === ""
+      ? null
+      : Number(st.overlay_opacity);
+  const overlayOpacityNum = Number.isFinite(overlayOpacityNumRaw)
+    ? Math.max(0, Math.min(0.9, overlayOpacityNumRaw))
+    : Math.max(0, Math.min(0.9, Number(st.overlay ?? 0) || 0));
+
+  const overlayColor = String(st.overlay_color || "").trim();
+  const overlayLayer = overlayColor
+    ? `linear-gradient(${overlayColor}, ${overlayColor})`
+    : `linear-gradient(rgba(0,0,0,${overlayOpacityNum}), rgba(0,0,0,${overlayOpacityNum}))`;
+
+  const bgImg =
+    absUrl(st.bg_image_url) || (st.bg_image_url ? st.bg_image_url : null);
+  const bgPosition = String(st.bg_image_pos || "center");
+  const bgFit = String(st.bg_image_fit || "cover");
+
+  const borderW = String(st.border_width || "").trim();
+  const shadow = String(st.shadow || "soft");
+
+  const outerStyle = { margin: mg, maxWidth: wrapMaxWidth };
+  const innerStyle = {
+    position: "relative",
+    display: "flex",
+    flexDirection: "column",
+    justifyContent: mapJustify(
+      st?.justify || st?.justify_content || st?.justifyContent,
+    ),
+    alignItems: mapAlignItems(
+      st?.items_align || st?.align_items || st?.alignItems,
+    ),
+    padding: pad,
+    minHeight: String(st.min_height || "").trim() || undefined,
+    height: String(st.height || "").trim() || undefined,
+    borderRadius: radius,
+    color: textColor,
+    background: bgImg ? `${overlayLayer}, url(${bgImg})` : bgColor,
+    backgroundSize: bgImg ? bgFit : undefined,
+    backgroundPosition: bgImg ? bgPosition : undefined,
+    border: `${borderW ? borderW : 1}px solid ${borderColor}`,
+    boxShadow:
+      shadow === "none"
+        ? "none"
+        : shadow === "soft"
+          ? "0 18px 54px rgba(0,0,0,0.35)"
+          : "0 22px 70px rgba(0,0,0,0.50)",
+  };
+
+  const align = String(st.align || "center");
+  const textAlign =
+    align === "left" ? "left" : align === "right" ? "right" : "center";
+  const showTitle = st.show_title !== false;
+
+  return (
+    <div style={outerStyle}>
+      <div style={innerStyle}>
+        {showTitle && sec.title ? (
+          <div
+            style={{
+              fontWeight: 900,
+              color: titleColor,
+              fontSize: 18,
+              marginBottom: 12,
+              textAlign,
+            }}
+          >
+            {sec.title}
+          </div>
+        ) : null}
+        <div style={{ textAlign }}>
+          {renderBlocks(sec, st, pageSlug, isNarrow) ||
+            renderLegacy(sec, st, pageSlug, isNarrow)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* -----------------------------------------
+   Main public builder page
+----------------------------------------- */
+export default function BuilderPage({ slug, fallback = null }) {
+  const params = useParams();
+
+  // Support multiple route param names: /p/:slug OR /p/:pageSlug
+  const paramSlug =
+    params?.pageSlug || params?.slug || params?.handle || params?.id || "";
+
+  // prefer prop slug when provided (e.g. <BuilderPage slug="about" />)
+  const pageSlug = String(slug || paramSlug || "")
+    .replace(/^\//, "")
+    .trim();
+
+  const [vw, setVw] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1200,
+  );
+
+  useEffect(() => {
+    const onResize = () => setVw(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const isNarrow = vw < 920;
+
+  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function load() {
+      setLoading(true);
+
+      // NOTE: keep a few endpoint variants so this works across backend versions
+      const tries = [
+        { path: `/pages/${pageSlug}` },
+        { path: `/pages/public/${pageSlug}` },
+        { path: `/public/pages/${pageSlug}` },
+        { path: `/channels/pages/public/${pageSlug}` },
+        { path: `/channels/me/pages/${pageSlug}` },
+      ];
+
+      let found = null;
+      for (const t of tries) {
+        const r = await safeGet(t.path);
+        if (r.ok && r.data) {
+          // some endpoints return {ok:true,page:{...}}
+          found = r.data?.page || r.data;
+          break;
+        }
+      }
+
+      if (!alive) return;
+      setPage(found);
+      setLoading(false);
+    }
+
+    if (pageSlug) load();
+    else {
+      setPage(null);
+      setLoading(false);
+    }
+
+    return () => {
+      alive = false;
+    };
+  }, [pageSlug]);
+
+  const sections = useMemo(() => {
+    const cj =
+      page?.content_json ||
+      page?.contentJson ||
+      page?.page?.content_json ||
+      page?.page?.contentJson ||
+      null;
+
+    const extra =
+      isObj(cj) && Array.isArray(cj.extra_sections) ? cj.extra_sections : [];
+    return extra.filter(Boolean);
+  }, [page]);
+
+  if (loading) {
+    return (
+      <div
+        style={{
+          minHeight: "45vh",
+          display: "grid",
+          placeItems: "center",
+          color: "rgba(255,255,255,0.72)",
+        }}
+      >
+        Loading…
+      </div>
+    );
+  }
+
+  if (!sections.length) return fallback;
+
+  return (
+    <main className="home-root" style={{ paddingTop: 18 }}>
+      <style>{`
+        .builder-twoCols { width: 100%; }
+        .builder-twoColsShell { width: 100%; }
+        .builder-galleryFlexItem { width: 320px; max-width: 100%; }
+        @media (max-width: 900px) {
+          .builder-twoColsShell { grid-template-columns: 1fr !important; }
+          .builder-galleryFlexItem { width: 100% !important; height: auto !important; }
+        }
+      `}</style>
+      {sections.map((sec, idx) => (
+        <BuilderSection
+          key={sec.id || sec.title || idx}
+          sec={sec}
+          pageSlug={pageSlug}
+          isNarrow={isNarrow}
+        />
+      ))}
+    </main>
+  );
+}

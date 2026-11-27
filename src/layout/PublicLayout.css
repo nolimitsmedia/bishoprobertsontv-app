@@ -2,7 +2,7 @@
 :root {
   --ink: #e5e7eb;
   --ink-weak: #cbd5e1;
-  --accent: #22d3ee;
+  --accent: #7c3aed;
   --bg: #030104;
   --page: #030104;
   --muted: #64748b;
@@ -290,7 +290,7 @@
 }
 
 /* Responsive */
-@media (max-width: 1000px) {
+@media (max-width: 1450px) {
   .pl-burger {
     display: block;
   }
@@ -539,4 +539,537 @@
 
 .logout-btn:hover {
   background-color: rgb(255, 41, 41) !important;
+}
+
+/* Navigation refinement: avoid multi-line desktop links and account buttons. */
+@media (min-width: 1451px) {
+  .pl-header {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 10px;
+    padding-inline: 16px;
+  }
+  .pl-logo img {
+    width: clamp(145px, 12vw, 190px);
+    height: auto;
+  }
+  .pl-actions {
+    min-width: 0;
+    gap: 5px;
+  }
+  .pl-actions > .pl-nav {
+    gap: 2px;
+    min-width: 0;
+  }
+  .pl-actions > .pl-nav .pl-link {
+    padding: 8px 7px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .pl-actions .pl-btn,
+  .pl-actions .logout-btn {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .pl-dropdown {
+    white-space: nowrap;
+  }
+  .pl-dropdown-menu {
+    white-space: normal;
+  }
+}
+/* At tablet / compact-desktop widths the existing drawer takes over. */
+@media (max-width: 1450px) {
+  .pl-header {
+    grid-template-columns: 1fr auto;
+    padding-inline: 18px;
+  }
+  .pl-brand {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .pl-logo img {
+    max-width: min(200px, 58vw);
+    height: auto;
+  }
+  .pl-burger {
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .pl-drawer {
+    max-width: min(320px, 88vw);
+    width: min(320px, 88vw);
+    overflow-y: auto;
+    z-index: 35;
+  }
+  .pl-drawer-link {
+    overflow-wrap: anywhere;
+  }
+}
+.pl-dropdown:focus-within .pl-dropdown-menu {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+/* Adaptive laptop header: menu fits available space without wrapping. */
+.pl-header {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 10px 16px;
+}
+.pl-logo img {
+  width: clamp(145px, 13vw, 190px);
+  height: auto;
+}
+.pl-primary-nav {
+  min-width: 0;
+  gap: 3px;
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+.pl-primary-nav .pl-link {
+  font-size: 13px;
+  padding: 8px 7px;
+  white-space: nowrap;
+}
+.pl-actions {
+  gap: 5px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.pl-actions .pl-btn,
+.pl-actions .logout-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: 8px 9px;
+  font-size: 13px;
+}
+.pl-dropdown {
+  white-space: nowrap;
+}
+.pl-dropdown-menu {
+  white-space: normal;
+}
+.pl-more-wrap {
+  position: relative;
+}
+.pl-more-button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+.pl-more-menu {
+  display: block;
+  left: auto;
+  right: 0;
+  min-width: 225px;
+  max-height: min(65vh, 520px);
+  overflow-y: auto;
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+}
+.pl-more-menu::before {
+  left: auto;
+  right: 20px;
+}
+.pl-more-group + .pl-more-group {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.pl-more-child {
+  padding-left: 27px;
+  font-weight: 600;
+  color: #d0c6dc;
+}
+.pl-nav-measure {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  position: fixed;
+  left: -10000px;
+  top: -10000px;
+  visibility: hidden;
+  width: max-content;
+  pointer-events: none;
+}
+.pl-measure-item {
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+  padding: 8px 7px;
+  white-space: nowrap;
+}
+@media (min-width: 1101px) and (max-width: 1450px) {
+  .pl-header {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    padding: 10px 16px;
+  }
+  .pl-burger {
+    display: none;
+  }
+  .pl-primary-nav,
+  .pl-actions {
+    display: flex;
+  }
+}
+@media (max-width: 1100px) {
+  .pl-header {
+    grid-template-columns: 1fr auto;
+    padding-inline: 18px;
+  }
+  .pl-burger {
+    display: block;
+  }
+  .pl-primary-nav,
+  .pl-actions {
+    display: none;
+  }
+  .pl-shell.nav-open .pl-drawer {
+    display: block;
+    transform: translateX(0);
+  }
+}
+@media (min-width: 1451px) {
+  .pl-primary-nav {
+    gap: 3px;
+  }
+  .pl-primary-nav .pl-link {
+    font-size: 13px;
+    padding: 8px 7px;
+  }
+}
+
+.pl-more-wrap:not(:has(.pl-more-menu)):hover .pl-dropdown-menu {
+  visibility: hidden;
+}
+
+/* Published global design settings. Individual component overrides remain intact. */
+:root {
+  --site-font-family: Inter, sans-serif;
+  --site-base-font-size: 16px;
+}
+.pl-shell {
+  font-family: var(--site-font-family);
+  font-size: var(--site-base-font-size);
+}
+.pl-link.active {
+  background: var(--accent);
+}
+.pl-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Release 1.3: header settings */
+.pl-header--static {
+  position: relative;
+}
+.pl-topbar {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  background: #6d28d9;
+  color: #fff;
+}
+.pl-topbarLink {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.pl-topbarLink:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+.pl-headerBtn {
+  white-space: nowrap;
+}
+
+/* Release 2.0: search icon next to the menu button when the header collapses */
+.pl-brand .pl-searchMobile {
+  display: none;
+}
+@media (max-width: 1100px) {
+  .pl-brand .pl-searchMobile {
+    display: inline-flex;
+    margin-left: auto;
+    margin-right: 8px;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    justify-content: center;
+  }
+  .pl-searchMobile .vw-searchBtnText {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+}
+
+/* Dropdown chevron: a small icon right next to its label (the old "▾" text
+   character could look like a separate "-" between menu items). */
+.pl-caret,
+.pl-drawer-caret {
+  display: inline-flex;
+  align-items: center;
+  margin-left: -6px;
+  margin-right: 4px;
+  font-size: 0;
+  opacity: 0.85;
+  vertical-align: middle;
+}
+.pl-caretIcon {
+  width: 10px;
+  height: 10px;
+}
+
+/* ===== Account dropdown (Admin, My account, Log out / Log in) ===== */
+.pl-acct {
+  position: relative;
+}
+.pl-acctBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px 0 5px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pl-acctBtn:hover,
+.pl-acctBtn.is-open {
+  border-color: rgba(167, 139, 250, 0.7);
+  background: rgba(139, 92, 246, 0.14);
+}
+.pl-acctBtn:focus-visible {
+  outline: 2px solid #c4b5fd;
+  outline-offset: 2px;
+}
+.pl-acctAvatar {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: #8b5cf6;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  flex: 0 0 auto;
+}
+.pl-acctAvatar.is-guest {
+  background: rgba(255, 255, 255, 0.12);
+}
+.pl-acctChev {
+  opacity: 0.8;
+  transition: transform 0.15s ease;
+}
+.pl-acctBtn.is-open .pl-acctChev {
+  transform: rotate(180deg);
+}
+.pl-acctMenu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 60;
+  min-width: 230px;
+  padding: 6px;
+  background: #131722;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+  display: grid;
+  gap: 2px;
+}
+.pl-acctHead {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.pl-acctHead strong {
+  color: #fff;
+  font-size: 14px;
+}
+.pl-acctHead span {
+  color: #9aa2b6;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+.pl-acctItem {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 9px;
+  border: 0;
+  background: transparent;
+  color: #e8eaf2 !important;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none !important;
+  cursor: pointer;
+}
+.pl-acctItem:hover,
+.pl-acctItem:focus-visible {
+  background: rgba(255, 255, 255, 0.07);
+  outline: none;
+}
+.pl-acctItem.is-danger {
+  color: #fca5a5 !important;
+}
+.pl-acctItem.is-danger:hover,
+.pl-acctItem.is-danger:focus-visible {
+  background: rgba(248, 113, 113, 0.12);
+}
+.pl-acctItem.is-primary {
+  color: #c4b5fd !important;
+}
+.pl-acctSep {
+  height: 1px;
+  margin: 4px 6px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.pl-drawerSection {
+  margin: 14px 12px 4px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8f97ad;
+}
+
+/* ===== Responsive header: with one Account button the full menu fits down to
+   900px (it used to collapse into ☰ already at 1100px). Items that don't fit
+   go into "More". ===== */
+@media (min-width: 901px) and (max-width: 1100px) {
+  .pl-header {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    padding: 10px 16px;
+  }
+  .pl-burger {
+    display: none;
+  }
+  .pl-primary-nav,
+  .pl-actions {
+    display: flex;
+  }
+  .pl-shell.nav-open .pl-drawer {
+    display: none;
+  }
+  .pl-brand .pl-searchMobile {
+    display: none;
+  }
+}
+@media (max-width: 1280px) {
+  .pl-acctLabel {
+    display: none;
+  }
+  .pl-acctBtn {
+    padding: 0 8px 0 5px;
+  }
+}
+
+/* ===== Notifications: a vertical list =====
+   The items are buttons (side by side by default) and the header sets
+   white-space: nowrap, so they lined up in one long horizontal row. */
+.pl-notif-dropdown {
+  white-space: normal;
+}
+.pl-notif-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.pl-notif-item {
+  display: block;
+  flex: 0 0 auto;
+  margin: 0 !important;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  padding-right: 30px;
+  font: inherit;
+}
+.pl-notif-item:focus-visible,
+.pl-notif-markall:focus-visible {
+  outline: 2px solid #c4b5fd;
+  outline-offset: 2px;
+}
+.pl-notif-title {
+  white-space: normal;
+}
+@media (max-width: 480px) {
+  .pl-notif-dropdown {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    top: 72px;
+    width: auto;
+    max-width: none;
+  }
+}
+
+/* ===== Phones / tablets (≤900px): notification bell next to the search icon ===== */
+.pl-brand .pl-notifMobile {
+  display: none;
+}
+@media (max-width: 900px) {
+  .pl-brand .pl-notifMobile {
+    display: inline-flex;
+    position: relative;
+    margin-left: auto;
+  }
+  .pl-brand .pl-notifMobile + .pl-searchMobile {
+    margin-left: 8px;
+  }
+  .pl-brand .pl-notifMobile .pl-notif-btn {
+    width: 38px;
+    height: 38px;
+  }
+  .pl-notifMobile .pl-notif-dropdown {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    top: 70px;
+    width: auto;
+    max-width: 480px;
+    margin-left: auto;
+  }
+  .pl-notifMobile .pl-notif-dropdown::before {
+    display: none;
+  }
+  .pl-notifMobile .pl-notif-list {
+    max-height: min(420px, calc(100vh - 160px));
+  }
+}
+
+/* Menu items that only open a dropdown are buttons: look like the links. */
+button.pl-link,
+button.pl-dd-item,
+button.pl-drawer-link {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
 }

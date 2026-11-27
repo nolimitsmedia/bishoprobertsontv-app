@@ -1,9 +1,19 @@
 // src/pages/site/VideoView.js
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
 import api from "../../api";
+import { MyListButton } from "../../components/viewer/ViewerParts";
+import { fmtTime } from "../../components/viewer/viewerStore";
 import "./VideoView.css";
-import BishopRobertsonTVLogo from "../../assets/BishopRobertsonTVLogo.png";
+// Play button in the ministry's brand color (no thumbnail).
+import { DEFAULT_THUMB as DefaultThumb } from "../../lib/brand";
+import { SeriesWatchBar } from "../public/SeriesPages";
 
 const MAX_VISIBLE_COMMENTS = 6;
 const isLocalhost = ["localhost", "127.0.0.1"].includes(
@@ -13,8 +23,26 @@ const log = (...args) => {
   if (isLocalhost) console.log("[VideoView]", ...args);
 };
 
+const VIDEO_VIEW_CACHE_TTL_MS = 60 * 1000;
+const videoViewMemoryCache = new Map();
+
+function readVideoViewCache(key) {
+  const hit = videoViewMemoryCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.savedAt > VIDEO_VIEW_CACHE_TTL_MS) {
+    videoViewMemoryCache.delete(key);
+    return null;
+  }
+  return hit.data;
+}
+
+function writeVideoViewCache(key, data) {
+  videoViewMemoryCache.set(key, { savedAt: Date.now(), data });
+}
+
 /* ---------------- resume / progress helpers ---------------- */
 const PROGRESS_SAVE_MS = 3000;
+const IFRAME_PROGRESS_SAVE_MS = 10000;
 
 function progressKey(videoId) {
   return `vv_progress_${videoId}`;
@@ -40,6 +68,33 @@ function clamp(n, min, max) {
   return Math.min(max, Math.max(min, x));
 }
 
+function readResumeSecondsFromSearch(search) {
+  try {
+    const qs = new URLSearchParams(search || "");
+    const raw = qs.get("t") || qs.get("start") || qs.get("resume");
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function addOrReplaceQueryParam(url, key, value) {
+  try {
+    const s = String(url || "");
+    if (!s) return s;
+    const [path, hash = ""] = s.split("#");
+    const [base, query = ""] = path.split("?");
+    const qs = new URLSearchParams(query);
+    qs.set(key, String(value));
+    const out = `${base}?${qs.toString()}`;
+    return hash ? `${out}#${hash}` : out;
+  } catch {
+    const hasQuery = String(url || "").includes("?");
+    return `${url}${hasQuery ? "&" : "?"}${key}=${encodeURIComponent(value)}`;
+  }
+}
+
 /* ---------------- utils ---------------- */
 function apiOrigin() {
   try {
@@ -59,6 +114,200 @@ function isHlsUrl(u) {
   if (!u) return false;
   const clean = u.split("?")[0].split("#")[0];
   return /\.m3u8$/i.test(clean) || clean.includes(".m3u8");
+}
+
+function isBunnyStreamHost(url = "") {
+  try {
+    const host = new URL(String(url || "")).hostname.toLowerCase();
+    return (
+      /^vz-\d+\.b-cdn\.net$/i.test(host) ||
+      host === "iframe.mediadelivery.net" ||
+      host.endsWith(".mediadelivery.net")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function getBunnyVideoId(video) {
+  return (
+    video?.bunny_video_id ||
+    video?.bunny_stream_id ||
+    video?.provider_key ||
+    video?.stream_video_id ||
+    video?.metadata?.bunny_video_id ||
+    video?.metadata?.bunny_stream_id ||
+    video?.metadata?.provider_key ||
+    ""
+  );
+}
+
+function getBunnyLibraryId(video) {
+  return (
+    video?.bunny_library_id ||
+    video?.library_id ||
+    video?.metadata?.bunny_library_id ||
+    video?.metadata?.library_id ||
+    ""
+  );
+}
+
+function getBunnyEmbedUrlRaw(video) {
+  return String(
+    video?.embed_url ||
+      video?.bunny_embed_url ||
+      video?.metadata?.embed_url ||
+      video?.metadata?.bunny_embed_url ||
+      "",
+  ).trim();
+}
+
+function isBunnyStreamVideo(video) {
+  if (!video) return false;
+
+  const provider = String(video?.provider || video?.source_type || "")
+    .trim()
+    .toLowerCase();
+
+  return (
+    provider === "bunny_stream" ||
+    !!getBunnyVideoId(video) ||
+    !!getBunnyLibraryId(video) ||
+    !!getBunnyEmbedUrlRaw(video) ||
+    isBunnyStreamHost(video?.playback_url || "") ||
+    isBunnyStreamHost(video?.video_url || "") ||
+    isBunnyStreamHost(video?.hls_url || "")
+  );
+}
+
+// iPhone / iPad. Every browser there (Safari, Chrome, Firefox...) runs Apple's
+// engine, so they all follow Apple's sound rules.
+function isAppleTouchDevice() {
+  try {
+    const ua = navigator.userAgent || "";
+    return (
+      /iP(hone|ad|od)/.test(ua) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+    );
+  } catch {
+    return false;
+  }
+}
+// Apple's engine anywhere: iPhone/iPad, plus Safari on a Mac.
+function isAppleSafari() {
+  try {
+    const ua = navigator.userAgent || "";
+    return (
+      isAppleTouchDevice() ||
+      (/Safari/.test(ua) && !/Chrome|Chromium|CriOS|FxiOS|Android|Edg/.test(ua))
+    );
+  } catch {
+    return false;
+  }
+}
+
+// Sound on iPhone/iPad: Apple only lets a video play WITH sound after a tap
+// INSIDE the player (a tap on our page cannot unmute Bunny's player). So there
+// the video does not start silently by itself: it waits, ready, and one tap on
+// the player's play button starts it WITH sound.
+// Set to true to go back to silent (muted) autoplay on iPhone/iPad.
+const IPHONE_MUTED_AUTOPLAY = false;
+
+function shouldAutoplayHere() {
+  return IPHONE_MUTED_AUTOPLAY || !isAppleTouchDevice();
+}
+
+// Autoplay with sound: Chrome (Android and computers) allows it once the
+// visitor has tapped/clicked anything on the site during this visit — e.g. the
+// video's thumbnail. Opened straight from a link (nothing tapped yet), or on
+// Safari, the video has to start muted ("Tap for sound" then turns it on).
+function shouldStartMuted() {
+  try {
+    if (isAppleSafari()) return true;
+    const activated = navigator.userActivation
+      ? navigator.userActivation.hasBeenActive
+      : true;
+    return !activated;
+  } catch {
+    return false;
+  }
+}
+
+function buildBunnyEmbedUrl(video, startSeconds = 0, shouldAutoplay = true) {
+  const raw = getBunnyEmbedUrlRaw(video);
+  const videoId = getBunnyVideoId(video);
+  const libraryId = getBunnyLibraryId(video);
+
+  let url = raw;
+  if (!url && libraryId && videoId) {
+    url = `https://iframe.mediadelivery.net/embed/${libraryId}/${videoId}`;
+  }
+  if (!url) return "";
+
+  try {
+    const u = new URL(url);
+
+    // Logged-in Bunny Stream videos should start consistently.
+    // The preview iframe uses buildPreviewBunnyEmbedUrl(), so this does not
+    // affect logged-out preview gating.
+    // Android/computers: starts by itself, WITH sound when the browser allows
+    // it (see shouldStartMuted), otherwise muted + "Tap for sound".
+    // iPhone/iPad: waits for one tap on the player's play button → sound.
+    const autoplay = shouldAutoplay && shouldAutoplayHere();
+    u.searchParams.set("autoplay", autoplay ? "true" : "false");
+    if (autoplay && shouldStartMuted()) u.searchParams.set("muted", "true");
+    else u.searchParams.delete("muted");
+    if (!u.searchParams.has("preload")) u.searchParams.set("preload", "true");
+    if (!u.searchParams.has("responsive"))
+      u.searchParams.set("responsive", "true");
+
+    // Bunny Stream supports the `t` parameter for iframe start time.
+    // This lets a logged-in user resume where the logged-out preview ended
+    // or where database watch progress says they left off.
+    const t = Math.floor(Number(startSeconds) || 0);
+    if (t > 0) {
+      u.searchParams.set("t", String(t));
+    } else {
+      u.searchParams.delete("t");
+    }
+
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+function buildPreviewBunnyEmbedUrl(video) {
+  const raw = String(
+    video?.preview_embed_url ||
+      video?.preview_bunny_embed_url ||
+      video?.metadata?.preview_embed_url ||
+      "",
+  ).trim();
+  const videoId =
+    video?.preview_bunny_video_id || video?.metadata?.preview_bunny_video_id;
+  const libraryId = getBunnyLibraryId(video);
+
+  let url = raw;
+  if (!url && libraryId && videoId) {
+    url = `https://iframe.mediadelivery.net/embed/${libraryId}/${videoId}`;
+  }
+  if (!url) return "";
+
+  try {
+    const u = new URL(url);
+    const autoplay = shouldAutoplayHere();
+    if (!autoplay) u.searchParams.set("autoplay", "false");
+    else if (!u.searchParams.has("autoplay"))
+      u.searchParams.set("autoplay", "true");
+    if (autoplay && shouldStartMuted()) u.searchParams.set("muted", "true");
+    else u.searchParams.delete("muted");
+    if (!u.searchParams.has("preload")) u.searchParams.set("preload", "true");
+    if (!u.searchParams.has("responsive"))
+      u.searchParams.set("responsive", "true");
+    return u.toString();
+  } catch {
+    return url;
+  }
 }
 function secsFromAny(v) {
   if (v == null) return null;
@@ -201,7 +450,7 @@ function sortLatestToOldestByPublished(a, b) {
 /* ---------------- thumb component (fallback like Catalog) ---------------- */
 function ThumbImg({ src, alt = "" }) {
   const [bad, setBad] = useState(false);
-  const finalSrc = !src || bad ? BishopRobertsonTVLogo : src;
+  const finalSrc = !src || bad ? DefaultThumb : src;
 
   return (
     <img
@@ -313,7 +562,7 @@ export default function VideoView() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [video, setVideo] = useState(null);
-  const [resources, setResources] = useState([]);
+  const [, setResources] = useState([]);
 
   const [categoryVideos, setCategoryVideos] = useState([]);
   const [moreGlobal, setMoreGlobal] = useState([]);
@@ -322,7 +571,21 @@ export default function VideoView() {
   const [playlistRest, setPlaylistRest] = useState([]);
 
   const [isAuthed, setIsAuthed] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
   const [previewHit, setPreviewHit] = useState(false);
+  const [ctaHidden, setCtaHidden] = useState(false); // × on the "Free preview" bar
+  const [soundOn, setSoundOn] = useState(false); // muted autoplay → sound turned on
+  const playerSendRef = useRef(null); // send a player.js command to the Bunny player
+  const [needsUnmute, setNeedsUnmute] = useState(false);
+  const [soundBlocked, setSoundBlocked] = useState(false); // iPhone refused
+  const unmuteAtRef = useRef(0);
+  // The player itself fell back to muted (browser refused sound) → show button.
+  const [playerMuted, setPlayerMuted] = useState(false);
+  // iPhone: video waits for a tap on the player's play button.
+  const [playStarted, setPlayStarted] = useState(false);
+  const [resumedHere, setResumedHere] = useState(false);
+  const [dbProgressSeconds, setDbProgressSeconds] = useState(0);
+  const [iframeStartSeconds, setIframeStartSeconds] = useState(0);
 
   const [showPL, setShowPL] = useState(false);
   const [myPlaylists, setMyPlaylists] = useState([]);
@@ -336,6 +599,29 @@ export default function VideoView() {
   const [showAllComments, setShowAllComments] = useState(false);
 
   const [videoErr, setVideoErr] = useState(false);
+  const [playerKey, setPlayerKey] = useState(0); // "Try again" reloads the player
+
+  function unmuteNativeVideo() {
+    const el = videoRef.current;
+    if (!el) return;
+
+    try {
+      el.muted = false;
+      el.defaultMuted = false;
+      el.volume = 1;
+      setNeedsUnmute(false);
+
+      const p = el.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(() => {
+          // If the browser still blocks playback, keep the button visible.
+          setNeedsUnmute(true);
+        });
+      }
+    } catch {
+      setNeedsUnmute(true);
+    }
+  }
 
   // youtube-like autoplay controls
   const [autoNextOn, setAutoNextOn] = useState(() => {
@@ -357,6 +643,15 @@ export default function VideoView() {
   const lastWatchSecondsRef = useRef(0);
   const lastSavedAtRef = useRef(0);
   const restoredRef = useRef(false);
+  const iframeStartLockedVideoRef = useRef("");
+  const iframeEstimatedSecondsRef = useRef(0);
+  // Release 2.0 Part B: real Bunny player events (player.js)
+  const bunnyIframeRef = useRef(null);
+  const playerReportsRef = useRef(false); // true once the player sends real times
+  const playerDurationRef = useRef(0);
+  const [upNextTarget, setUpNextTarget] = useState(null); // { url, title, thumbnail }
+  const iframeLastTickRef = useRef(0);
+  const iframeLastSavedAtRef = useRef(0);
 
   // build next path (preserves playlist param etc.)
   const watchPath = useMemo(
@@ -368,6 +663,27 @@ export default function VideoView() {
     return `/login?next=${next}`;
   }, [watchPath, id]);
 
+  const hasUrlResume = useMemo(
+    () => readResumeSecondsFromSearch(loc.search) > 0,
+    [loc.search],
+  );
+
+  const shouldUseSavedResume = useMemo(() => {
+    // Rules:
+    // 1) Overlay login resume uses ?t=seconds.
+    // 2) Refresh/back-forward can resume saved DB/local progress.
+    // 3) Normal logged-in open/click starts from 0:00.
+    if (hasUrlResume) return true;
+
+    try {
+      const navEntry = performance.getEntriesByType?.("navigation")?.[0];
+      const navType = navEntry?.type || "";
+      return navType === "reload" || navType === "back_forward";
+    } catch {
+      return false;
+    }
+  }, [hasUrlResume]);
+
   function currentSecondsNow() {
     const el = videoRef.current;
     if (!el) return Math.floor(lastWatchSecondsRef.current || 0);
@@ -377,21 +693,114 @@ export default function VideoView() {
   }
 
   function goLoginWithResume() {
-    const t = currentSecondsNow();
-    writeProgressSeconds(id, t);
-    nav(`${loginBase}${t ? `&t=${t}` : ""}`);
+    // Native HLS can read currentTime directly, so resume works for logged-out preview.
+    // Use the current time if available, otherwise fall back to the preview limit
+    // or the last saved local progress. This prevents returning to 00:00 after login.
+    let t = currentSecondsNow();
+    if (!(t > 0) && previewSeconds > 0) t = Math.max(0, previewSeconds - 1);
+    if (!(t > 0)) t = readProgressSeconds(id);
+
+    const safeT = Math.max(0, Math.floor(Number(t) || 0));
+    if (safeT > 0) writeProgressSeconds(id, safeT);
+
+    const loginUrl =
+      safeT > 0 ? addOrReplaceQueryParam(loginBase, "t", safeT) : loginBase;
+    nav(loginUrl);
   }
 
-  const srcUrl = useMemo(
-    () => (video?.video_url ? absUrl(video.video_url) : ""),
-    [video?.video_url],
+  async function loadWatchProgress() {
+    if (!isAuthed || !id) {
+      setDbProgressSeconds(0);
+      return 0;
+    }
+
+    try {
+      const r = await api.get(`/videos/${id}/progress`);
+      const s = Math.max(
+        0,
+        Math.floor(Number(r?.data?.position_seconds || 0) || 0),
+      );
+      setDbProgressSeconds(s);
+      if (s > 0) writeProgressSeconds(id, s);
+      return s;
+    } catch (e) {
+      if (isLocalhost) log("watch progress load failed", e?.response?.status);
+      setDbProgressSeconds(0);
+      return 0;
+    } finally {
+    }
+  }
+
+  async function saveWatchProgress(
+    seconds,
+    durationSeconds = null,
+    completed = false,
+  ) {
+    if (!isAuthed || !id) return false;
+
+    const position = Math.max(0, Math.floor(Number(seconds) || 0));
+    if (!(position > 0)) return false;
+
+    try {
+      writeProgressSeconds(id, position);
+      await api.post(`/videos/${id}/progress`, {
+        position_seconds: position,
+        duration_seconds:
+          durationSeconds == null || !Number.isFinite(Number(durationSeconds))
+            ? null
+            : Math.max(0, Math.floor(Number(durationSeconds))),
+        completed: !!completed,
+      });
+      return true;
+    } catch (e) {
+      if (isLocalhost) log("watch progress save failed", e?.response?.status);
+      return false;
+    }
+  }
+
+  // the progress listener below always calls the latest version
+  const saveWatchProgressRef = useRef(saveWatchProgress);
+  saveWatchProgressRef.current = saveWatchProgress;
+
+  const srcUrl = useMemo(() => {
+    const candidate =
+      video?.playback_url ||
+      video?.video_url ||
+      video?.hls_url ||
+      video?.embed_url ||
+      "";
+    return candidate ? absUrl(candidate) : "";
+  }, [video?.playback_url, video?.video_url, video?.hls_url, video?.embed_url]);
+
+  const bunnyEmbedUrl = useMemo(
+    () => buildBunnyEmbedUrl(video, isAuthed ? iframeStartSeconds : 0, true), // autoplay for everyone
+    [video, isAuthed, iframeStartSeconds],
   );
+  const previewBunnyEmbedUrl = useMemo(
+    () => buildPreviewBunnyEmbedUrl(video),
+    [video],
+  );
+
+  const isBunnyStream = useMemo(() => isBunnyStreamVideo(video), [video]);
+  // Signed-out: a dedicated preview clip if there is one; otherwise (DRM fix) the
+  // full video in the Bunny player, stopped at the preview length below.
+  const activeBunnyEmbedUrl = useMemo(() => {
+    if (!isBunnyStream) return "";
+    if (isAuthed) return bunnyEmbedUrl;
+    return previewBunnyEmbedUrl || bunnyEmbedUrl;
+  }, [isBunnyStream, isAuthed, bunnyEmbedUrl, previewBunnyEmbedUrl]);
 
   // main poster fallback
   const poster = useMemo(() => {
-    const p = video?.thumbnail_url ? absUrl(video.thumbnail_url) : "";
-    return p || BishopRobertsonTVLogo;
-  }, [video?.thumbnail_url]);
+    const t =
+      video?.thumbnail_url ||
+      video?.metadata?.thumbnail_url ||
+      video?.metadata?.thumbnail_vertical_url ||
+      video?.thumbnail ||
+      "";
+    const p = t ? absUrl(t) : "";
+    return p || DefaultThumb;
+  }, [video?.thumbnail_url, video?.metadata, video?.thumbnail]);
 
   const previewSeconds = useMemo(() => {
     const candidates = [
@@ -407,8 +816,34 @@ export default function VideoView() {
     return 0;
   }, [video]);
 
-  const previewActive = !isAuthed && previewSeconds > 0;
-  const hardLoginGate = !isAuthed && !srcUrl;
+  const requiresLoginForPlayback =
+    !isAuthed && (video?.requires_login || video?.is_premium !== false);
+  const previewActive = requiresLoginForPlayback && previewSeconds > 0;
+  // Release 2.3: a real preview clip (Bunny) is itself the preview.
+  const clipPreview = !isAuthed && previewActive && !!previewBunnyEmbedUrl;
+  const hardLoginGate =
+    requiresLoginForPlayback &&
+    (!srcUrl || !(previewSeconds > 0)) &&
+    !clipPreview;
+
+  // const useBunnyStreamPlayer = useMemo(() => {
+  //   return false;
+  // }, []);
+  // MediaCage DRM: Bunny videos only play in Bunny's player, so signed-out
+  // previews use it too (the server can't build an HLS preview of DRM videos).
+  const limitBunnyPreview =
+    !isAuthed && isBunnyStream && previewActive && !previewBunnyEmbedUrl;
+  const useBunnyStreamPlayer = useMemo(() => {
+    return (
+      (isAuthed || previewActive) && isBunnyStream && !!activeBunnyEmbedUrl
+    );
+  }, [isAuthed, previewActive, isBunnyStream, activeBunnyEmbedUrl]);
+  const previewLimitRef = useRef({ on: false, seconds: 0, clip: false });
+  previewLimitRef.current = {
+    on: limitBunnyPreview,
+    seconds: previewSeconds,
+    clip: clipPreview,
+  };
 
   /* ------------ analytics state (refs) -------------- */
   const playSentRef = useRef(false);
@@ -418,6 +853,39 @@ export default function VideoView() {
   const lastPosRef = useRef(null);
   const analyticsInFlightRef = useRef(false);
   const endedHandledRef = useRef(false);
+
+  // --- NEW: ensure previous video is paused/unloaded and HLS destroyed
+  // This prevents audio from the previous video continuing to play after navigation.
+  useEffect(() => {
+    // cleanup runs before effect for new id (and on unmount). It must read the
+    // ref WHEN IT RUNS: the <video> may not exist yet when this effect starts.
+    const ref = videoRef;
+    return () => {
+      try {
+        const prevEl = ref.current;
+        if (prevEl) {
+          try {
+            prevEl.pause();
+          } catch {}
+          try {
+            // remove source and force reload to free any playing media
+            prevEl.removeAttribute("src");
+            if (typeof prevEl.load === "function") prevEl.load();
+          } catch {}
+        }
+      } catch {}
+
+      try {
+        if (hlsRef.current) {
+          try {
+            hlsRef.current.destroy();
+          } catch {}
+          hlsRef.current = null;
+        }
+      } catch {}
+    };
+    // we want this cleanup to run when `id` changes (before new video mounts)
+  }, [id]);
 
   useEffect(() => {
     playSentRef.current = false;
@@ -430,6 +898,11 @@ export default function VideoView() {
     lastWatchSecondsRef.current = 0;
     lastSavedAtRef.current = 0;
     restoredRef.current = false;
+    iframeStartLockedVideoRef.current = "";
+    iframeEstimatedSecondsRef.current = 0;
+    iframeLastTickRef.current = 0;
+    iframeLastSavedAtRef.current = 0;
+    setIframeStartSeconds(0);
 
     setVideoErr(false);
 
@@ -442,36 +915,162 @@ export default function VideoView() {
 
   /* ------------ AUTH -------------- */
   useEffect(() => {
+    let alive = true;
+
     const token = getAnyToken();
     const hasToken = !!token;
-    setIsAuthed(hasToken);
+
+    setAuthChecked(false);
+    setIsAuthed(false);
 
     if (isLocalhost) log("auth token present:", hasToken);
-    if (!hasToken) return;
+
+    if (!hasToken) {
+      setAuthChecked(true);
+      return () => {
+        alive = false;
+      };
+    }
 
     api
       .get("/auth/me")
       .then((r) => {
+        if (!alive) return;
         if (isLocalhost) log("/auth/me ok:", r?.status);
         setIsAuthed(true);
       })
       .catch((e) => {
+        if (!alive) return;
         if (isLocalhost)
-          log("/auth/me failed (keeping authed):", e?.response?.status);
-        setIsAuthed(true);
+          log("/auth/me failed (treating as logged out):", e?.response?.status);
+        setIsAuthed(false);
+      })
+      .finally(() => {
+        if (alive) setAuthChecked(true);
       });
+
+    return () => {
+      alive = false;
+    };
   }, []);
+
+  /* ------------ LOAD DB WATCH PROGRESS -------------- */
+  useEffect(() => {
+    let alive = true;
+
+    if (!authChecked) return;
+
+    if (!isAuthed) {
+      setDbProgressSeconds(0);
+      return;
+    }
+
+    (async () => {
+      const s = await loadWatchProgress();
+      if (!alive) return;
+      if (s > 0 && shouldUseSavedResume) {
+        iframeEstimatedSecondsRef.current = Math.max(
+          iframeEstimatedSecondsRef.current || 0,
+          s,
+        );
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authChecked, isAuthed, id, shouldUseSavedResume]);
+
+  /* ------------ FREEZE BUNNY IFRAME START TIME -------------- */
+  useEffect(() => {
+    if (!isAuthed || !isBunnyStream || !video?.id) {
+      setIframeStartSeconds(0);
+      return;
+    }
+
+    const videoKey = String(video.id);
+    if (iframeStartLockedVideoRef.current === videoKey) return;
+
+    const fromSearch = readResumeSecondsFromSearch(loc.search);
+    const fromDb = Math.max(0, Math.floor(Number(dbProgressSeconds || 0)));
+    const fromLocal = readProgressSeconds(id);
+
+    // Important: this value is used ONLY to build the iframe URL once.
+    // Do not keep tying the iframe src to changing progress values or Bunny
+    // will reload the player every few seconds while progress is saved.
+    //
+    // Normal logged-in open starts at 0:00. Saved DB/local progress is used
+    // only for refresh/back-forward, or when the overlay-login ?t= handoff exists.
+    const start =
+      fromSearch > 0
+        ? fromSearch
+        : shouldUseSavedResume
+          ? Math.max(fromDb, fromLocal)
+          : 0;
+
+    iframeStartLockedVideoRef.current = videoKey;
+    setIframeStartSeconds(start);
+    iframeEstimatedSecondsRef.current = start;
+  }, [
+    isAuthed,
+    isBunnyStream,
+    video?.id,
+    id,
+    loc.search,
+    dbProgressSeconds,
+    shouldUseSavedResume,
+  ]);
+
+  /* ------------ CLEAN ONE-TIME LOGIN RESUME PARAM -------------- */
+  useEffect(() => {
+    if (!isAuthed) return;
+
+    const qs = new URLSearchParams(loc.search || "");
+    if (!qs.has("t") && !qs.has("start") && !qs.has("resume")) return;
+
+    const fromUrl = readResumeSecondsFromSearch(loc.search);
+    if (fromUrl > 0) {
+      writeProgressSeconds(id, fromUrl);
+      iframeEstimatedSecondsRef.current = Math.max(
+        iframeEstimatedSecondsRef.current || 0,
+        fromUrl,
+      );
+      saveWatchProgress(fromUrl);
+    }
+
+    qs.delete("t");
+    qs.delete("start");
+    qs.delete("resume");
+
+    nav(
+      {
+        pathname: loc.pathname,
+        search: qs.toString() ? `?${qs.toString()}` : "",
+      },
+      { replace: true },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthed, id]);
 
   /* ------------ LOAD VIDEO -------------- */
   useEffect(() => {
+    if (!authChecked) return;
+
     let alive = true;
     (async () => {
       setLoading(true);
       setErr("");
+      setVideo(null);
+      setPreviewHit(false);
+      setNeedsUnmute(false);
+
       try {
-        const data =
-          (await tryGetFirst([`/videos/public/${id}`])) ||
-          (await tryGetFirst([`/videos/${id}`]));
+        const urls = isAuthed
+          ? [`/videos/${id}`, `/videos/public/${id}`]
+          : [`/videos/public/${id}`];
+
+        const data = await tryGetFirst(urls);
         if (!alive) return;
         if (!data) setErr("Video not found.");
         else {
@@ -487,47 +1086,75 @@ export default function VideoView() {
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [id, authChecked, isAuthed]);
 
   /* ------------ LOAD CATEGORY VIDEOS -------------- */
   useEffect(() => {
-    if (!video?.category_id) return;
+    if (!video?.category_id) {
+      setCategoryVideos([]);
+      return;
+    }
+
+    let alive = true;
+    const cacheKey = `category:${video.category_id}`;
+    const cached = readVideoViewCache(cacheKey);
+    if (cached) setCategoryVideos(cached);
 
     (async () => {
       try {
         const res =
           (await tryGetFirst([
-            `/videos/public?category_id=${video.category_id}&limit=200`,
+            `/videos/public?category_id=${video.category_id}&limit=60`,
           ])) ||
           (await tryGetFirst([
-            `/videos?category_id=${video.category_id}&limit=200`,
+            `/videos?category_id=${video.category_id}&limit=60`,
           ]));
 
         const items = Array.isArray(res?.items) ? res.items : res || [];
         const sorted = [...items].sort(sortLatestToOldestByPublished);
 
+        if (!alive) return;
         setCategoryVideos(sorted);
+        writeVideoViewCache(cacheKey, sorted);
         log("Category videos:", sorted);
       } catch (e) {
+        if (!alive) return;
         log("Category load failed", e);
-        setCategoryVideos([]);
+        if (!cached) setCategoryVideos([]);
       }
     })();
+
+    return () => {
+      alive = false;
+    };
   }, [video?.category_id]);
 
   /* ------------ GLOBAL FALLBACK -------------- */
   useEffect(() => {
     if (!id) return;
+
+    let alive = true;
+    const cacheKey = "global:latest";
+    const cached = readVideoViewCache(cacheKey);
+    if (cached)
+      setMoreGlobal(cached.filter((v) => String(v.id) !== String(id)));
+
     (async () => {
       const data =
-        (await tryGetFirst([`/videos/public?limit=200`])) ||
-        (await tryGetFirst([`/videos?limit=200`]));
+        (await tryGetFirst([`/videos/public?limit=72`])) ||
+        (await tryGetFirst([`/videos?limit=72`]));
       const arr = Array.isArray(data) ? data : data?.items || [];
       const sorted = [...arr].sort(sortLatestToOldestByPublished);
 
+      if (!alive) return;
+      writeVideoViewCache(cacheKey, sorted);
       setMoreGlobal(sorted.filter((v) => String(v.id) !== String(id)));
       log("Global fallback list:", sorted);
     })();
+
+    return () => {
+      alive = false;
+    };
   }, [id]);
 
   /* ------------ LOAD PLAYLIST FOR WATCH -------------- */
@@ -587,10 +1214,25 @@ export default function VideoView() {
   /* ------------ RESOURCES -------------- */
   useEffect(() => {
     if (!id) return;
+    let alive = true;
+    const cacheKey = `resources:${id}`;
+    const cached = readVideoViewCache(cacheKey);
+    if (cached) setResources(cached);
+
     api
-      .get(`/resources/by-video/${id}`)
-      .then((r) => setResources(r.data?.items || []))
-      .catch(() => setResources([]));
+      .get(`/resources/by-video/${id}`, { timeout: 15000 })
+      .then((r) => {
+        const items = r.data?.items || [];
+        writeVideoViewCache(cacheKey, items);
+        if (alive) setResources(items);
+      })
+      .catch(() => {
+        if (alive && !cached) setResources([]);
+      });
+
+    return () => {
+      alive = false;
+    };
   }, [id]);
 
   /* ------------ PLAYLISTS (for "+ Add to playlist") -------------- */
@@ -602,6 +1244,10 @@ export default function VideoView() {
       setMemberOf(new Set());
       return;
     }
+
+    // Do not fetch playlist membership on every video load. Load it only when
+    // the user opens the "+ Add to playlist" menu.
+    if (!showPL) return;
 
     (async () => {
       try {
@@ -650,7 +1296,7 @@ export default function VideoView() {
     return () => {
       alive = false;
     };
-  }, [isAuthed, id]);
+  }, [isAuthed, id, showPL]);
 
   /* ------------ HLS SETUP (improved + recovery) -------------- */
   useEffect(() => {
@@ -663,10 +1309,18 @@ export default function VideoView() {
       hlsRef.current = null;
     }
 
-    if (!el || !srcUrl) return;
+    if (!el || !srcUrl || useBunnyStreamPlayer) return;
     const hls = isHlsUrl(srcUrl);
 
-    if (hls && el.canPlayType("application/vnd.apple.mpegURL")) {
+    // Mobile fix: Android Chrome answers "maybe" to canPlayType(HLS) but often
+    // can't play it — so use hls.js wherever it works, and the browser's own
+    // HLS only on Apple devices (iPhone/iPad/Safari), where it is reliable.
+    const apple =
+      /iP(hone|ad|od)/.test(navigator.userAgent) ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) ||
+      (/Safari/.test(navigator.userAgent) &&
+        !/Chrome|Chromium|Android|Edg/.test(navigator.userAgent));
+    if (hls && apple && el.canPlayType("application/vnd.apple.mpegURL")) {
       el.src = srcUrl;
       try {
         el.load();
@@ -724,7 +1378,7 @@ export default function VideoView() {
 
             hlsRef.current = instance;
           } else {
-            el.src = srcUrl;
+            el.src = srcUrl; // no MediaSource: the browser's own HLS (if any)
             try {
               el.load();
             } catch {}
@@ -752,11 +1406,21 @@ export default function VideoView() {
     try {
       el.load();
     } catch {}
-  }, [srcUrl]);
+  }, [srcUrl, useBunnyStreamPlayer, playerKey]);
+
+  /* ------------ FORCE UNMUTE (default) -------------- */
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    // ensure default is unmuted whenever video changes
+    el.muted = false;
+    el.defaultMuted = false;
+  }, [id, srcUrl]);
 
   /* ------------ PREVIEW GATE -------------- */
   useEffect(() => {
     setPreviewHit(false);
+    setNeedsUnmute(false);
   }, [id, srcUrl]);
 
   useEffect(() => {
@@ -791,17 +1455,27 @@ export default function VideoView() {
     };
     const onPlay = () => previewHit && stop();
     const onSeek = () => {
-      if (el.currentTime > previewSeconds) clampPreview();
+      if (el.currentTime >= previewSeconds) {
+        clampPreview();
+        stop();
+      }
+    };
+    const onRate = () => {
+      if (el.playbackRate > 1) el.playbackRate = 1;
     };
 
     el.addEventListener("timeupdate", onTime);
     el.addEventListener("play", onPlay);
     el.addEventListener("seeking", onSeek);
+    el.addEventListener("seeked", onSeek);
+    el.addEventListener("ratechange", onRate);
 
     return () => {
       el.removeEventListener("timeupdate", onTime);
       el.removeEventListener("play", onPlay);
       el.removeEventListener("seeking", onSeek);
+      el.removeEventListener("seeked", onSeek);
+      el.removeEventListener("ratechange", onRate);
     };
   }, [previewActive, previewSeconds, previewHit]);
 
@@ -818,12 +1492,17 @@ export default function VideoView() {
       if (now - lastSavedAtRef.current > PROGRESS_SAVE_MS) {
         lastSavedAtRef.current = now;
         writeProgressSeconds(id, cur);
+        if (isAuthed) {
+          saveWatchProgressRef.current(cur, el.duration || null);
+        }
       }
     };
 
     el.addEventListener("timeupdate", onTime);
     return () => el.removeEventListener("timeupdate", onTime);
-  }, [id]);
+    // srcUrl: the <video> only exists once the video has loaded, so attach again
+    // then (before, the listener was never attached and progress was not saved)
+  }, [id, isAuthed, srcUrl]);
 
   /* ------------ RESTORE PROGRESS (robust for HLS) -------------- */
   useEffect(() => {
@@ -834,9 +1513,14 @@ export default function VideoView() {
     const qs = new URLSearchParams(loc.search);
     const tFromUrl = Number(qs.get("t"));
     const tFromStorage = readProgressSeconds(id);
+    const tFromDb = Number(dbProgressSeconds || 0);
 
     let desired =
-      Number.isFinite(tFromUrl) && tFromUrl > 0 ? tFromUrl : tFromStorage;
+      Number.isFinite(tFromUrl) && tFromUrl > 0
+        ? tFromUrl
+        : shouldUseSavedResume
+          ? Math.max(tFromDb, tFromStorage)
+          : 0;
 
     if (!desired || desired <= 0) {
       restoredRef.current = true;
@@ -923,6 +1607,8 @@ export default function VideoView() {
     nav,
     previewActive,
     previewSeconds,
+    dbProgressSeconds,
+    shouldUseSavedResume,
   ]);
 
   /* ------------ VOD ANALYTICS (play/progress/complete) -------------- */
@@ -1218,11 +1904,85 @@ export default function VideoView() {
   const nextCountTotal = 1 + remainingNext.length;
   const shouldScrollNext = !inPlaylistMode && nextCountTotal > 10;
 
+  /* ------------ BUNNY IFRAME WATCH PROGRESS (ESTIMATED) -------------- */
+  useEffect(() => {
+    if (!isAuthed || !useBunnyStreamPlayer || !id) return;
+
+    const startAt = Math.max(
+      0,
+      Number(iframeEstimatedSecondsRef.current || 0),
+      Number(iframeStartSeconds || 0),
+    );
+
+    iframeEstimatedSecondsRef.current = startAt;
+    iframeLastTickRef.current = Date.now();
+    iframeLastSavedAtRef.current = 0;
+
+    const saveNow = (force = false) => {
+      const position = Math.max(
+        0,
+        Math.floor(Number(iframeEstimatedSecondsRef.current || 0)),
+      );
+      if (!(position > 0)) return;
+
+      const now = Date.now();
+      if (
+        !force &&
+        now - iframeLastSavedAtRef.current < IFRAME_PROGRESS_SAVE_MS
+      ) {
+        return;
+      }
+
+      iframeLastSavedAtRef.current = now;
+      writeProgressSeconds(id, position);
+      saveWatchProgress(position, playerDurationRef.current || null);
+    };
+
+    const tick = window.setInterval(() => {
+      const now = Date.now();
+      const delta = Math.max(
+        0,
+        Math.round((now - iframeLastTickRef.current) / 1000),
+      );
+      iframeLastTickRef.current = now;
+
+      // Bunny iframe does not expose reliable currentTime to React here.
+      // We estimate progress only while the tab is visible, which fixes refresh
+      // resume for normal watching without changing the Bunny iframe player.
+      if (document.visibilityState === "visible" && delta > 0) {
+        // Real times from the player (player.js) replace the estimate.
+        if (!playerReportsRef.current)
+          iframeEstimatedSecondsRef.current += Math.min(delta, 5);
+        saveNow(false);
+      }
+    }, 1000);
+
+    const onVisibility = () => {
+      iframeLastTickRef.current = Date.now();
+      saveNow(true);
+    };
+
+    const onBeforeUnload = () => {
+      saveNow(true);
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("beforeunload", onBeforeUnload);
+
+    return () => {
+      saveNow(true);
+      window.clearInterval(tick);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthed, useBunnyStreamPlayer, id, iframeStartSeconds]);
+
   /* ------------ YOUTUBE-STYLE MAIN AUTOPLAY -------------- */
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
-    if (!srcUrl) return;
+    if (!srcUrl || useBunnyStreamPlayer) return;
     if (hardLoginGate) return;
     if (previewActive && previewHit) return;
 
@@ -1232,40 +1992,305 @@ export default function VideoView() {
     countdownRef.current = null;
     autoNavRef.current = false;
 
+    let cancelled = false;
+    let didStart = false;
+
     const attempt = async () => {
+      if (cancelled || didStart) return;
+      if (!videoRef.current) return;
+      const player = videoRef.current;
+      if (player.readyState < 1 && isHlsUrl(srcUrl)) return;
+
+      // Browser rule: unmuted autoplay is often blocked on first load until
+      // the user interacts with the page. Try unmuted first, then fall back to
+      // muted autoplay so the video still starts. The UI shows an Unmute button.
       try {
-        const interacted = (() => {
-          try {
-            return localStorage.getItem("vv_user_interacted") === "true";
-          } catch {
-            return false;
-          }
-        })();
-
-        // YouTube-like: try unmuted if user interacted; otherwise try muted
-        if (!interacted) el.muted = true;
-
-        const p = el.play();
+        player.muted = false;
+        player.defaultMuted = false;
+        const p = player.play();
         if (p && typeof p.then === "function") await p;
+        if (cancelled) return;
+        didStart = true;
+        setNeedsUnmute(false);
+        return;
+      } catch {}
+
+      try {
+        player.muted = true;
+        player.defaultMuted = true;
+        const p = player.play();
+        if (p && typeof p.then === "function") await p;
+        if (cancelled) return;
+        didStart = true;
+        setNeedsUnmute(true);
       } catch {
-        // fallback: try muted autoplay
-        try {
-          el.muted = true;
-          const p2 = el.play();
-          if (p2 && typeof p2.then === "function") await p2;
-        } catch {}
+        if (!cancelled) setNeedsUnmute(false);
       }
     };
 
-    // slight delay to allow HLS attach / metadata
-    const t = setTimeout(attempt, 60);
-    return () => clearTimeout(t);
-  }, [id, srcUrl, hardLoginGate, previewActive, previewHit]);
+    // Try immediately and retry when the native/HLS player becomes ready.
+    const timers = [120, 450, 1000].map((ms) => setTimeout(attempt, ms));
+    const events = [
+      "loadedmetadata",
+      "loadeddata",
+      "canplay",
+      "canplaythrough",
+    ];
+    events.forEach((evt) => el.addEventListener(evt, attempt));
+
+    return () => {
+      cancelled = true;
+      timers.forEach(clearTimeout);
+      events.forEach((evt) => el.removeEventListener(evt, attempt));
+    };
+  }, [
+    id,
+    srcUrl,
+    hardLoginGate,
+    previewActive,
+    previewHit,
+    useBunnyStreamPlayer,
+  ]);
+
+  /* ------------ Sound for muted autoplay -------------- */
+  // A video opened directly (or on iPhone/Safari) must start muted. One tap on
+  // "Tap for sound" — or, on Chrome/Edge/Android, the first click or key press
+  // anywhere on the page — turns the sound on through the player.
+  // Muted because we asked for it (URL), or because the browser made the
+  // player fall back to muted when we asked for sound (reported by player.js).
+  const startedMuted =
+    /[?&]muted=true/.test(activeBunnyEmbedUrl || "") || playerMuted;
+  // iPhone/iPad: the video waits for a tap on the player's play button.
+  const tapToPlay = /[?&]autoplay=false/.test(activeBunnyEmbedUrl || "");
+  // iPhone/iPad/Safari only accept a tap INSIDE the player for sound (a tap
+  // outside can pause the video), so there no tap-anywhere listener is used.
+  const appleSafari = useMemo(() => isAppleSafari(), []);
+  const turnSoundOn = useCallback(() => {
+    const send = playerSendRef.current;
+    if (!send) return;
+    unmuteAtRef.current = Date.now(); // see the "pause" handler: iPhone check
+    send("unmute");
+    send("setVolume", 100);
+    setSoundOn(true);
+  }, []);
+  useEffect(() => {
+    setSoundOn(false);
+    setSoundBlocked(false);
+    setPlayerMuted(false);
+    setPlayStarted(false);
+    setCtaHidden(false);
+  }, [activeBunnyEmbedUrl]);
+  useEffect(() => {
+    setResumedHere(false);
+  }, [id]);
+  useEffect(() => {
+    if (!useBunnyStreamPlayer || !startedMuted || soundOn || appleSafari)
+      return undefined;
+    const once = () => turnSoundOn();
+    window.addEventListener("pointerdown", once, { once: true });
+    window.addEventListener("keydown", once, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", once);
+      window.removeEventListener("keydown", once);
+    };
+  }, [useBunnyStreamPlayer, startedMuted, soundOn, turnSoundOn, appleSafari]);
+
+  /* ------------ Release 2.0 Part B: shared "Up next" -------------- */
+  // Playlist continuation first, then the next video. Used by the built-in
+  // player and the Bunny iframe player alike.
+  const beginUpNextRef = useRef(() => {});
+  beginUpNextRef.current = () => {
+    if (!autoNextOn || autoNavRef.current) return;
+    let target = null;
+    if (inPlaylistMode && playlistRest && playlistRest.length > 0) {
+      const nxt = playlistRest[0];
+      target = {
+        url: `/watch/${nxt.id}?playlist=${playlistParam}`,
+        title: nxt.title,
+        thumbnail: nxt.thumbnail_url || "",
+      };
+    } else if (nextVideo?.id) {
+      target = {
+        url: `/watch/${nextVideo.id}`,
+        title: nextVideo.title,
+        thumbnail: nextVideo.thumbnail_url || "",
+      };
+    }
+    if (!target) return;
+    autoNavRef.current = true;
+    setUpNextTarget(target);
+    let s = 8;
+    setUpNextCountdown(s);
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    countdownRef.current = setInterval(() => {
+      s -= 1;
+      setUpNextCountdown(s);
+      if (s <= 0) {
+        clearInterval(countdownRef.current);
+        countdownRef.current = null;
+        setUpNextCountdown(0);
+        nav(target.url);
+      }
+    }, 1000);
+  };
+
+  // Bunny Stream player events (player.js): real position, pause, end.
+  useEffect(() => {
+    if (!useBunnyStreamPlayer) return undefined;
+    playerReportsRef.current = false;
+    playerDurationRef.current = 0;
+    let origin = "*";
+    try {
+      origin = new URL(activeBunnyEmbedUrl).origin;
+    } catch {
+      /* keep * */
+    }
+    const send = (method, value) => {
+      const w = bunnyIframeRef.current?.contentWindow;
+      if (!w) return;
+      w.postMessage(
+        JSON.stringify({
+          context: "player.js",
+          version: "0.0.11",
+          method,
+          value,
+          listener: `brtv-${value}`,
+        }),
+        origin,
+      );
+    };
+    // player.js getter: the answer comes back as an event named `listener`.
+    const ask = (method, listener) => {
+      const w = bunnyIframeRef.current?.contentWindow;
+      if (!w) return;
+      w.postMessage(
+        JSON.stringify({
+          context: "player.js",
+          version: "0.0.11",
+          method,
+          listener,
+        }),
+        origin,
+      );
+    };
+    const subscribe = () =>
+      ["timeupdate", "pause", "play", "ended"].forEach((ev) =>
+        send("addEventListener", ev),
+      );
+    playerSendRef.current = send;
+    // Did the browser silently start the video muted although we asked for
+    // sound? Checked once, shortly after it first plays (not on iPhone, where
+    // the play tap itself happens inside the player and gives sound).
+    const askedForSound = !/[?&]muted=true/.test(activeBunnyEmbedUrl || "");
+    let mutedChecked = false;
+    let mutedTimer = null;
+    // Signed-out preview safety net (if the player never reports its time).
+    // When the video waits for a tap (iPhone) the clock starts at that tap.
+    const lim = previewLimitRef.current;
+    const waitsForTap = /[?&]autoplay=false/.test(activeBunnyEmbedUrl || "");
+    let safety = null;
+    const startSafety = () => {
+      if (safety || !(lim.on && lim.seconds > 0)) return;
+      safety = window.setTimeout(
+        () => {
+          if (!playerReportsRef.current) setPreviewHit(true);
+        },
+        (lim.seconds + 120) * 1000,
+      );
+    };
+    const onMsg = (e) => {
+      if (
+        !bunnyIframeRef.current ||
+        e.source !== bunnyIframeRef.current.contentWindow
+      )
+        return;
+      let d = e.data;
+      if (typeof d === "string") {
+        try {
+          d = JSON.parse(d);
+        } catch {
+          return;
+        }
+      }
+      if (!d || d.context !== "player.js") return;
+      if (d.event === "ready") subscribe();
+      else if (d.event === "brtv-muted") {
+        if (d.value === true || d.value === "true") setPlayerMuted(true);
+      } else if (d.event === "timeupdate" && d.value) {
+        const sec = Number(d.value.seconds);
+        const dur = Number(d.value.duration);
+        if (Number.isFinite(sec) && sec >= 0) {
+          playerReportsRef.current = true;
+          iframeEstimatedSecondsRef.current = sec;
+          if (dur > 0) playerDurationRef.current = dur;
+          // Signed-out preview: stop at the preview length (or a skip past it).
+          const lim = previewLimitRef.current;
+          if (lim.on && lim.seconds > 0 && sec >= lim.seconds) {
+            send("pause");
+            setPreviewHit(true);
+          }
+        }
+      } else if (d.event === "pause") {
+        // iPhone can refuse sound from a tap outside the player by PAUSING
+        // the video: keep it playing (muted) and point to the player's
+        // own speaker button instead.
+        if (Date.now() - unmuteAtRef.current < 1500) {
+          unmuteAtRef.current = 0;
+          send("mute");
+          send("play");
+          setSoundOn(false);
+          setSoundBlocked(true);
+          return;
+        }
+        saveWatchProgress(
+          iframeEstimatedSecondsRef.current,
+          playerDurationRef.current || null,
+        );
+      } else if (d.event === "play") {
+        setPlayStarted(true);
+        startSafety();
+        if (askedForSound && !mutedChecked && !isAppleTouchDevice()) {
+          mutedChecked = true;
+          mutedTimer = window.setTimeout(
+            () => ask("getMuted", "brtv-muted"),
+            900,
+          );
+        }
+        if (countdownRef.current) clearInterval(countdownRef.current);
+        countdownRef.current = null;
+        setUpNextCountdown(0);
+        autoNavRef.current = false;
+      } else if (d.event === "ended") {
+        // Preview clip finished: show the sign-in screen (not "Up next").
+        if (previewLimitRef.current.clip) {
+          setPreviewHit(true);
+          return;
+        }
+        const dur =
+          playerDurationRef.current || iframeEstimatedSecondsRef.current;
+        saveWatchProgress(dur, dur || null, true);
+        beginUpNextRef.current();
+      }
+    };
+    window.addEventListener("message", onMsg);
+    const retry = window.setTimeout(subscribe, 1500); // in case "ready" came first
+    // A tap inside the player (cross-origin iframe) blurs our window.
+    if (waitsForTap) window.addEventListener("blur", startSafety);
+    else startSafety();
+    return () => {
+      window.removeEventListener("message", onMsg);
+      window.removeEventListener("blur", startSafety);
+      window.clearTimeout(retry);
+      if (mutedTimer) window.clearTimeout(mutedTimer);
+      if (safety) window.clearTimeout(safety);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useBunnyStreamPlayer, activeBunnyEmbedUrl]);
 
   /* ------------ YOUTUBE-STYLE AUTOPLAY NEXT -------------- */
   useEffect(() => {
     const el = videoRef.current;
-    if (!el) return;
+    if (!el || useBunnyStreamPlayer) return;
 
     const clearCountdown = () => {
       setUpNextCountdown(0);
@@ -1273,41 +2298,10 @@ export default function VideoView() {
       countdownRef.current = null;
     };
 
-    const startCountdownAndGo = (targetUrl) => {
-      if (!targetUrl) return;
-      if (autoNavRef.current) return;
-      autoNavRef.current = true;
-
-      let s = 5;
-      setUpNextCountdown(s);
-
-      countdownRef.current = setInterval(() => {
-        s -= 1;
-        setUpNextCountdown(s);
-
-        if (s <= 0) {
-          clearCountdown();
-          nav(targetUrl);
-        }
-      }, 1000);
-    };
-
     const onEnded = () => {
-      if (!autoNextOn) return;
       if (hardLoginGate) return;
       if (previewActive) return;
-
-      // Prefer playlist continuation when in playlist mode
-      if (inPlaylistMode && playlistRest && playlistRest.length > 0) {
-        const nxt = playlistRest[0];
-        startCountdownAndGo(`/watch/${nxt.id}?playlist=${playlistParam}`);
-        return;
-      }
-
-      // Otherwise go to Up Next
-      if (nextVideo?.id) {
-        startCountdownAndGo(`/watch/${nextVideo.id}`);
-      }
+      beginUpNextRef.current();
     };
 
     const onPlay = () => {
@@ -1334,6 +2328,7 @@ export default function VideoView() {
     inPlaylistMode,
     playlistRest,
     playlistParam,
+    useBunnyStreamPlayer,
   ]);
 
   function toggleAutoNext() {
@@ -1388,55 +2383,164 @@ export default function VideoView() {
           <div>
             <div className="vv-card">
               <div style={{ background: "#000", position: "relative" }}>
-                <video
-                  ref={videoRef}
-                  poster={poster || undefined}
-                  style={{
-                    width: "100%",
-                    display: "block",
-                    background: "#000",
-                    pointerEvents:
-                      (previewActive && previewHit) || hardLoginGate
-                        ? "none"
-                        : "auto",
-                  }}
-                  controls
-                  playsInline
-                  preload="metadata"
-                  crossOrigin="anonymous"
-                  controlsList="nodownload"
-                  disablePictureInPicture
-                  onContextMenu={(e) => e.preventDefault()}
-                  onError={() => setVideoErr(true)}
-                  onLoadedData={() => setVideoErr(false)}
-                />
-
-                {/* fallback image layer */}
-                {(hardLoginGate || !srcUrl || videoErr) && (
+                {useBunnyStreamPlayer &&
+                (limitBunnyPreview || clipPreview) &&
+                previewHit ? (
                   <div
+                    className="vv-bunny-player-wrap vv-preview-ended"
                     style={{
-                      position: "absolute",
-                      inset: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      background:
-                        "radial-gradient(800px 400px at 20% 30%, rgba(99,102,241,.22), rgba(0,0,0,0) 55%)",
-                      pointerEvents: "none",
+                      backgroundImage: poster ? `url("${poster}")` : undefined,
                     }}
                     aria-hidden="true"
-                  >
-                    <img
-                      src={BishopRobertsonTVLogo}
-                      alt=""
-                      style={{
-                        width: "min(420px, 60%)",
-                        opacity: 0.92,
-                        filter: "drop-shadow(0 18px 60px rgba(0,0,0,.55))",
-                      }}
+                  />
+                ) : useBunnyStreamPlayer ? (
+                  <div className="vv-bunny-player-wrap">
+                    <iframe
+                      key={activeBunnyEmbedUrl}
+                      ref={bunnyIframeRef}
+                      className="vv-bunny-player"
+                      src={activeBunnyEmbedUrl}
+                      title={video?.title || "Bunny Stream Player"}
+                      loading="eager"
+                      allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
+                      allowFullScreen
                     />
+                    {startedMuted && !soundOn && !soundBlocked ? (
+                      <button
+                        type="button"
+                        className="vv-soundBtn vv-soundBtn--big"
+                        onClick={turnSoundOn}
+                      >
+                        <span aria-hidden="true">🔊</span> Tap for sound
+                      </button>
+                    ) : null}
+                    {tapToPlay && !playStarted && !soundBlocked ? (
+                      <p className="vv-soundBtn vv-soundHint" role="status">
+                        <span aria-hidden="true">▶</span> Tap play for sound
+                      </p>
+                    ) : null}
+                    {soundBlocked ? (
+                      <p className="vv-soundBtn vv-soundHint" role="status">
+                        <span aria-hidden="true">🔈</span> Tap the speaker on
+                        the player for sound
+                      </p>
+                    ) : null}
+                    {!isAuthed &&
+                      !ctaHidden &&
+                      (previewBunnyEmbedUrl || limitBunnyPreview) && (
+                        <div className="vv-bunny-preview-cta">
+                          <span>
+                            {`Free preview: first ${Math.round(previewSeconds / 60) || 1} min`}
+                          </span>
+                          <button
+                            className="vv-btn primary"
+                            onClick={goLoginWithResume}
+                          >
+                            Log in to watch full video
+                          </button>
+                          <button
+                            type="button"
+                            className="vv-ctaClose"
+                            aria-label="Hide this message"
+                            title="Hide"
+                            onClick={() => setCtaHidden(true)}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )}
                   </div>
+                ) : (
+                  <video
+                    ref={videoRef}
+                    poster={poster || undefined}
+                    style={{
+                      width: "100%",
+                      display: "block",
+                      background: "#000",
+                      pointerEvents:
+                        (previewActive && previewHit) || hardLoginGate
+                          ? "none"
+                          : "auto",
+                    }}
+                    controls
+                    autoPlay={!hardLoginGate && !(previewActive && previewHit)}
+                    playsInline
+                    preload="auto"
+                    controlsList="nodownload"
+                    disablePictureInPicture
+                    onContextMenu={(e) => e.preventDefault()}
+                    onError={() => setVideoErr(true)}
+                    onLoadedData={() => setVideoErr(false)}
+                  />
                 )}
+
+                {!useBunnyStreamPlayer &&
+                  needsUnmute &&
+                  !previewHit &&
+                  !hardLoginGate && (
+                    <button
+                      type="button"
+                      className="vv-btn primary"
+                      onClick={unmuteNativeVideo}
+                      style={{
+                        position: "absolute",
+                        right: 14,
+                        bottom: 14,
+                        zIndex: 5,
+                        boxShadow: "0 10px 30px rgba(0,0,0,.35)",
+                      }}
+                    >
+                      🔊 Unmute
+                    </button>
+                  )}
+
+                {/* fallback image layer */}
+                {!useBunnyStreamPlayer &&
+                  (hardLoginGate || !srcUrl || videoErr) && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background:
+                          "radial-gradient(800px 400px at 20% 30%, rgba(99,102,241,.22), rgba(0,0,0,0) 55%)",
+                        pointerEvents: "none",
+                      }}
+                      aria-hidden="true"
+                    >
+                      <img
+                        src={DefaultThumb}
+                        alt=""
+                        style={{
+                          width: "min(420px, 60%)",
+                          opacity: 0.92,
+                          filter: "drop-shadow(0 18px 60px rgba(0,0,0,.55))",
+                        }}
+                      />
+                    </div>
+                  )}
+                {/* Playback error: say so, and offer to try again */}
+                {!useBunnyStreamPlayer &&
+                videoErr &&
+                srcUrl &&
+                !hardLoginGate ? (
+                  <div className="vv-playErr" role="alert">
+                    <p>This video couldn't play on this device.</p>
+                    <button
+                      type="button"
+                      className="vv-btn"
+                      onClick={() => {
+                        setVideoErr(false);
+                        setPlayerKey((k) => k + 1);
+                      }}
+                    >
+                      Try again
+                    </button>
+                  </div>
+                ) : null}
 
                 {/* Up Next countdown overlay (YouTube-like) */}
                 {upNextCountdown > 0 && (
@@ -1447,10 +2551,33 @@ export default function VideoView() {
                   >
                     <div className="vv-upnext-card">
                       <div className="vv-upnext-title">Up next</div>
+                      {upNextTarget?.thumbnail ? (
+                        <img
+                          className="vv-upnext-thumb"
+                          src={upNextTarget.thumbnail}
+                          alt=""
+                        />
+                      ) : null}
+                      {upNextTarget?.title ? (
+                        <div className="vv-upnext-name">
+                          {upNextTarget.title}
+                        </div>
+                      ) : null}
                       <div className="vv-upnext-sub">
                         Playing next in <strong>{upNextCountdown}</strong>s
                       </div>
                       <div className="vv-upnext-actions">
+                        {upNextTarget?.url ? (
+                          <button
+                            className="vv-btn primary"
+                            onClick={() => {
+                              cancelUpNext();
+                              nav(upNextTarget.url);
+                            }}
+                          >
+                            ▶ Play now
+                          </button>
+                        ) : null}
                         <button className="vv-btn" onClick={cancelUpNext}>
                           Cancel
                         </button>
@@ -1459,44 +2586,92 @@ export default function VideoView() {
                   </div>
                 )}
 
-                {(hardLoginGate || (previewActive && previewHit)) && (
-                  <div className="vv-gate">
-                    <div className="vv-gate-inner">
-                      <p style={{ marginTop: 0 }}>
-                        Please log in to watch the full video.
-                      </p>
-                      <button
-                        className="vv-btn primary"
-                        onClick={goLoginWithResume}
-                      >
-                        Log in
-                      </button>
+                {(!useBunnyStreamPlayer || limitBunnyPreview || clipPreview) &&
+                  (hardLoginGate || (previewActive && previewHit)) && (
+                    <div className="vv-gate">
+                      <div className="vv-gate-inner">
+                        <p style={{ marginTop: 0 }}>
+                          Please log in to watch the full video.
+                        </p>
+                        <button
+                          className="vv-btn primary"
+                          onClick={goLoginWithResume}
+                        >
+                          Log in
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
               </div>
 
               <div className="vv-pad">
-                <div className="vv-row">
-                  <button className="vv-btn" onClick={() => nav(-1)}>
-                    ← Back
+                {/* opened from a series: "Episode 3 of 8" + Next episode */}
+                {new URLSearchParams(loc.search).get("series") ? (
+                  <SeriesWatchBar
+                    slug={new URLSearchParams(loc.search).get("series")}
+                    videoId={video.id}
+                  />
+                ) : null}
+                {/* Title first, then one clean action row (Save = My List + playlists) */}
+                <h1 className="vv-h1">{video.title}</h1>
+
+                <div className="vv-byline">
+                  {author && <span className="vv-badge">{author}</span>}
+                  {currentPublishedLabel && (
+                    <span>{currentPublishedLabel}</span>
+                  )}
+                </div>
+
+                <div className="vv-row vv-actionsRow">
+                  <button
+                    className="vv-btn vv-iconBtn"
+                    onClick={() => nav(-1)}
+                    aria-label="Go back"
+                    title="Back"
+                  >
+                    <span aria-hidden="true">←</span>
                   </button>
 
                   {isAuthed ? (
                     <div className="vv-pop">
                       <button
-                        className="vv-btn"
+                        className={`vv-btn vv-saveBtn${showPL ? " is-open" : ""}`}
                         onClick={() => setShowPL((s) => !s)}
+                        aria-haspopup="true"
+                        aria-expanded={showPL}
                       >
-                        + Add to playlist
+                        <svg
+                          viewBox="0 0 24 24"
+                          width="16"
+                          height="16"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M6 3h12v18l-6-4-6 4z" />
+                        </svg>
+                        Save
                       </button>
 
                       {showPL && (
-                        <div className="vv-popmenu">
+                        <div className="vv-popmenu vv-saveMenu">
+                          <div className="vv-saveSection">Quick save</div>
+                          <MyListButton
+                            videoId={video.id || id}
+                            title={video.title}
+                          />
+                          <div className="vv-saveSection">Your playlists</div>
                           {plLoading && (
                             <div className="vv-muted">Loading…</div>
                           )}
-
+                          {!plLoading && myPlaylists.length === 0 && (
+                            <div className="vv-muted vv-saveEmpty">
+                              No playlists yet.
+                            </div>
+                          )}
                           {!plLoading &&
                             myPlaylists.map((p) => {
                               const inList = memberOf.has(String(p.id));
@@ -1515,34 +2690,94 @@ export default function VideoView() {
                                 </label>
                               );
                             })}
+                          <button
+                            type="button"
+                            className="vv-saveManage"
+                            onClick={() => nav("/account/playlists")}
+                          >
+                            Manage playlists →
+                          </button>
                         </div>
                       )}
                     </div>
                   ) : (
-                    <button className="vv-btn" onClick={goLoginWithResume}>
-                      + Add to playlist
+                    <button
+                      className="vv-btn vv-saveBtn"
+                      onClick={goLoginWithResume}
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="16"
+                        height="16"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M6 3h12v18l-6-4-6 4z" />
+                      </svg>
+                      Save
                     </button>
                   )}
 
                   <button className="vv-btn vv-share" onClick={share}>
-                    📤 Share
+                    <svg
+                      viewBox="0 0 24 24"
+                      width="16"
+                      height="16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v14" />
+                    </svg>
+                    Share
                   </button>
-                </div>
-
-                <h1 className="vv-h1">{video.title}</h1>
-
-                <div className="vv-byline">
-                  {author && <span className="vv-badge">{author}</span>}
-                  {currentPublishedLabel && (
-                    <span>{currentPublishedLabel}</span>
-                  )}
+                  {isAuthed &&
+                  !resumedHere &&
+                  !hasUrlResume &&
+                  !shouldUseSavedResume &&
+                  Number(dbProgressSeconds) >= 15 ? (
+                    <button
+                      type="button"
+                      className="vv-btn vv-resume"
+                      onClick={() => {
+                        const secs = Math.floor(Number(dbProgressSeconds));
+                        const send = playerSendRef.current;
+                        // Bunny player (not iPhone): jump inside the player.
+                        // No page reload, so the sound stays allowed.
+                        if (
+                          useBunnyStreamPlayer &&
+                          send &&
+                          !isAppleTouchDevice()
+                        ) {
+                          send("setCurrentTime", secs);
+                          send("play");
+                          iframeEstimatedSecondsRef.current = secs;
+                          setResumedHere(true);
+                          return;
+                        }
+                        nav(`/watch/${id}?t=${secs}`, { replace: true });
+                        window.setTimeout(() => window.location.reload(), 0);
+                      }}
+                    >
+                      ▶ Resume from {fmtTime(dbProgressSeconds)}
+                    </button>
+                  ) : null}
                 </div>
 
                 <hr className="vv-hr" />
 
                 {/* Comments (kept) */}
-                <div>
-                  <strong>Comments</strong>
+                <div className="vv-comments">
+                  <h2 className="vv-commentsTitle">
+                    Comments{comments.length ? ` (${comments.length})` : ""}
+                  </h2>
 
                   {isAuthed ? (
                     <form onSubmit={postComment}>
@@ -1550,7 +2785,8 @@ export default function VideoView() {
                         rows={3}
                         value={cmtTxt}
                         onChange={(e) => setCmtTxt(e.target.value)}
-                        placeholder="Write a comment…"
+                        placeholder="Add a comment…"
+                        aria-label="Add a comment"
                         style={{
                           width: "100%",
                           background: "#0b1020",
@@ -1561,12 +2797,14 @@ export default function VideoView() {
                         }}
                       />
 
-                      <button
-                        className="vv-btn primary"
-                        style={{ marginTop: 6 }}
-                      >
-                        Post
-                      </button>
+                      <div className="vv-commentActions">
+                        <button
+                          className="vv-btn primary vv-postBtn"
+                          disabled={!String(cmtTxt || "").trim()}
+                        >
+                          Post
+                        </button>
+                      </div>
                       {cmtErr && (
                         <span style={{ color: "#ef4444" }}>{cmtErr}</span>
                       )}

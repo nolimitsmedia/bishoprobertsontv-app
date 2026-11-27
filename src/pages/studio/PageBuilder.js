@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import api from "../../api";
 import "./PageBuilder.css";
+import sanitizeHtml from "../../utils/sanitizeHtml";
 
 function safe(v) {
   return String(v ?? "");
@@ -51,7 +52,7 @@ export default function PageBuilder() {
       setPublished(!!p.published);
     } catch (e) {
       setErr(
-        e?.response?.data?.message || e?.message || "Failed to load page."
+        e?.response?.data?.message || e?.message || "Failed to load page.",
       );
       setPage(null);
     } finally {
@@ -66,7 +67,7 @@ export default function PageBuilder() {
 
   const previewHtml = useMemo(
     () => draftHtml || "<div style='opacity:.7'>Start writing your page…</div>",
-    [draftHtml]
+    [draftHtml],
   );
 
   async function saveDraft() {
@@ -89,7 +90,7 @@ export default function PageBuilder() {
       setPage((p) => ({ ...(p || {}), ...res.data.page }));
     } catch (e) {
       alert(
-        e?.response?.data?.message || e?.message || "Failed to save draft."
+        e?.response?.data?.message || e?.message || "Failed to save draft.",
       );
     } finally {
       setSaving(false);
@@ -120,7 +121,7 @@ export default function PageBuilder() {
       alert("Page published.");
     } catch (e) {
       alert(
-        e?.response?.data?.message || e?.message || "Failed to publish page."
+        e?.response?.data?.message || e?.message || "Failed to publish page.",
       );
     } finally {
       setPublishing(false);
@@ -263,7 +264,7 @@ export default function PageBuilder() {
               </div>
               <div
                 className="pb-preview"
-                dangerouslySetInnerHTML={{ __html: previewHtml }}
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(previewHtml) }}
               />
             </div>
           </div>

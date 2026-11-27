@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import api from "../api";
 import "./MemberLayout.css";
+import "./MemberModern.css";
 
 export default function MemberLayout() {
   const nav = useNavigate();
@@ -10,6 +11,23 @@ export default function MemberLayout() {
   const [me, setMe] = useState(null);
   const [sub, setSub] = useState(null);
   const [open, setOpen] = useState(false);
+  // Dark / light theme for the account area, remembered in this browser
+  const [theme, setTheme] = useState(() => {
+    try {
+      return localStorage.getItem("brtv:account-theme") === "light"
+        ? "light"
+        : "dark";
+    } catch {
+      return "dark";
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("brtv:account-theme", theme);
+    } catch {
+      /* private mode */
+    }
+  }, [theme]);
 
   // Load user + subscription
   useEffect(() => {
@@ -72,6 +90,10 @@ export default function MemberLayout() {
      BLOCK FREE USERS & BLOCK NON-ADMINS FROM LIVE EVENTS
   --------------------------------------------------------- */
   useEffect(() => {
+    // Wait until the account has loaded: before that `me` is empty, so an
+    // administrator opening /studio/live directly (or refreshing it) was sent
+    // to My Playlists.
+    if (!me) return;
     // Free users cannot open /account dashboard → redirect to playlists
     if (isFree && loc.pathname === "/account") {
       nav("/account/playlists", { replace: true });
@@ -81,10 +103,10 @@ export default function MemberLayout() {
     if (!isAdmin && loc.pathname.startsWith("/studio/live")) {
       nav("/account/playlists", { replace: true });
     }
-  }, [isFree, isAdmin, loc.pathname, nav]);
+  }, [me, isFree, isAdmin, loc.pathname, nav]);
 
   return (
-    <div className={`ml-shell ${open ? "is-open" : ""}`}>
+    <div className={`ml-shell ${open ? "is-open" : ""}`} data-theme={theme}>
       {/* Sidebar */}
       <aside className="ml-aside">
         <div className="ml-user">
@@ -152,6 +174,22 @@ export default function MemberLayout() {
             </svg>
           </button>
           <div className="ml-top-title">My Account</div>
+          <button
+            type="button"
+            className="ml-themeToggle"
+            onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+            aria-label={
+              theme === "dark"
+                ? "Switch to light theme"
+                : "Switch to dark theme"
+            }
+            title={theme === "dark" ? "Light theme" : "Dark theme"}
+          >
+            <span aria-hidden="true">{theme === "dark" ? "☀" : "☾"}</span>
+            <span className="ml-themeText">
+              {theme === "dark" ? "Light" : "Dark"}
+            </span>
+          </button>
         </header>
 
         <main className="ml-content">

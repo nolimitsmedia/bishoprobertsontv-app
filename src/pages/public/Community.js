@@ -4,6 +4,8 @@ import { useLocation, useNavigate, Link } from "react-router-dom";
 import api from "../../api";
 import PostCard from "../../components/community/PostCard";
 import "./Community.css";
+import "./CommunityModern.css";
+import { confirmDialog } from "../../components/ui/Dialogs";
 
 function useQuery() {
   const { search } = useLocation();
@@ -290,14 +292,14 @@ export default function Community() {
               ...p,
               likes_count: Math.max(0, (p.likes_count || 0) + (liked ? 1 : -1)),
             }
-          : p
-      )
+          : p,
+      ),
     );
   }
 
   async function handleDelete(post) {
     if (!isAdmin) return;
-    const ok = window.confirm("Delete this post?");
+    const ok = await confirmDialog("Delete this post?");
     if (!ok) return;
     try {
       await api.delete(`/community/posts/${post.id}`);
@@ -326,7 +328,7 @@ export default function Community() {
     if (!q) return channels;
     return channels.filter(
       (c) =>
-        c.name?.toLowerCase().includes(q) || c.slug?.toLowerCase().includes(q)
+        c.name?.toLowerCase().includes(q) || c.slug?.toLowerCase().includes(q),
     );
   }, [channelSearch, channels]);
 

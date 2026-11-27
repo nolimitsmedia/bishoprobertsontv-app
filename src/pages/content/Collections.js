@@ -4,6 +4,8 @@ import { Link, useNavigate } from "react-router-dom";
 import api from "../../api";
 import "./Videos.css"; // reuse (scoped) styles
 import "./Collections.css";
+import "./CollectionsModern.css";
+import { confirmDialog } from "../../components/ui/Dialogs";
 
 /* -------- utils -------- */
 function formatDate(iso) {
@@ -388,7 +390,7 @@ export default function CollectionsPage() {
   }
 
   async function removeOne(id) {
-    if (!window.confirm("Delete this playlist?")) return;
+    if (!(await confirmDialog("Delete this playlist?"))) return;
     try {
       await api.delete(`/playlists/${id}`);
       await load();
@@ -489,7 +491,7 @@ export default function CollectionsPage() {
 
     try {
       if (action === "delete") {
-        if (!window.confirm(`Delete ${ids.length} playlist(s)?`)) return;
+        if (!(await confirmDialog(`Delete ${ids.length} playlist(s)?`))) return;
         await Promise.all(ids.map((id) => api.delete(`/playlists/${id}`)));
         showToast("success", `Deleted ${ids.length} playlist(s)`);
       } else if (action === "publish") {

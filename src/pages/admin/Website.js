@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../api";
+import { promptDialog } from "../../components/ui/Dialogs";
 
 /* tiny helpers */
 const badge = (t, c) => (
@@ -173,7 +174,7 @@ export default function Website() {
     if (!q) return pages;
     return pages.filter(
       (p) =>
-        p.title.toLowerCase().includes(q) || p.slug.toLowerCase().includes(q)
+        p.title.toLowerCase().includes(q) || p.slug.toLowerCase().includes(q),
     );
   }, [pages, search]);
 
@@ -301,8 +302,8 @@ export default function Website() {
                   onChange={(e) =>
                     setNav((list) =>
                       list.map((x, i) =>
-                        i === idx ? { ...x, label: e.target.value } : x
-                      )
+                        i === idx ? { ...x, label: e.target.value } : x,
+                      ),
                     )
                   }
                 />
@@ -313,8 +314,8 @@ export default function Website() {
                   onChange={(e) =>
                     setNav((list) =>
                       list.map((x, i) =>
-                        i === idx ? { ...x, url: e.target.value } : x
-                      )
+                        i === idx ? { ...x, url: e.target.value } : x,
+                      ),
                     )
                   }
                 />
@@ -436,8 +437,8 @@ export default function Website() {
                         {p.status === "public"
                           ? badge("PUBLIC", "#10b981")
                           : p.status === "private"
-                          ? badge("PRIVATE", "#6b7280")
-                          : badge("ARCHIVED", "#ef4444")}
+                            ? badge("PRIVATE", "#6b7280")
+                            : badge("ARCHIVED", "#ef4444")}
                       </td>
                       <td style={{ padding: "12px 8px" }}>/ {p.slug}</td>
                       <td style={{ padding: "12px 8px", textAlign: "right" }}>
@@ -518,7 +519,12 @@ export default function Website() {
                                   try {
                                     await navigator.clipboard.writeText(link);
                                   } catch {
-                                    window.prompt("Copy link", link);
+                                    promptDialog({
+                                      title: "Copy link",
+                                      message: "Copy this link:",
+                                      defaultValue: link,
+                                      readOnly: true,
+                                    });
                                   }
                                 }}
                               >

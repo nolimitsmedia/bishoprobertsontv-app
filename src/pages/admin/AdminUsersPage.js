@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../../api";
+import { useAdminAccess } from "../../auth/adminAccess";
 import "./Dashboard.css"; // reuse same admin styling
 
 function safeStr(v) {
@@ -457,6 +458,10 @@ function PasswordField({
    Page
 ------------------------------ */
 export default function AdminUsersPage() {
+  // Phase 8-2: Customer Support edits member details only; deleting accounts
+  // and changing roles are for administrators (the server enforces this too).
+  const { access } = useAdminAccess();
+  const canManageAccounts = !!access?.isAdmin;
   const nav = useNavigate();
   const [sp, setSp] = useSearchParams();
 
@@ -1004,15 +1009,17 @@ export default function AdminUsersPage() {
                             <span className="au-hide-sm">Edit</span>
                           </IconBtn>
 
-                          <IconBtn
-                            title="Delete member"
-                            onClick={() => openDelete(u)}
-                            kind="danger"
-                            compact
-                          >
-                            <Icon name="trash" />
-                            <span className="au-hide-sm">Delete</span>
-                          </IconBtn>
+                          {canManageAccounts ? (
+                            <IconBtn
+                              title="Delete member"
+                              onClick={() => openDelete(u)}
+                              kind="danger"
+                              compact
+                            >
+                              <Icon name="trash" />
+                              <span className="au-hide-sm">Delete</span>
+                            </IconBtn>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -1142,15 +1149,17 @@ export default function AdminUsersPage() {
               />
             </Field>
 
-            <Field label="Role" hint="admin or user">
-              <Select
-                value={formRole}
-                onChange={(e) => setFormRole(e.target.value)}
-              >
-                <option value="user">user</option>
-                <option value="admin">admin</option>
-              </Select>
-            </Field>
+            {canManageAccounts ? (
+              <Field label="Role" hint="admin or user">
+                <Select
+                  value={formRole}
+                  onChange={(e) => setFormRole(e.target.value)}
+                >
+                  <option value="user">user</option>
+                  <option value="admin">admin</option>
+                </Select>
+              </Field>
+            ) : null}
           </div>
 
           <Field label="Email">

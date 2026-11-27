@@ -1,35 +1,50 @@
-// src/pages/public/Home.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+// src/pages/public/Home.js
+import { VideoRow } from "../../components/viewer/ViewerParts";
+import LiveSchedule from "../../components/viewer/LiveSchedule";
+import HomeHero from "../../components/viewer/HomeHero";
+import { fetchBrowse, readSavedBrowse, saveBrowse } from "../../lib/browseData";
+import "../../components/viewer/Viewer.css";
+import React, { Suspense, lazy, useEffect, useState } from "react";
 import "./Home.css";
 import { Link } from "react-router-dom";
 import api from "../../api";
-import ImgHead from "../../assets/bishopimage.png";
-import DefaultThumb from "../../assets/BishopRobertsonTVLogo.png";
-import HomeBanner from "../../assets/brtv-home-banner.png"; // ✅ hero background
+import { usePageMeta } from "../../utils/pageMeta";
+import {
+  CanvasField,
+  CanvasSection,
+  PageContext,
+  useCanvas,
+} from "../../components/builder/canvasContext";
+import { cleanCss } from "../../lib/siteOptions";
+// Play button in the ministry's brand color (no thumbnail).
+import { DEFAULT_THUMB as DefaultThumb } from "../../lib/brand";
+// This site's own pictures (public/content/, set per ministry at build time).
+import {
+  contentUrl,
+  isSiteFile,
+  loadSiteDefaults,
+  siteDefaults,
+  upgradeAssets,
+  upgradeAssetUrl,
+} from "../../lib/siteContent";
+const ImgHead = contentUrl("leader.png");
+const HomeBanner = contentUrl("home-banner.png");
 
-// use the same channel id / handle you use in LivePage.jsx
-const CHANNEL_ID = "gworrdns";
-
-/* -----------------------------------------
-   Utilities
------------------------------------------ */
+/* ─── Utilities ─────────────────────────────────────────── */
 const absUrl = (u) => {
   if (!u) return null;
   if (/^https?:\/\//i.test(u)) return u;
-
+  if (isSiteFile(u)) return u; // the website's own files
   const base = (api?.defaults?.baseURL || "").replace(/\/api\/?$/i, "");
   return u.startsWith("/") ? `${base}${u}` : `${base}/${u}`;
 };
 
 async function safeGet(path, opts = {}) {
   try {
-    const res = await api.get(path, {
-      ...opts,
-      validateStatus: () => true,
-    });
+    const res = await api.get(path, { ...opts, validateStatus: () => true });
     const status = res?.status ?? 0;
-    const ok = status >= 200 && status < 300;
-    return { ok, status, data: res?.data };
+    // Expose status so callers can detect 304 (no body) vs real 2xx data
+    return { ok: status >= 200 && status < 300, status, data: res?.data };
   } catch {
     return { ok: false, status: 0, data: null };
   }
@@ -44,74 +59,47 @@ function normalizeItems(data) {
   return [];
 }
 
-/* ---------- shared helpers for countdown ---------- */
-function parseNextLiveToLocalDate(ts) {
-  if (!ts) return null;
-  const d = new Date(ts); // ISO/UTC → local
-  if (Number.isNaN(d.getTime())) return null;
-  return d;
+/* ─── Spinner ────────────────────────────────────────────── */
+let _styleInjected = false;
+function ensureStyles() {
+  if (_styleInjected) return;
+  _styleInjected = true;
+  const el = document.createElement("style");
+  el.textContent = `
+    @keyframes brtv-spin { to { transform: rotate(360deg); } }
+    @keyframes brtv-dash {
+      0%   { stroke-dasharray: 1,200; stroke-dashoffset: 0; }
+      50%  { stroke-dasharray: 90,200; stroke-dashoffset: -35; }
+      100% { stroke-dasharray: 90,200; stroke-dashoffset: -125; }
+    }
+    @keyframes live-pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.5; transform: scale(0.85); }
+    }
+  `;
+  document.head.appendChild(el);
 }
 
-function formatDuration(totalSec) {
-  const s = Math.max(0, Math.floor(totalSec));
-  const days = Math.floor(s / 86400);
-  const hours = Math.floor((s % 86400) / 3600);
-  const minutes = Math.floor((s % 3600) / 60);
-  const seconds = s % 60;
-  const pad = (n) => String(n).padStart(2, "0");
-
-  return `${pad(days)}d : ${pad(hours)}h : ${pad(minutes)}m : ${pad(seconds)}s`;
-}
-
-/* -----------------------------------------
-   Modern Loading Spinner (MUI-like, no deps)
------------------------------------------ */
-function CircularSpinner({ size = 44, label = "Loading…" }) {
+function CircularSpinner({ size = 40, label = "Loading…" }) {
+  useEffect(() => {
+    ensureStyles();
+  }, []);
   const ring = Math.max(4, Math.round(size / 10));
-
   return (
-    <div
-      style={{
-        display: "grid",
-        placeItems: "center",
-        gap: 10,
-        padding: "18px 0",
-      }}
-    >
-      <style>{`
-        @keyframes brtv-spin { to { transform: rotate(360deg); } }
-        @keyframes brtv-dash {
-          0%   { stroke-dasharray: 1, 200; stroke-dashoffset: 0; }
-          50%  { stroke-dasharray: 90, 200; stroke-dashoffset: -35; }
-          100% { stroke-dasharray: 90, 200; stroke-dashoffset: -125; }
-        }
-      `}</style>
-
-      <div
-        aria-label={label}
-        role="status"
-        style={{
-          width: size,
-          height: size,
-          display: "grid",
-          placeItems: "center",
-        }}
-      >
+    <div className="spinner-wrap">
+      <div role="status" aria-label={label}>
         <svg
           width={size}
           height={size}
           viewBox="0 0 50 50"
-          style={{
-            animation: "brtv-spin 1.2s linear infinite",
-            filter: "drop-shadow(0 6px 18px rgba(0,0,0,0.35))",
-          }}
+          className="spinner-svg"
         >
           <circle
             cx="25"
             cy="25"
             r="20"
             fill="none"
-            stroke="rgba(255,255,255,0.10)"
+            stroke="rgba(255,255,255,0.08)"
             strokeWidth={ring}
           />
           <circle
@@ -119,492 +107,638 @@ function CircularSpinner({ size = 44, label = "Loading…" }) {
             cy="25"
             r="20"
             fill="none"
-            stroke="rgba(154, 92, 255, 0.95)"
+            stroke="rgba(154,92,255,0.9)"
             strokeLinecap="round"
             strokeWidth={ring}
-            style={{ animation: "brtv-dash 1.4s ease-in-out infinite" }}
+            className="spinner-arc"
           />
         </svg>
       </div>
-
-      <div style={{ color: "rgba(255,255,255,0.78)", fontSize: 14 }}>
-        {label}
-      </div>
+      <span className="spinner-label">{label}</span>
     </div>
   );
 }
 
-export default function Home() {
+/* ─── Video fetch ────────────────────────────────────────── */
+// Fetches the 4 newest videos automatically.
+// sort/order params cover the most common backend conventions so the API
+// returns newest-first; we then client-sort as a safety net and take 4.
+// Fetches the 4 newest videos.
+// Tries both endpoints and picks whichever returns real data.
+// - 304 responses are treated as empty (browser cached, no body)
+// - Both responses are checked so a 304 on one does not block the other
+// - Cache-Control headers are bypassed with a timestamp param
+async function fetchVideos() {
+  const response = await safeGet("/public/latest-teachings", {
+    params: { limit: 4, _: Date.now() },
+  });
+  if (!response.ok) throw new Error("Unable to load latest teachings");
+  return normalizeItems(response.data);
+}
+
+/* Published CMS content. Never use the admin/draft endpoint on the public site. */
+// Neutral wording for a new ministry. Each site's own default wording is in
+// public/content/defaults.json ("home") and wins over this; anything saved in
+// the page editor wins over both (Phase 2C).
+const HOME_FALLBACK = {
+  home_hero: {
+    kicker: "Sermons · Teaching · Live services",
+    title: "Experience the Message",
+    sub: "Watch sermons, teachings and live services anytime, anywhere.",
+    cta_text: "Start Watching",
+    cta_href: "/catalog",
+  },
+  home_join: {
+    eyebrow: "Join us",
+    title: "Become part of the family",
+    sub: "Create a free account to save your place and get live service reminders.",
+    cta_text: "Join Now",
+    cta_href: "/signup",
+  },
+  home_cta: {
+    title: "Go Deeper Into The Word",
+    sub: "Stream powerful teachings anytime, anywhere.",
+    cta_text: "Browse Catalog",
+    cta_href: "/catalog",
+  },
+  home_about: {
+    name: "Our Pastor",
+    text: "Introduce your pastor here: their calling, their story and what God has placed on their heart for this ministry.",
+  },
+};
+function homeDefaults(key) {
+  return { ...HOME_FALLBACK[key], ...(siteDefaults().home?.[key] || {}) };
+}
+
+// Phase 4F: sections added to the Home page in the page builder.
+// The builder renderer is loaded only when such sections exist, so a Home page
+// without custom sections loads exactly what it did before.
+const BuilderSections = lazy(() =>
+  import("./BuilderPage").then((m) => ({ default: m.BuilderSections })),
+);
+
+// Built-in home parts, in the order Home renders them, keyed by the section
+// id the editor uses and the block type that holds their content.
+const HOME_CORE_PARTS = [
+  { key: "home_hero", id: "core-hero" },
+  { key: "home_join", id: "core-join" },
+  { key: "featured_live", id: "core-featured-live" },
+  { key: "latest_teaching", id: "core-latest-teaching" },
+  { key: "home_cta", id: "core-cta" },
+  { key: "home_about", id: "core-about" },
+];
+
+function homeCoreKey(section) {
+  const id = String(section?.id || "");
+  const byId = HOME_CORE_PARTS.find((p) => p.id === id);
+  if (byId) return byId.key;
+  const blocks = Array.isArray(section?.blocks)
+    ? section.blocks
+    : Array.isArray(section?.elements)
+      ? section.elements
+      : [];
+  const hit = blocks.find((b) =>
+    HOME_CORE_PARTS.some((p) => p.key === String(b?.type || "")),
+  );
+  return hit ? String(hit.type) : "";
+}
+
+// Groups custom sections under the built-in part they follow in the editor
+// ("__top" = before the first built-in part). Built-in parts keep their order.
+// includeEmpty: the editor canvas shows empty sections (as placeholders) so
+// they can be selected and filled; the public site skips them.
+function extractCustomSections(page, includeEmpty = false) {
+  let json = page?.content_json;
+  if (typeof json === "string") {
+    try {
+      json = JSON.parse(json);
+    } catch {
+      return {};
+    }
+  }
+  if (!json || !Array.isArray(json.extra_sections)) return {};
+  const groups = {};
+  let anchor = "__top";
+  for (const section of json.extra_sections) {
+    if (!section || typeof section !== "object") continue;
+    const core = homeCoreKey(section);
+    if (core) {
+      anchor = core;
+      continue;
+    }
+    const blocks = Array.isArray(section.blocks)
+      ? section.blocks
+      : Array.isArray(section.elements)
+        ? section.elements
+        : [];
+    if (!includeEmpty && !blocks.length && !String(section.html || "").trim())
+      continue;
+    (groups[anchor] = groups[anchor] || []).push(section);
+  }
+  return groups;
+}
+
+function extractHomeBlocks(page) {
+  let json = page?.content_json;
+  if (typeof json === "string") {
+    try {
+      json = JSON.parse(json);
+    } catch {
+      return null;
+    }
+  }
+  if (!json || !Array.isArray(json.extra_sections)) return null;
+  const found = {};
+  for (const section of json.extra_sections) {
+    const blocks = Array.isArray(section?.blocks)
+      ? section.blocks
+      : Array.isArray(section?.elements)
+        ? section.elements
+        : [];
+    for (const block of blocks) {
+      if (
+        block &&
+        Object.prototype.hasOwnProperty.call(HOME_FALLBACK, block.type) &&
+        !found[block.type]
+      ) {
+        found[block.type] = block;
+      }
+    }
+  }
+  return found;
+}
+
+function cmsValue(block, field, fallback) {
+  // An intentionally blank CMS field should remain blank; fallback only when absent.
+  return block && block[field] != null ? String(block[field]) : fallback;
+}
+
+function cmsImage(url, fallback) {
+  url = upgradeAssetUrl(url);
+  if (!url) return fallback;
+  if (/^https?:\/\//i.test(url) || url.startsWith("data:")) return url;
+  if (
+    url.startsWith("/static/") ||
+    url.startsWith("/assets/") ||
+    isSiteFile(url)
+  )
+    return url;
+  return absUrl(url) || fallback;
+}
+
+/* ══════════════════════════════════════════════════════════
+   ROOT
+══════════════════════════════════════════════════════════ */
+// previewPage (Phase 4E): an admin's draft page to show instead of the
+// published Home page. Used by the editor's Preview.
+export default function Home({ previewPage = null }) {
+  const inCanvas = useCanvas(); // visual editor: show empty sections too
+  useEffect(() => {
+    ensureStyles();
+  }, []);
+  const [cmsBlocks, setCmsBlocks] = useState(null);
+  const [customSections, setCustomSections] = useState({});
+  const [homePage, setHomePage] = useState(null); // Phase 6: SEO fields
+
+  // Phase 6: home page title/description; blank fields use the site defaults.
+  usePageMeta({
+    title: homePage?.seo_title || "",
+    titleIsFinal: true,
+    description: homePage?.seo_description || homePage?.excerpt || "",
+    image: homePage?.seo_image_url || "",
+    noindex: !!homePage?.seo_noindex || !!previewPage,
+  });
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const [result] = await Promise.all([
+        previewPage
+          ? { ok: true, data: { page: previewPage } }
+          : safeGet("/pages/home", {
+              params: { _: Date.now() },
+              headers: { "Cache-Control": "no-cache" },
+            }),
+        loadSiteDefaults(), // this site's own default wording
+      ]);
+      if (!alive) return;
+      if (result.ok && result.data?.page) {
+        setCmsBlocks(extractHomeBlocks(upgradeAssets(result.data.page)));
+        setCustomSections(extractCustomSections(result.data.page, inCanvas));
+        setHomePage(result.data.page);
+      } else
+        console.warn(
+          "[Home] Published CMS page unavailable; using existing content.",
+        );
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [previewPage, inCanvas]);
+  // Featured messages, Continue Watching (members) and the newest messages
+  // A copy of the public part (featured + newest) is kept in the browser so a
+  // returning visitor sees the new design at once — no flash of the old hero.
+  const BROWSE_KEY = "brtv:home-browse:v1";
+  const [browse, setBrowse] = useState(() => readSavedBrowse(BROWSE_KEY));
+  const [browseState, setBrowseState] = useState(() =>
+    browse ? "ready" : "loading",
+  );
+  useEffect(() => {
+    let alive = true;
+    fetchBrowse()
+      .then((data) => {
+        if (!alive) return;
+        setBrowse(data);
+        setBrowseState("ready");
+        // only public content is saved (never Continue Watching / My List)
+        saveBrowse(BROWSE_KEY, data, (r) => r.key === "new");
+      })
+      .catch(
+        () => alive && setBrowseState((s) => (s === "ready" ? s : "failed")),
+      );
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const homeRows = (browse?.rows || [])
+    .filter(
+      (r) =>
+        r &&
+        Array.isArray(r.items) &&
+        r.items.length &&
+        (r.key === "continue" || r.key === "new"),
+    )
+    .map((r) =>
+      r.key === "new"
+        ? { ...r, title: "Latest messages", items: r.items.slice(0, 12) }
+        : { ...r, title: "Continue watching" },
+    );
+
+  const custom = (anchor) =>
+    customSections[anchor]?.length ? (
+      <Suspense fallback={null}>
+        <BuilderSections sections={customSections[anchor]} pageSlug="home" />
+      </Suspense>
+    ) : null;
+
   return (
-    <main className="home-root">
-      <HeaderHero />
-      <JoinStrip />
-      <FeaturedHighlight />
-      <LatestTeaching />
-      <WatchMoreCTA />
-      <AboutSection />
-      <Spacer />
-    </main>
+    <PageContext.Provider
+      value={homePage ? { id: homePage.id, slug: homePage.slug } : null}
+    >
+      <main className="home-root">
+        {homePage?.content_json?.page_css ? (
+          <style data-page-css="">
+            {cleanCss(homePage.content_json.page_css)}
+          </style>
+        ) : null}
+        {custom("__top")}
+        <CanvasSection sectionId="core-hero" blockId={cmsBlocks?.home_hero?.id}>
+          {/* Featured messages (Site Settings › Featured); the editor always shows the editable hero */}
+          {/* The editor shows exactly what visitors see. */}
+          {browseState === "loading" ? (
+            <div className="home-heroSkel" aria-hidden="true" />
+          ) : browse?.featured?.length ? (
+            <div className="home-featured">
+              {inCanvas ? (
+                <div className="home-editHint" role="note">
+                  This banner shows the <strong>featured messages</strong>.
+                  Choose them in{" "}
+                  <a
+                    href="#/admin/site-settings"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Site Settings › Featured
+                  </a>
+                  . When no messages are featured, the editable hero text shows
+                  here instead.
+                </div>
+              ) : null}
+              <HomeHero items={browse.featured} />
+            </div>
+          ) : (
+            <HeroSection content={cmsBlocks?.home_hero} />
+          )}
+        </CanvasSection>
+        {custom("home_hero")}
+        <CanvasSection sectionId="core-join" blockId={cmsBlocks?.home_join?.id}>
+          <JoinStrip content={cmsBlocks?.home_join} />
+        </CanvasSection>
+        {custom("home_join")}
+        <CanvasSection sectionId="core-featured-live">
+          <div className="home-wrap">
+            <LiveSchedule />
+          </div>
+        </CanvasSection>
+        {custom("featured_live")}
+        <CanvasSection sectionId="core-latest-teaching">
+          {browseState === "loading" && !inCanvas ? (
+            <div className="home-wrap home-rows" aria-hidden="true">
+              <div className="home-rowSkel" />
+            </div>
+          ) : homeRows.length ? (
+            <div className="home-rows">
+              {homeRows.map((row) =>
+                row.key === "new" ? (
+                  <div key={row.key} className="home-wrap vw-rows">
+                    <VideoRow
+                      row={row}
+                      kicker="On demand"
+                      seeAllLabel="Browse all"
+                      headerNav
+                      showCategory
+                      onSeeAll={() => window.location.assign("#/catalog")}
+                    />
+                  </div>
+                ) : (
+                  <div key={row.key} className="home-wrap vw-rows">
+                    <VideoRow row={row} />
+                  </div>
+                ),
+              )}
+            </div>
+          ) : (
+            <LatestTeaching />
+          )}
+        </CanvasSection>
+        {custom("latest_teaching")}
+        <CanvasSection sectionId="core-cta" blockId={cmsBlocks?.home_cta?.id}>
+          <WatchMoreCTA content={cmsBlocks?.home_cta} />
+        </CanvasSection>
+        {custom("home_cta")}
+        <CanvasSection
+          sectionId="core-about"
+          blockId={cmsBlocks?.home_about?.id}
+        >
+          <AboutSection content={cmsBlocks?.home_about} />
+        </CanvasSection>
+        {custom("home_about")}
+        <div className="home-spacer" />
+      </main>
+    </PageContext.Provider>
   );
 }
 
-/* ---------------------------------------------------------
-   1) HEADER + HERO
---------------------------------------------------------- */
-function HeaderHero() {
+/* ══════════════════════════════════════════════════════════
+   1. HERO
+══════════════════════════════════════════════════════════ */
+function HeroSection({ content }) {
+  const defaults = homeDefaults("home_hero");
+  const title = cmsValue(content, "title", defaults.title);
+  // Highlighted ending of the headline (shown in the accent color). Editable as
+  // "title_accent"; a blank value means no highlight.
+  const accent = String(
+    cmsValue(content, "title_accent", "Without Limits") || "",
+  ).trim();
+  const hasAccent =
+    !!accent && title.trim().endsWith(accent) && title.trim() !== accent;
+  const lead = hasAccent ? title.trim().slice(0, -accent.length).trim() : title;
+  const background = cmsImage(content?.background_url, HomeBanner);
+  // Phase 1: whitelisted, bounded presentation settings from published CMS data.
+  // Existing CSS remains the default if no typography settings are provided.
+  const fontChoices = {
+    Poppins: "Poppins, sans-serif",
+    Montserrat: "Montserrat, sans-serif",
+    Arial: "Arial, sans-serif",
+    Georgia: "Georgia, serif",
+  };
+  const size = Number(content?.heading_size);
+  const weight = String(content?.heading_weight || "");
+  const align = String(content?.heading_align || "");
+  const color = String(content?.heading_color || "").trim();
+  const headingStyle = {
+    ...(fontChoices[content?.heading_font]
+      ? { fontFamily: fontChoices[content.heading_font] }
+      : {}),
+    ...(Number.isFinite(size) && size >= 24 && size <= 96
+      ? { fontSize: `clamp(24px, ${size / 16}rem, ${size}px)` }
+      : {}),
+    ...(["400", "500", "600", "700", "800"].includes(weight)
+      ? { fontWeight: Number(weight) }
+      : {}),
+    ...(["left", "center", "right"].includes(align)
+      ? { textAlign: align }
+      : {}),
+    ...(/^#[0-9a-fA-F]{6}$/.test(color) ? { color } : {}),
+  };
   return (
-    <section
-      className="hero-section"
-      style={{ backgroundImage: `url(${HomeBanner})` }}
-    >
-      <div className="hero-overlay" />
+    <section className="hero" style={{ backgroundImage: `url(${background})` }}>
+      <div className="hero__overlay hero__overlay--radial" />
+      <div className="hero__overlay hero__overlay--gradient" />
 
-      <div className="hero-content">
-        <div className="hero-kicker">
-          Apostolic Teaching • Breakthrough Living
+      <div className="hero__inner">
+        <div className="hero__badge">
+          <span className="hero__badge-dot" />
+          <CanvasField name="kicker">
+            {cmsValue(content, "kicker", defaults.kicker)}
+          </CanvasField>
         </div>
 
-        <h1 className="hero-title">Experience the Message Without Limits</h1>
+        <h1 className="hero__title" style={headingStyle}>
+          <CanvasField name="title">
+            {lead}
+            {hasAccent && (
+              <>
+                <br />
+                <span className="hero__title-accent">{accent}</span>
+              </>
+            )}
+          </CanvasField>
+        </h1>
 
-        <p className="hero-sub">
-          Stream life-changing revelation and prophetic teaching directly from
-          Bishop Robertson.
+        <p className="hero__sub">
+          <CanvasField name="sub">
+            {cmsValue(content, "sub", defaults.sub)}
+          </CanvasField>
         </p>
 
-        <Link className="hero-cta" to="/catalog">
-          Start Watching
-        </Link>
-      </div>
-    </section>
-  );
-}
-
-/* ---------------------------------------------------------
-   2) JOIN STRIP
---------------------------------------------------------- */
-function JoinStrip() {
-  return (
-    <section className="join-strip">
-      <div className="join-inner">
-        <div>
-          <h5>The Connection</h5>
-          <h2 className="join-title">DRM</h2>
-          <p className="join-sub">"You become who you connect to!" - DRM</p>
-        </div>
-
-        <Link to="/signup" className="join-btn">
-          Join Now
-        </Link>
-      </div>
-    </section>
-  );
-}
-
-/* ---------------------------------------------------------
-   3) FEATURED HIGHLIGHT — Live Stream + Countdown
---------------------------------------------------------- */
-function FeaturedHighlight() {
-  const [nextLiveAt, setNextLiveAt] = useState(null);
-  const [countdown, setCountdown] = useState("");
-  const [showWatch, setShowWatch] = useState(false);
-  const [liveOngoing, setLiveOngoing] = useState(false);
-
-  const [loadingLive, setLoadingLive] = useState(true);
-
-  const nextLiveAtRef = useRef(null);
-  const liveOngoingRef = useRef(false);
-
-  useEffect(() => {
-    nextLiveAtRef.current = nextLiveAt;
-  }, [nextLiveAt]);
-
-  useEffect(() => {
-    liveOngoingRef.current = liveOngoing;
-  }, [liveOngoing]);
-
-  const token =
-    localStorage.getItem("token") || sessionStorage.getItem("token");
-  const isAuthed = !!token;
-
-  function shouldIgnoreNetworkSuspended(err) {
-    const msg = String(err?.message || "");
-    return msg.includes("ERR_NETWORK_IO_SUSPENDED");
-  }
-
-  function safeDate(v) {
-    if (!v) return null;
-    const d = new Date(v);
-    if (!Number.isNaN(d.getTime())) return d;
-
-    if (typeof v === "string") {
-      const d2 = new Date(v.replace(" ", "T"));
-      if (!Number.isNaN(d2.getTime())) return d2;
-    }
-    return null;
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-    const controller = new AbortController();
-
-    function setLiveState(next) {
-      if (cancelled) return;
-      setLiveOngoing((prev) => (prev === next ? prev : next));
-      liveOngoingRef.current = next;
-    }
-
-    function setNextLiveDate(d) {
-      if (cancelled) return;
-      if (!d) return;
-
-      setNextLiveAt((prev) => {
-        const prevT = prev ? prev.getTime() : null;
-        const nextT = d.getTime();
-        if (prevT === nextT) return prev;
-        return d;
-      });
-      nextLiveAtRef.current = d;
-    }
-
-    async function fetchNextLive() {
-      if (typeof document !== "undefined" && document.hidden) return;
-
-      try {
-        const res = await api.get(`/streamcontrol/${CHANNEL_ID}/next-live`, {
-          params: { _: Date.now() },
-          signal: controller.signal,
-        });
-
-        const data = res.data || {};
-        const state = String(data.state || "").toLowerCase();
-
-        if (state === "live_window" || data.is_live === true) {
-          setLiveState(true);
-          return;
-        }
-
-        const ts =
-          data.next_live_datetime ||
-          data.next_live_at ||
-          data.next_event?.start_at ||
-          data.event?.start_at ||
-          null;
-
-        const d = safeDate(ts) || parseNextLiveToLocalDate(ts);
-
-        if (d) {
-          setLiveState(false);
-          setNextLiveDate(d);
-        }
-      } catch (e) {
-        if (controller.signal.aborted) return;
-        if (shouldIgnoreNetworkSuspended(e)) return;
-      }
-    }
-
-    async function fetchNextLiveFallbackAuthed() {
-      if (!isAuthed) return;
-      if (typeof document !== "undefined" && document.hidden) return;
-
-      try {
-        const from = new Date();
-        const to = new Date();
-        to.setDate(to.getDate() + 60);
-
-        const ymd = (d) => {
-          const x = new Date(d);
-          const pad2 = (n) => String(n).padStart(2, "0");
-          return `${x.getFullYear()}-${pad2(x.getMonth() + 1)}-${pad2(
-            x.getDate(),
-          )}`;
-        };
-
-        const res = await api.get("/admin/calendar/events", {
-          params: { from: ymd(from), to: ymd(to), _: Date.now() },
-          signal: controller.signal,
-        });
-
-        const items = Array.isArray(res.data?.events)
-          ? res.data.events
-          : Array.isArray(res.data)
-            ? res.data
-            : [];
-
-        const now = Date.now();
-
-        const liveEvents = items
-          .filter((e) => String(e.type || "").toLowerCase() === "live")
-          .map((e) => ({
-            ...e,
-            _start: safeDate(e.start_at),
-            _end: e.end_at ? safeDate(e.end_at) : null,
-          }))
-          .filter((e) => e._start)
-          .sort((a, b) => a._start.getTime() - b._start.getTime());
-
-        const current = liveEvents.find(
-          (e) => e._start.getTime() <= now && e._end && e._end.getTime() >= now,
-        );
-
-        if (current) {
-          setLiveState(true);
-          return;
-        }
-
-        const upcoming = liveEvents.find((e) => e._start.getTime() > now);
-        if (upcoming) {
-          setLiveState(false);
-          setNextLiveDate(upcoming._start);
-        }
-      } catch (e) {
-        if (controller.signal.aborted) return;
-        if (shouldIgnoreNetworkSuspended(e)) return;
-      }
-    }
-
-    async function refresh() {
-      const isLive = liveOngoingRef.current;
-      const hasNext = !!nextLiveAtRef.current;
-      if (!isLive && !hasNext) setLoadingLive(true);
-
-      await fetchNextLive();
-
-      const isLive2 = liveOngoingRef.current;
-      const hasNext2 = !!nextLiveAtRef.current;
-
-      if (!cancelled && !isLive2 && !hasNext2) {
-        await fetchNextLiveFallbackAuthed();
-      }
-
-      if (!cancelled) setLoadingLive(false);
-    }
-
-    refresh();
-    const intv = setInterval(refresh, 15000);
-
-    const onVis = () => {
-      if (!document.hidden) refresh();
-    };
-    document.addEventListener("visibilitychange", onVis);
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-      clearInterval(intv);
-      document.removeEventListener("visibilitychange", onVis);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthed]);
-
-  useEffect(() => {
-    if (liveOngoing) {
-      setCountdown("");
-      setShowWatch(true);
-      return;
-    }
-
-    if (!nextLiveAt) {
-      setCountdown("");
-      setShowWatch(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    const tick = () => {
-      if (cancelled) return;
-      const now = new Date();
-      const diffSec = (nextLiveAt - now) / 1000;
-
-      if (diffSec <= 0) {
-        setCountdown("");
-        setShowWatch(true);
-        setLiveOngoing(true);
-        return;
-      }
-
-      setCountdown(formatDuration(diffSec));
-      setShowWatch(false);
-    };
-
-    tick();
-    const intv = setInterval(tick, 1000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(intv);
-    };
-  }, [nextLiveAt, liveOngoing]);
-
-  return (
-    <section className="feature-section">
-      <img src="/media/featured-bg.jpg" alt="" className="feature-bg" />
-      <div className="feature-overlay" />
-
-      <div className="feature-content">
-        <h3 className="feature-title">Live Stream</h3>
-
-        {loadingLive && !liveOngoing && !countdown && (
-          <CircularSpinner label="Loading live schedule…" />
-        )}
-
-        {countdown && !liveOngoing && (
-          <div className="home-live-countdown">
-            <span className="home-live-countdown-label">
-              Next Live Stream Starts In
-            </span>
-            <span className="home-live-countdown-time">{countdown}</span>
-          </div>
-        )}
-
-        {liveOngoing && (
-          <div className="home-live-countdown">
-            <span className="home-live-countdown-label">
-              The Live Stream is ongoing
-            </span>
-          </div>
-        )}
-
-        {showWatch && (
-          <Link to="/live-streaming" className="feature-btn">
-            Watch Live
+        <div className="hero__ctas">
+          <Link
+            className="btn btn--primary btn--lg"
+            to={cmsValue(content, "cta_href", defaults.cta_href)}
+          >
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 16 16"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M3 2.5a.5.5 0 0 1 .765-.424l10 5.5a.5.5 0 0 1 0 .848l-10 5.5A.5.5 0 0 1 3 13.5z" />
+            </svg>
+            <CanvasField name="cta_text">
+              {cmsValue(content, "cta_text", defaults.cta_text)}
+            </CanvasField>
           </Link>
-        )}
+          <Link className="btn btn--ghost btn--lg" to="/free-account">
+            Create Free Account
+          </Link>
+        </div>
       </div>
     </section>
   );
 }
 
-/* ---------------------------------------------------------
-   4) LATEST TEACHING — Cards only (no big banner)
-   - Order: latest → oldest by publish date
-   - Click goes to /watch/:id (gated handled on watch page)
---------------------------------------------------------- */
+/* ══════════════════════════════════════════════════════════
+   2. JOIN STRIP
+══════════════════════════════════════════════════════════ */
+function JoinStrip({ content }) {
+  const defaults = homeDefaults("home_join");
+  return (
+    <section className="join">
+      <div className="join__inner">
+        <div className="join__left">
+          <p className="join__eyebrow">
+            <CanvasField name="eyebrow">
+              {cmsValue(content, "eyebrow", defaults.eyebrow)}
+            </CanvasField>
+          </p>
+          <h2 className="join__title">
+            <CanvasField name="title">
+              {cmsValue(content, "title", defaults.title)}
+            </CanvasField>
+          </h2>
+          <p className="join__sub">
+            <CanvasField name="sub">
+              {cmsValue(content, "sub", defaults.sub)}
+            </CanvasField>
+          </p>
+        </div>
+        <Link
+          to={cmsValue(content, "cta_href", defaults.cta_href)}
+          className="btn btn--primary btn--lg"
+        >
+          <CanvasField name="cta_text">
+            {cmsValue(content, "cta_text", defaults.cta_text)}
+          </CanvasField>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 14 14"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M1 7h12M8 2l5 5-5 5"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════
+   3. LIVE SECTION
+══════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════
+   LIVE — the Live schedule card (components/viewer/LiveSchedule.js)
+   replaced the old LiveSection; the Calendar drives it.
+══════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════
+   4. LATEST TEACHING
+══════════════════════════════════════════════════════════ */
 function LatestTeaching() {
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // robust publish date picker
-  function getPublishTime(v) {
-    const raw =
-      v?.published_at ||
-      v?.publish_date ||
-      v?.publishedAt ||
-      v?.publishedAtUtc ||
-      v?.publish_at ||
-      v?.created_at ||
-      v?.createdAt ||
-      v?.updated_at ||
-      v?.updatedAt ||
-      v?.metadata?.published_at ||
-      v?.metadata?.publish_date ||
-      v?.metadata?.publishedAt ||
-      null;
-
-    if (!raw) return 0;
-
-    const d = new Date(raw);
-    if (!Number.isNaN(d.getTime())) return d.getTime();
-
-    // handle "YYYY-MM-DD HH:mm:ss"
-    if (typeof raw === "string") {
-      const d2 = new Date(raw.replace(" ", "T"));
-      if (!Number.isNaN(d2.getTime())) return d2.getTime();
-    }
-
-    return 0;
-  }
-
   useEffect(() => {
     let cancelled = false;
-
     (async () => {
       setLoading(true);
       try {
-        const tries = [
-          { path: "/public/videos", params: { limit: 12 } },
-          { path: "/videos/public", params: { limit: 12 } },
-        ];
-
-        let items = [];
-        for (const t of tries) {
-          const r = await safeGet(t.path, { params: t.params });
-          if (!r.ok) continue;
-          items = normalizeItems(r.data);
-          if (Array.isArray(items) && items.length) break;
-        }
-
-        const sorted = (Array.isArray(items) ? items : [])
-          .slice()
-          .sort((a, b) => getPublishTime(b) - getPublishTime(a));
-
-        if (!cancelled) setVideos(sorted);
+        const items = await fetchVideos();
+        if (!cancelled) setVideos(items);
+      } catch (error) {
+        console.error("[LatestTeaching] Failed to load videos:", error);
+        if (!cancelled) setVideos([]);
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
-
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <section className="latest-section">
-      <h2 className="latest-title">Latest Teaching</h2>
-      <p className="latest-sub">A fresh impartation to strengthen your walk.</p>
+    <section className="teachings">
+      <div className="teachings__head">
+        <div>
+          <p className="section-eyebrow">On Demand</p>
+          <h2 className="section-title">Latest Teachings</h2>
+          <p className="section-sub">
+            A fresh impartation to strengthen your walk.
+          </p>
+        </div>
+        <Link to="/catalog" className="btn btn--ghost btn--sm">
+          Browse All
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 13 13"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M1 6.5h11M7 1.5l5 5-5 5"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </Link>
+      </div>
 
       {loading ? (
-        <div className="latest-loading">
-          <CircularSpinner label="Loading latest videos…" />
+        <div className="teachings__state">
+          <CircularSpinner label="Loading teachings…" />
         </div>
       ) : !videos.length ? (
-        <div
-          className="latest-loading"
-          style={{ color: "rgba(255,255,255,0.75)" }}
-        >
-          No videos found yet.
-        </div>
+        <div className="teachings__state">No videos found yet.</div>
       ) : (
-        <div className="latest-grid">
-          {videos.map((v) => {
+        <div className="teachings__grid">
+          {videos.map((v, idx) => {
             const rawThumb =
               v.thumbnail_url ||
               v?.metadata?.thumbnail_vertical_url ||
               v?.metadata?.thumbnail_url ||
               null;
-
-            const thumbSrc = absUrl(rawThumb) || DefaultThumb;
-            const isDefaultThumb = !absUrl(rawThumb);
-
+            const thumb = absUrl(rawThumb) || DefaultThumb;
+            const isDef = !absUrl(rawThumb);
             return (
-              <Link
-                key={v.id}
-                to={`/watch/${v.id}`}
-                className="latest-card hover-card"
-              >
+              <Link key={v.id} to={`/watch/${v.id}`} className="vcard">
                 <div
-                  className={
-                    "latest-thumb" + (isDefaultThumb ? " is-default-thumb" : "")
-                  }
+                  className={`vcard__thumb${isDef ? " vcard__thumb--default" : ""}`}
                 >
                   <img
-                    src={thumbSrc}
+                    src={thumb}
                     alt={v.title || "Video"}
+                    loading="lazy"
+                    decoding="async"
                     onError={(e) => {
                       e.currentTarget.onerror = null;
                       e.currentTarget.src = DefaultThumb;
                     }}
                   />
-                  <div className="hover-play">
-                    <span>▶</span>
+                  <div className="vcard__play" aria-hidden="true">
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      width="20"
+                      height="20"
+                    >
+                      <path d="M5 3.5a.5.5 0 0 1 .765-.424l14 8a.5.5 0 0 1 0 .848l-14 8A.5.5 0 0 1 5 19.5z" />
+                    </svg>
                   </div>
                 </div>
-
-                <div className="latest-meta">
-                  <h4 className="latest-video-title">{v.title}</h4>
-                  <p className="latest-category">
+                <div className="vcard__meta">
+                  <h4 className="vcard__title">{v.title}</h4>
+                  <p className="vcard__cat">
                     {v.category_name || v?.category?.name || ""}
                   </p>
                 </div>
@@ -617,42 +751,97 @@ function LatestTeaching() {
   );
 }
 
-/* ---------------------------------------------------------
-   5) WATCH MORE CTA
---------------------------------------------------------- */
-function WatchMoreCTA() {
+/* ══════════════════════════════════════════════════════════
+   5. WATCH MORE CTA BAND
+══════════════════════════════════════════════════════════ */
+function WatchMoreCTA({ content }) {
+  const defaults = homeDefaults("home_cta");
   return (
-    <section className="cta-section">
-      <h3 className="cta-title">Go Deeper Into The Word</h3>
-      <p className="cta-sub">Stream powerful teachings anytime, anywhere.</p>
-
-      <Link to="/catalog" className="cta-button">
-        Browse Catalog
-      </Link>
-    </section>
-  );
-}
-
-/* ---------------------------------------------------------
-   6) ABOUT SECTION
---------------------------------------------------------- */
-function AboutSection() {
-  return (
-    <section className="about-section">
-      <img src={ImgHead} className="about-avatar" alt="Bishop Robertson" />
-
-      <div className="about-content">
-        <h4 className="about-name">Bishop Robertson</h4>
-        <p className="about-text">
-          A leader, pioneer, and prophetic voice for over five decades. Bishop
-          Robertson continues to deliver revelation and impartation that
-          transforms lives across the world.
-        </p>
+    <section className="cta-band">
+      <div className="cta-band__glow" aria-hidden="true" />
+      <div className="cta-band__inner">
+        <div className="cta-band__text">
+          <h2 className="cta-band__title">
+            <CanvasField name="title">
+              {cmsValue(content, "title", defaults.title)}
+            </CanvasField>
+          </h2>
+          <p className="cta-band__sub">
+            <CanvasField name="sub">
+              {cmsValue(content, "sub", defaults.sub)}
+            </CanvasField>
+          </p>
+        </div>
+        <div className="cta-band__actions">
+          <Link
+            to={cmsValue(content, "cta_href", defaults.cta_href)}
+            className="btn btn--primary btn--lg"
+          >
+            <CanvasField name="cta_text">
+              {cmsValue(content, "cta_text", defaults.cta_text)}
+            </CanvasField>
+          </Link>
+          <Link to="/free-account" className="btn btn--outline btn--lg">
+            Register For Free
+          </Link>
+        </div>
       </div>
     </section>
   );
 }
 
-function Spacer() {
-  return <div className="spacer" />;
+/* ══════════════════════════════════════════════════════════
+   6. ABOUT
+══════════════════════════════════════════════════════════ */
+function AboutSection({ content }) {
+  const defaults = homeDefaults("home_about");
+  return (
+    <section className="about">
+      <div className="about__inner">
+        <div className="about__img-col">
+          <div className="about__img-glow" aria-hidden="true" />
+          <img
+            src={cmsImage(content?.avatar_url, ImgHead)}
+            alt={cmsValue(content, "name", defaults.name)}
+            onError={(e) => {
+              e.currentTarget.style.visibility = "hidden";
+            }}
+            className="about__img"
+          />
+        </div>
+        <div className="about__content">
+          <p className="section-eyebrow">About</p>
+          <h2 className="about__name">
+            <CanvasField name="name">
+              {cmsValue(content, "name", defaults.name)}
+            </CanvasField>
+          </h2>
+          <div className="about__rule" />
+          <p className="about__text">
+            <CanvasField name="text">
+              {cmsValue(content, "text", defaults.text)}
+            </CanvasField>
+          </p>
+          <Link to="/about" className="btn btn--ghost btn--sm">
+            Learn More
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 13 13"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M1 6.5h11M7 1.5l5 5-5 5"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
 }
