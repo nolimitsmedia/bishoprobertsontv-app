@@ -10,7 +10,11 @@
  * payments), uploads, or anything from another website. Only GET requests to
  * this site are handled; everything else goes straight to the network.
  */
-const VERSION = "brtv-app-v1";
+// Cache names include this site's folder, so ministries sharing one address
+// (tv.nolimitsmedia.com/<ministry>) never use or delete each other's caches.
+const SCOPE_PATH = new URL(self.registration.scope).pathname;
+const CACHE_NS = `app:${SCOPE_PATH}:`;
+const VERSION = `${CACHE_NS}v1`;
 const PAGE_CACHE = `${VERSION}-pages`;
 const STATIC_CACHE = `${VERSION}-static`;
 const STATIC_MAX_ENTRIES = 150;
@@ -32,7 +36,11 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((k) => k.startsWith("brtv-app-") && !k.startsWith(VERSION))
+            .filter(
+              (k) =>
+                (k.startsWith(CACHE_NS) && !k.startsWith(VERSION)) ||
+                k.startsWith("brtv-app-"), // names used before Phase 3
+            )
             .map((k) => caches.delete(k)),
         ),
       )
@@ -66,7 +74,9 @@ async function handleStatic(request) {
   if (hit) return hit;
   const fresh = await fetch(request);
   if (fresh && fresh.ok && fresh.type === "basic") {
-    cache.put(request, fresh.clone()).then(() => trim(STATIC_CACHE, STATIC_MAX_ENTRIES));
+    cache
+      .put(request, fresh.clone())
+      .then(() => trim(STATIC_CACHE, STATIC_MAX_ENTRIES));
   }
   return fresh;
 }
@@ -77,7 +87,8 @@ async function handleRefreshable(request) {
   const hit = await cache.match(request);
   const update = fetch(request)
     .then((fresh) => {
-      if (fresh && fresh.ok && fresh.type === "basic") cache.put(request, fresh.clone());
+      if (fresh && fresh.ok && fresh.type === "basic")
+        cache.put(request, fresh.clone());
       return fresh;
     })
     .catch(() => hit);
@@ -104,11 +115,12 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(handleStatic(request));
   } else if (rel === "pwa-icon-192.png") {
     event.respondWith(
-      caches
-        .match(request)
-        .then((hit) => hit || fetch(request)),
+      caches.match(request).then((hit) => hit || fetch(request)),
     );
-  } else if (/\.(png|ico|svg|webp|jpg|jpeg)$/i.test(rel) || rel === "manifest.json") {
+  } else if (
+    /\.(png|ico|svg|webp|jpg|jpeg)$/i.test(rel) ||
+    rel === "manifest.json"
+  ) {
     event.respondWith(handleRefreshable(request));
   }
   // anything else: browser default (network)
